@@ -63,6 +63,7 @@ export const AssistantSessionsSidebar = () => {
 	const createGroup = useCreateAssistantSessionGroup();
 	const updateGroup = useUpdateAssistantSessionGroup();
 	const deleteGroup = useDeleteAssistantSessionGroup();
+	const [now] = useState(() => Date.now());
 
 	const activeSessionId = pathname.startsWith(`${Rotas.protegidas.orchestrator.assistant}/`)
 		? pathname.split("/")[3]
@@ -158,7 +159,7 @@ export const AssistantSessionsSidebar = () => {
 	};
 
 	const renderSessionRow = (session: AssistantSessionSummary) => {
-		const isRecent = Date.now() - new Date(session.updatedAt).getTime() < RECENT_MS;
+		const isRecent = now - new Date(session.updatedAt).getTime() < RECENT_MS;
 
 		return (
 			<ContextMenu key={session.id}>
