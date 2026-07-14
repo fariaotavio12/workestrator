@@ -60,7 +60,7 @@ export const AppRouter = () => (
 
 			<Route
 				path={Rotas.desprotegidas.landingPages.home}
-				element={window.__ORCH_API__ ? <RootRedirect /> : <LayoutLandingPages />}
+				element={window.__ORCH_API__ ? <RootRedirect /> : <LayoutLandingPagesNoHeader />}
 			>
 				<Route index element={<HomePage />} />
 			</Route>
