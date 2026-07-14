@@ -1,0 +1,753 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+	--color-layout: var(--layout);
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-shadow: var(--primary-shadow);
+	--color-primarySecond: var(--chart-2);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-shadow: var(--secondary-shadow);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-shadow: var(--destructive-shadow);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-input-border: var(--input-border);
+	--color-ring: var(--ring);
+	--color-text: var(--text);
+	--color-secondaryText: var(--text-secondary);
+	--color-text-foreground: var(--text-foreground);
+
+	--color-orange: var(--orange);
+	--color-orange-shadow: var(--orange-shadow);
+	--color-orange-foreground: var(--orange-foreground);
+
+	--color-sidebar: var(--sidebar);
+	--color-blue: var(--blue);
+	--color-blue-shadow: var(--blue-shadow);
+	--color-blue-foreground: var(--blue-foreground);
+
+	--color-yellow: var(--yellow);
+	--color-yellow-shadow: var(--yellow-shadow);
+	--color-yellow-foreground: var(--yellow-foreground);
+	--color-gold: var(--gold);
+	--color-gold-shadow: var(--gold-shadow);
+	--color-gold-foreground: var(--gold-foreground);
+
+	--color-violet: var(--violet);
+	--color-violet-shadow: var(--violet-shadow);
+	--color-violet-foreground: var(--violet-foreground);
+
+	--color-rose: var(--rose);
+	--color-rose-shadow: var(--rose-shadow);
+	--color-rose-foreground: var(--rose-foreground);
+
+	--color-success: var(--success);
+	--color-success-shadow: var(--success-shadow);
+	--color-success-foreground: var(--success-foreground);
+
+	--color-info: var(--blue);
+	--color-info-shadow: var(--blue-shadow);
+	--color-info-foreground: var(--blue-foreground);
+
+	--color-warning: var(--warning);
+	--color-warning-shadow: var(--warning-shadow);
+	--color-warning-foreground: var(--warning-foreground);
+
+	--color-locked: var(--locked);
+	--color-locked-shadow: var(--locked-shadow);
+	--color-locked-foreground: var(--locked-foreground);
+
+	--radius-md: 0.5rem;
+	--radius-lg: 0.5rem;
+	--radius-xl: 1.5rem;
+
+	--maxHeight-custom: calc(100vh - 64px);
+	--maxHeight-table: calc(100vh - 164px);
+	--maxHeight-TableAndHeader: calc(100vh - 224px);
+	--radius: 0.5rem;
+	--spacing-screen-l: round(up, 7.22223vw, 0.2rem);
+
+	--chart-1: var(--chart-1);
+	--chart-2: var(--chart-2);
+	--chart-3: var(--chart-3);
+	--chart-4: var(--chart-4);
+	--chart-5: var(--chart-5);
+
+	--color-asset: var(--asset);
+
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+	--layout: #f0eee7;
+	--background: #faf9f5;
+	--foreground: #26251f;
+	--card: #ffffff;
+	--card-foreground: #26251f;
+	--popover: #ffffff;
+	--popover-foreground: #26251f;
+	--primary: #4f8ae8;
+	--primary-shadow: #3f6fd0;
+	--primary-foreground: #ffffff;
+	--secondary: #efede4;
+	--secondary-shadow: #e5e2d8;
+	--secondary-foreground: #3a3833;
+	--muted: #f2f0e9;
+	--muted-foreground: #6b6862;
+	--accent: #e8f0fd;
+	--accent-foreground: #1f4fa0;
+	--destructive: #c0392b;
+	--destructive-shadow: #a5271b;
+	--destructive-foreground: #ffffff;
+	--border: #e5e2d8;
+	--input: #ffffff;
+	--input-border: #dad6ca;
+	--text: #26251f;
+	--text-secondary: #6b6862;
+	--text-foreground: #26251f;
+	--ring: #4f8ae8;
+	--chart-1: #4f8ae8;
+	--chart-2: #4f7a52;
+	--chart-3: #b8792a;
+	--chart-4: #5b7c99;
+	--chart-5: #3a3833;
+	--sidebar: #f0eee7;
+	--sidebar-foreground: #3a3833;
+	--sidebar-primary: #4f8ae8;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #4f8ae8;
+	--sidebar-accent-foreground: #ffffff;
+	--sidebar-border: #e1ddd2;
+	--sidebar-ring: #4f8ae8;
+	--success: #4f7a52;
+	--success-shadow: #3d5f40;
+	--success-foreground: #ffffff;
+	--warning: #b8792a;
+	--warning-shadow: #965f1f;
+	--warning-foreground: #ffffff;
+	--info: #5b7c99;
+	--info-shadow: #486178;
+	--info-foreground: #ffffff;
+
+	/* fontes */
+	--font-sans:
+		"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--font-display:
+		"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+	/* extras do projeto */
+	--orange: #f97316;
+	--orange-shadow: #ea580c;
+	--orange-foreground: #ffffff;
+	--blue: #2563eb;
+	--blue-shadow: #1d4ed8;
+	--blue-foreground: #ffffff;
+	--violet: #7c3aed;
+	--violet-shadow: #6d28d9;
+	--violet-foreground: #ffffff;
+	--rose: #e11d48;
+	--rose-shadow: #be123c;
+	--rose-foreground: #ffffff;
+	--yellow: #eab308;
+	--yellow-shadow: #ca8a04;
+	--yellow-foreground: #111111;
+	--gold: #ca8a04;
+	--gold-shadow: #a16207;
+	--gold-foreground: #ffffff;
+	--locked: #e5e7eb;
+	--locked-shadow: #d1d5db;
+	--locked-foreground: #9ca3af;
+	--asset: #111111;
+	--mobile-nav-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.dark {
+	--layout: #1f1e1b;
+	--background: #262624;
+	--foreground: #edebe3;
+	--card: #2f2e2b;
+	--card-foreground: #edebe3;
+	--popover: #2f2e2b;
+	--popover-foreground: #edebe3;
+	--primary: #3f6fd0;
+	--primary-shadow: #2f56ad;
+	--primary-foreground: #ffffff;
+	--secondary: #35332f;
+	--secondary-shadow: #3a3833;
+	--secondary-foreground: #dedbd1;
+	--muted: #2f2e2b;
+	--muted-foreground: #a39f94;
+	--accent: #1d2b52;
+	--accent-foreground: #b7d0fa;
+	--destructive: #e07a6b;
+	--destructive-shadow: #c65546;
+	--destructive-foreground: #2b0f0b;
+	--border: #3a3833;
+	--input: #2f2e2b;
+	--input-border: #494740;
+	--text: #edebe3;
+	--text-secondary: #a39f94;
+	--text-foreground: #edebe3;
+	--ring: #3f6fd0;
+	--chart-1: #3f6fd0;
+	--chart-2: #7fa982;
+	--chart-3: #d9a441;
+	--chart-4: #88a6c2;
+	--chart-5: #dedbd1;
+	--sidebar: #1f1e1b;
+	--sidebar-foreground: #c9c5ba;
+	--sidebar-primary: #3f6fd0;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #3f6fd0;
+	--sidebar-accent-foreground: #ffffff;
+	--sidebar-border: #33322e;
+	--sidebar-ring: #3f6fd0;
+	--success: #7fa982;
+	--success-shadow: #648a67;
+	--success-foreground: #0f1e10;
+	--warning: #d9a441;
+	--warning-shadow: #b8862f;
+	--warning-foreground: #2a1e08;
+	--info: #88a6c2;
+	--info-shadow: #6e8aa6;
+	--info-foreground: #0f1720;
+
+	/* extras do projeto */
+	--orange: #f97316;
+	--orange-shadow: #ea580c;
+	--orange-foreground: #ffffff;
+	--blue: #3b82f6;
+	--blue-shadow: #2563eb;
+	--blue-foreground: #ffffff;
+	--violet: #8b5cf6;
+	--violet-shadow: #7c3aed;
+	--violet-foreground: #ffffff;
+	--rose: #f43f5e;
+	--rose-shadow: #e11d48;
+	--rose-foreground: #ffffff;
+	--yellow: #eab308;
+	--yellow-shadow: #ca8a04;
+	--yellow-foreground: #111111;
+	--gold: #eab308;
+	--gold-shadow: #ca8a04;
+	--gold-foreground: #111111;
+	--locked: #262626;
+	--locked-shadow: #1a1a1a;
+	--locked-foreground: #6b7280;
+	--asset: #ffffff;
+	--mobile-nav-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+
+	body {
+		@apply bg-background text-foreground antialiased;
+	}
+
+	::selection {
+		background: color-mix(in oklch, var(--primary) 22%, transparent);
+		color: var(--foreground);
+	}
+}
+
+::-webkit-scrollbar {
+	@apply h-1 w-1;
+}
+
+::-webkit-scrollbar-thumb {
+	@apply bg-border rounded-full;
+}
+
+::-webkit-scrollbar-track {
+	@apply bg-background;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+	-webkit-text-fill-color: var(--text);
+	-webkit-box-shadow: 0 0 0px 1000px var(--text) inset;
+	box-shadow: 0 0 0px 1000px transparent inset;
+	transition: background-color 5000s ease-in-out 0s;
+	color: var(--text);
+}
+
+table {
+	position: relative;
+}
+
+table thead {
+	position: -webkit-sticky !important;
+	position: sticky !important;
+	top: 0;
+	z-index: 1;
+}
+
+.bn-container .bn-block-content[data-content-type="heading"] h1 {
+	font-size: 1.5rem;
+}
+
+.bn-container .bn-block-content[data-content-type="heading"] h2 {
+	font-size: 1.3rem;
+}
+.bn-container .bn-block-content[data-content-type="heading"] h3 {
+	font-size: 1.15rem;
+}
+
+body {
+	font-family: var(--font-sans);
+}
+
+/* Typography classes based on DESIGN.md */
+@layer components {
+	.display-xl {
+		font-family: var(--font-display);
+		font-size: clamp(3rem, 7vw, 4.5rem);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.02em;
+	}
+	.display-lg {
+		font-family: var(--font-display);
+		font-size: clamp(2rem, 4vw, 2.75rem);
+		font-weight: 600;
+		line-height: 1.1;
+		letter-spacing: -0.02em;
+	}
+	.display-md {
+		font-family: var(--font-display);
+		font-size: clamp(1.75rem, 3vw, 2.5rem);
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.015em;
+	}
+	.display-sm {
+		font-family: var(--font-display);
+		font-size: clamp(1.5rem, 2.5vw, 2rem);
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.01em;
+	}
+	.title-lg {
+		font-size: 1.375rem;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.01em;
+	}
+	.title-md {
+		font-size: 1.125rem;
+		font-weight: 600;
+		line-height: 1.4;
+		letter-spacing: 0;
+	}
+	.title-sm {
+		font-size: 1rem;
+		font-weight: 600;
+		line-height: 1.4;
+		letter-spacing: 0;
+	}
+	.body-md {
+		font-size: 1rem;
+		font-weight: 400;
+		line-height: 1.5;
+		letter-spacing: 0;
+	}
+	.body-sm {
+		font-size: 0.875rem;
+		font-weight: 400;
+		line-height: 1.4;
+		letter-spacing: 0;
+	}
+	.caption {
+		font-size: 0.8125rem;
+		font-weight: 500;
+		line-height: normal;
+		letter-spacing: 0;
+	}
+	.button {
+		font-size: 0.875rem;
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: 0;
+	}
+	.nav-link {
+		font-size: 0.875rem;
+		font-weight: 500;
+		line-height: 1;
+		letter-spacing: 0;
+	}
+
+	/* ── Custom project tokens ── */
+	.hero-title {
+		font-family: var(--font-display);
+		font-size: 4rem;
+		font-weight: 600;
+		line-height: 1.05;
+		letter-spacing: -0.03em;
+	}
+	.hero-description {
+		font-size: 1.125rem;
+		font-weight: 400;
+		line-height: 1.5;
+		letter-spacing: 0;
+	}
+	.section-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		line-height: 1.25;
+		letter-spacing: 1.5px;
+		text-transform: uppercase;
+	}
+	.section-heading {
+		font-family: var(--font-display);
+		font-size: 3rem;
+		font-weight: 600;
+		line-height: 1.1;
+		letter-spacing: -0.025em;
+	}
+	.section-intro {
+		font-size: 1rem;
+		font-weight: 400;
+		line-height: 1.5;
+		letter-spacing: 0;
+	}
+	.ui-header {
+		font-size: 0.8125rem;
+		font-weight: 600;
+		line-height: 1.4;
+		letter-spacing: 0;
+	}
+	.inline-link {
+		font-weight: 500;
+		line-height: inherit;
+		letter-spacing: 0;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.card-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: 0;
+	}
+}
+
+/* ─── react-big-calendar overrides ─────────────────────────────────────────── */
+.rbc-wrapper .rbc-calendar {
+	font-family: var(--font-sans);
+}
+
+.rbc-wrapper .rbc-month-view,
+.rbc-wrapper .rbc-time-view,
+.rbc-wrapper .rbc-agenda-view {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+	background: var(--background);
+}
+
+.rbc-wrapper .rbc-header {
+	border-bottom: 1px solid var(--border);
+	padding: 8px 4px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	background: var(--background);
+}
+
+.rbc-wrapper .rbc-header + .rbc-header {
+	border-left: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-month-row {
+	border-top: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-day-bg + .rbc-day-bg {
+	border-left: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-day-bg.rbc-today {
+	background: color-mix(in oklch, var(--primary) 8%, transparent);
+}
+
+/* reset rbc default yellow for today in time view */
+.rbc-wrapper .rbc-now {
+	font-weight: 700;
+}
+
+.rbc-wrapper .rbc-day-slot .rbc-time-slot {
+	border-top: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-time-content,
+.rbc-wrapper .rbc-time-header-content,
+.rbc-wrapper .rbc-time-gutter,
+.rbc-wrapper .rbc-day-slot,
+.rbc-wrapper .rbc-time-column,
+.rbc-wrapper .rbc-label {
+	background: var(--background);
+	color: var(--foreground);
+}
+
+.rbc-wrapper .rbc-header.rbc-today {
+	background: color-mix(in oklch, var(--primary) 10%, var(--background));
+	color: var(--primary);
+}
+
+.rbc-wrapper .rbc-off-range-bg {
+	background: var(--muted);
+}
+
+.rbc-wrapper .rbc-date-cell {
+	padding: 4px 8px;
+	font-size: 12px;
+	color: var(--muted-foreground);
+	text-align: right;
+}
+
+.rbc-wrapper .rbc-date-cell.rbc-now {
+	font-weight: 700;
+	color: var(--primary);
+}
+
+.rbc-wrapper .rbc-date-cell.rbc-off-range {
+	color: var(--border);
+}
+
+/* Events — background/border vêm do eventPropGetter (inline style) */
+.rbc-wrapper .rbc-event {
+	box-shadow: none;
+	outline: none;
+	padding: 0;
+	border-radius: 4px;
+}
+
+.rbc-wrapper .rbc-event:focus {
+	outline: none;
+}
+
+.rbc-wrapper .rbc-event.rbc-selected {
+	box-shadow: 0 0 0 2px var(--ring);
+}
+
+.rbc-wrapper .rbc-event-label {
+	display: none;
+}
+
+.rbc-wrapper .rbc-event-content {
+	font-size: 11px;
+}
+
+/* Show more */
+.rbc-wrapper .rbc-show-more {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	background: transparent;
+	padding: 0 8px;
+}
+
+.rbc-wrapper .rbc-show-more:hover {
+	color: var(--foreground);
+}
+
+/* Time view */
+.rbc-wrapper .rbc-time-header {
+	border-bottom: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-time-header-content {
+	border-left: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-time-content {
+	border-top: none;
+}
+
+.rbc-wrapper .rbc-time-content > * + * > * {
+	border-left: 1px solid var(--border);
+}
+
+.rbc-wrapper .rbc-timeslot-group {
+	border-bottom: 1px solid var(--border);
+	min-height: 44px;
+}
+
+.rbc-wrapper .rbc-time-slot {
+	font-size: 11px;
+	color: var(--muted-foreground);
+}
+
+.rbc-wrapper .rbc-current-time-indicator {
+	background-color: var(--primary);
+}
+
+/* Popup */
+.rbc-wrapper .rbc-overlay {
+	background: var(--popover);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+	padding: 8px;
+}
+
+.rbc-wrapper .rbc-overlay-header {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--muted-foreground);
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 6px;
+	margin-bottom: 6px;
+}
+
+/* Selection */
+.rbc-wrapper .rbc-slot-selection {
+	background: color-mix(in oklch, var(--primary) 15%, transparent);
+	border: 1px solid var(--primary);
+}
+
+.rbc-wrapper .rbc-selected-cell {
+	background: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+
+/* Day view — sem highlight de "hoje" (o dia inteiro já é hoje) */
+.rbc-wrapper .rbc-view-day .rbc-time-column.rbc-today,
+.rbc-wrapper .rbc-view-day .rbc-day-slot.rbc-today {
+	background: var(--background) !important;
+}
+
+.dark .rbc-wrapper .rbc-view-day .rbc-time-column.rbc-today,
+.dark .rbc-wrapper .rbc-view-day .rbc-day-slot.rbc-today {
+	background: var(--card) !important;
+}
+
+/* Eventos — limpa defaults do rbc sem sobrescrever o eventPropGetter */
+.rbc-wrapper .rbc-event,
+.rbc-wrapper .rbc-event.rbc-selected {
+	box-shadow: none;
+	outline: none;
+	padding: 0;
+	border-radius: 4px;
+	/* background e border vêm do eventPropGetter via inline style */
+}
+
+/* Dark mode — reset all hardcoded white/light colors */
+.dark .rbc-wrapper .rbc-month-view,
+.dark .rbc-wrapper .rbc-time-view,
+.dark .rbc-wrapper .rbc-agenda-view {
+	background: var(--card);
+}
+
+.dark .rbc-wrapper .rbc-header {
+	background: var(--card);
+}
+
+.dark .rbc-wrapper .rbc-off-range-bg {
+	background: color-mix(in oklch, var(--muted) 40%, transparent);
+}
+
+/* time-view: all day-slot columns */
+.dark .rbc-wrapper .rbc-time-content,
+.dark .rbc-wrapper .rbc-time-header-content,
+.dark .rbc-wrapper .rbc-time-gutter,
+.dark .rbc-wrapper .rbc-day-slot,
+.dark .rbc-wrapper .rbc-time-column,
+.dark .rbc-wrapper .rbc-label {
+	background: var(--card);
+	color: var(--foreground);
+}
+
+/* today — remove o fundo de coluna, destaca só o header */
+.rbc-wrapper .rbc-day-slot.rbc-today,
+.rbc-wrapper .rbc-time-column.rbc-today {
+	background: transparent !important;
+}
+
+.dark .rbc-wrapper .rbc-day-slot.rbc-today,
+.dark .rbc-wrapper .rbc-time-column.rbc-today {
+	background: transparent !important;
+}
+
+/* time slot dividers */
+.dark .rbc-wrapper .rbc-day-slot .rbc-time-slot {
+	border-top: 1px solid var(--border);
+}
+
+/* header today */
+.dark .rbc-wrapper .rbc-header.rbc-today {
+	background: color-mix(in oklch, var(--primary) 12%, var(--card));
+	color: var(--primary);
+}
+
+/* agenda view */
+.dark .rbc-wrapper .rbc-agenda-date-cell,
+.dark .rbc-wrapper .rbc-agenda-time-cell,
+.dark .rbc-wrapper .rbc-agenda-event-cell {
+	background: var(--card);
+	border-color: var(--border);
+	color: var(--foreground);
+}
+
+.dark .rbc-wrapper .rbc-agenda-table tbody > tr > td {
+	border-color: var(--border);
+}
+
+.dark .rbc-wrapper .rbc-agenda-table tbody > tr + tr {
+	border-top: 1px solid var(--border);
+}
+
+/* Fix para inputs de time/date */
+input[type="time"],
+input[type="date"],
+input[type="datetime-local"] {
+	accent-color: var(--primary);
+}
+
+/* Tema escuro (quando a classe "dark" está no root) */
+.dark input[type="time"]::-webkit-calendar-picker-indicator,
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+	filter: invert(1) brightness(1.2);
+	cursor: pointer;
+}
+
+/* Tema claro (padrão) */
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+	filter: none;
+	cursor: pointer;
+}

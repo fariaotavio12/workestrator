@@ -1,0 +1,23 @@
+import { ScriptWizard } from "@/features/security/scripts/components/script-wizard";
+import type { Script } from "@/features/security/orchestrator-shared/types";
+
+type Props = {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	/** Quando presente, o formulário edita o script; senão, cria um novo. */
+	script?: Script;
+	/** Conteúdo pré-preenchido (ex.: "Salvar como script" a partir de uma saída de run). */
+	prefill?: { name?: string; content?: string };
+	/** Chamado com o script criado/atualizado após salvar — permite o chamador anexá-lo em algo (ex.: um agent). */
+	onSaved?: (script: Script) => void;
+};
+
+/**
+ * Casca fina — o formulário em si é o wizard guiado (catálogo de integrações → configurar →
+ * autenticar), ver `docs/plano-redesign-scripts-wizard.md`. Mantido como componente próprio (em vez
+ * de importar `ScriptWizard` direto nos call sites) só pra preservar o caminho de import existente
+ * (`@/components/orchestrator`) sem precisar tocar em `page-scripts.tsx`/`agent-form-dialog.tsx`.
+ */
+export const ScriptFormDialog = ({ open, onOpenChange, script, prefill, onSaved }: Props) => (
+	<ScriptWizard open={open} onOpenChange={onOpenChange} script={script} prefill={prefill} onSaved={onSaved} />
+);

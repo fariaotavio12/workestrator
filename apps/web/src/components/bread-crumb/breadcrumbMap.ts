@@ -1,0 +1,26 @@
+import { Rotas } from "@/app/routing/variables";
+
+export const breadcrumbMap: Record<string, string> = {
+	[Rotas.protegidas.dashboards.home]: "",
+	[Rotas.protegidas.dashboards.overview]: "Visão geral",
+	[Rotas.protegidas.dashboards.records]: "Registros",
+	[Rotas.protegidas.dashboards.customers]: "Clientes",
+	[Rotas.protegidas.dashboards.team]: "Equipe",
+	[Rotas.protegidas.dashboards.reports]: "Relatórios",
+	[Rotas.protegidas.dashboards.settings]: "Configurações",
+	[Rotas.protegidas.dashboards.assinatura]: "Assinatura",
+	[Rotas.protegidas.dashboards.configuracoes]: "Configurações",
+	[Rotas.protegidas.orchestrator.squads]: "Squads",
+	[Rotas.protegidas.orchestrator.squadDetail]: "Detalhe do squad",
+	[Rotas.protegidas.orchestrator.scripts]: "Scripts",
+	[Rotas.protegidas.orchestrator.models]: "Modelos",
+	[Rotas.protegidas.orchestrator.executions]: "Execuções",
+	[Rotas.protegidas.orchestrator.secrets]: "Segredos",
+	[Rotas.protegidas.orchestrator.knowledge]: "Conhecimento",
+	[Rotas.protegidas.orchestrator.knowledgeDetail]: "Detalhe do conhecimento",
+	[Rotas.protegidas.orchestrator.assistant]: "Assistente",
+	[Rotas.protegidas.orchestrator.assistantSession]: "Sessão do assistente",
+	[Rotas.protegidas.admin.overview]: "Admin",
+	[Rotas.protegidas.admin.organizations]: "Organizações",
+	[Rotas.protegidas.admin.users]: "Usuários",
+};

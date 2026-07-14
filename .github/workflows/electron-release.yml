@@ -1,0 +1,218 @@
+name: Electron Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.0. Empty uses 0.0.<run_number>."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  resolve_version:
+    name: Resolve release version
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.${{ github.run_number }}"
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build desktop app
+    needs: resolve_version
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+        working-directory: apps/web
+
+      - name: Write .env.electron
+        run: echo "VITE_API_URL=https://workestrator-api.zappyon.com" > .env.electron
+        working-directory: apps/web
+        shell: bash
+
+      - name: Build executable
+        run: npm run electron:build -- --publish never --config.extraMetadata.version=${{ needs.resolve_version.outputs.version }}
+        working-directory: apps/web
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            apps/web/release/*.AppImage
+            apps/web/release/*.blockmap
+            apps/web/release/*.dmg
+            apps/web/release/*.exe
+            apps/web/release/*.yml
+          if-no-files-found: error
+
+  publish_download_manifest:
+    name: Publish release and download manifest
+    needs:
+      - resolve_version
+      - build
+    runs-on: ubuntu-latest
+    env:
+      FRONT_BASE_URL: https://workestrator.zappyon.com
+      RELEASE_VERSION: ${{ needs.resolve_version.outputs.version }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Download executable artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -eu
+
+          TAG="v${RELEASE_VERSION}"
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$RELEASE_SHA" \
+              --title "$RELEASE_VERSION" \
+              --notes ""
+          fi
+
+          find release-artifacts -type f -print0 | xargs -0 gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Download release metadata and assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -eu
+
+          TAG="v${RELEASE_VERSION}"
+          mkdir -p "download-manifest/releases/${TAG}"
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,name,url,publishedAt,isPrerelease,assets > release.json; then
+            TAG="${RELEASE_VERSION}"
+            mkdir -p "download-manifest/releases/${TAG}"
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,name,url,publishedAt,isPrerelease,assets > release.json
+          fi
+
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "download-manifest/releases/${TAG}" --skip-existing
+
+      - name: Generate releases.json
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const release = JSON.parse(fs.readFileSync("release.json", "utf8"));
+          const tag = process.env.RELEASE_TAG;
+          const baseUrl = process.env.FRONT_BASE_URL.replace(/\/$/, "");
+          const releaseDir = path.join("download-manifest", "releases", tag);
+          const installerExtensions = [".exe", ".msi", ".dmg", ".appimage", ".deb", ".rpm", ".zip"];
+
+          const getPlatform = (name) => {
+            const normalized = name.toLowerCase();
+            if (normalized.includes("win") || normalized.endsWith(".exe") || normalized.endsWith(".msi")) return "windows";
+            if (normalized.includes("mac") || normalized.includes("darwin") || normalized.endsWith(".dmg")) return "macos";
+            if (
+              normalized.includes("linux") ||
+              normalized.endsWith(".appimage") ||
+              normalized.endsWith(".deb") ||
+              normalized.endsWith(".rpm")
+            ) return "linux";
+            return "other";
+          };
+
+          const isInstaller = (name) => {
+            const normalized = name.toLowerCase();
+            return installerExtensions.some((extension) => normalized.endsWith(extension)) && !normalized.endsWith(".blockmap");
+          };
+
+          const releaseAssets = new Map((release.assets || []).map((asset) => [asset.name, asset]));
+          const assets = fs
+            .readdirSync(releaseDir)
+            .filter(isInstaller)
+            .map((name) => {
+              const file = path.join(releaseDir, name);
+              const apiAsset = releaseAssets.get(name);
+
+              return {
+                id: apiAsset?.id ?? 0,
+                name,
+                url: `${baseUrl}/releases/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`,
+                size: fs.statSync(file).size,
+                downloadCount: apiAsset?.downloadCount ?? 0,
+                platform: getPlatform(name),
+              };
+            });
+
+          const latest = {
+            name: release.name || release.tagName || tag,
+            version: release.tagName || tag,
+            url: "",
+            publishedAt: release.publishedAt || null,
+            isPrerelease: Boolean(release.isPrerelease),
+            assets,
+          };
+
+          fs.writeFileSync(
+            path.join("download-manifest", "releases.json"),
+            JSON.stringify({ latest, releases: [latest] }, null, 2) + "\n",
+          );
+          NODE
+
+      - name: Upload downloads to VPS
+        shell: bash
+        run: |
+          set -eu
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "mkdir -p /var/www/workestrator/releases"
+          rsync -az "download-manifest/releases/" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/workestrator/releases/"
+          scp "download-manifest/releases.json" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/workestrator/releases.json"

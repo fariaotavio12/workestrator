@@ -1,0 +1,23 @@
+appId: com.workestrator.app
+productName: Workestrator
+directories:
+  output: release
+files:
+  - dist-electron/**/*
+  - dist/**/*
+  - package.json
+win:
+  target: nsis
+  icon: build/icon.ico
+mac:
+  target: dmg
+  icon: build/icon.png
+linux:
+  target: AppImage
+  icon: build/icon.png
+asar: true
+publish:
+  provider: github
+  owner: fariaotavio12
+  repo: front-workestrador
+  releaseType: release

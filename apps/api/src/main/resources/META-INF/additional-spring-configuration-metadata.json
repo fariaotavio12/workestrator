@@ -1,0 +1,129 @@
+{
+	"properties": [
+		{
+			"name": "app.auth.google-success-redirect",
+			"type": "java.lang.String",
+			"description": "A description for 'app.auth.google-success-redirect'"
+		},
+		{
+			"name": "app.auth.secure-cookie",
+			"type": "java.lang.String",
+			"description": "A description for 'app.auth.secure-cookie'"
+		},
+		{
+			"name": "app.auth.session-duration-hours",
+			"type": "java.lang.String",
+			"description": "A description for 'app.auth.session-duration-hours'"
+		},
+		{
+			"name": "app.auth.cookie-max-age",
+			"type": "java.lang.String",
+			"description": "A description for 'app.auth.cookie-max-age'"
+		},
+		{
+			"name": "app.auth.cookie-name",
+			"type": "java.lang.String",
+			"description": "A description for 'app.auth.cookie-name'"
+		},
+		{
+			"name": "app.cors.allowed-origin-patterns",
+			"type": "java.util.List<java.lang.String>",
+			"description": "Allowed CORS origin patterns"
+		},
+		{
+			"name": "app.cors.allowed-methods",
+			"type": "java.util.List<java.lang.String>",
+			"description": "Allowed CORS HTTP methods"
+		},
+		{
+			"name": "app.cors.allowed-headers",
+			"type": "java.util.List<java.lang.String>",
+			"description": "Allowed CORS request headers"
+		},
+		{
+			"name": "app.cors.exposed-headers",
+			"type": "java.util.List<java.lang.String>",
+			"description": "CORS response headers exposed to browser"
+		},
+		{
+			"name": "app.cors.allow-credentials",
+			"type": "java.lang.Boolean",
+			"description": "Whether credentials are allowed on CORS requests"
+		},
+		{
+			"name": "app.cors.max-age",
+			"type": "java.lang.Long",
+			"description": "Preflight cache duration in seconds"
+		},
+		{
+			"name": "app.storage.cloudflare.enabled",
+			"type": "java.lang.Boolean",
+			"description": "Enable or disable Cloudflare R2 storage integration"
+		},
+		{
+			"name": "app.storage.cloudflare.account-id",
+			"type": "java.lang.String",
+			"description": "Cloudflare account ID for R2 endpoint"
+		},
+		{
+			"name": "app.storage.cloudflare.access-key-id",
+			"type": "java.lang.String",
+			"description": "Cloudflare R2 access key ID"
+		},
+		{
+			"name": "app.storage.cloudflare.secret-access-key",
+			"type": "java.lang.String",
+			"description": "Cloudflare R2 secret access key"
+		},
+		{
+			"name": "app.storage.cloudflare.bucket",
+			"type": "java.lang.String",
+			"description": "Default Cloudflare R2 bucket"
+		},
+		{
+			"name": "app.storage.cloudflare.region",
+			"type": "java.lang.String",
+			"description": "Cloudflare R2 region (default auto)"
+		},
+		{
+			"name": "app.storage.cloudflare.public-url-base",
+			"type": "java.lang.String",
+			"description": "Optional public URL base for CDN/custom domain"
+		},
+		{
+			"name": "app.mail.enabled",
+			"type": "java.lang.Boolean",
+			"description": "Enable or disable email sending"
+		},
+		{
+			"name": "app.mail.from-email",
+			"type": "java.lang.String",
+			"description": "Default sender email"
+		},
+		{
+			"name": "app.mail.from-name",
+			"type": "java.lang.String",
+			"description": "Default sender name"
+		},
+		{
+			"name": "app.bot.waha.enabled",
+			"type": "java.lang.Boolean",
+			"description": "Enable or disable WAHA integration"
+		},
+		{
+			"name": "app.bot.waha.base-url",
+			"type": "java.lang.String",
+			"description": "Base URL for WAHA API"
+		},
+		{
+			"name": "app.bot.waha.api-key",
+			"type": "java.lang.String",
+			"description": "API key used to authenticate WAHA requests"
+		},
+		{
+			"name": "app.bot.waha.webhook-secret",
+			"type": "java.lang.String",
+			"description": "Shared secret used to validate WAHA webhooks"
+		}
+	]
+}

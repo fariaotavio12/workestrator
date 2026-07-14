@@ -1,0 +1,12 @@
+{
+	"mcpServers": {
+		"workestrator": {
+			"command": "npx",
+			"args": ["tsx", "electron/mcp-server/index.ts"],
+			"env": {
+				"WORKESTRATOR_TOKEN": "${WORKESTRATOR_TOKEN:-}",
+				"WORKESTRATOR_API_URL": "${WORKESTRATOR_API_URL:-http://localhost:8080}"
+			}
+		}
+	}
+}

@@ -1,0 +1,26 @@
+{
+  "name": "workestrator",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Workestrator monorepo.",
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "build:web:dev": "npm --prefix apps/web run build:dev",
+    "build:web:main": "npm --prefix apps/web run build:main",
+    "lint:web": "npm --prefix apps/web run lint",
+    "test:web": "npm --prefix apps/web run test",
+    "verify:web": "npm --prefix apps/web run verify",
+    "format:web": "npm --prefix apps/web run format",
+    "format:web:check": "npm --prefix apps/web run format:check",
+    "dev:api": "cd apps/api && gradlew.bat bootRun",
+    "build:api": "cd apps/api && gradlew.bat build",
+    "test:api": "cd apps/api && gradlew.bat test",
+    "verify:api": "cd apps/api && gradlew.bat build",
+    "dev": "npm run dev:web",
+    "build": "npm run build:web && npm run build:api",
+    "lint": "npm run lint:web",
+    "test": "npm run test:web && npm run test:api",
+    "verify": "npm run verify:web && npm run verify:api"
+  }
+}

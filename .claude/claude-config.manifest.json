@@ -1,0 +1,34 @@
+{
+  "package": "otavio-claude-config",
+  "profile": "react-vite",
+  "installedAt": "2026-07-13T03:13:02.131Z",
+  "skills": [
+    "api-service",
+    "architecture",
+    "auth",
+    "code-style",
+    "design-preferences",
+    "error-handling",
+    "i18n-screens",
+    "icons",
+    "pagination",
+    "providers",
+    "routing",
+    "state",
+    "styling",
+    "tables",
+    "testing",
+    "translations",
+    "typography",
+    "validation"
+  ],
+  "agents": [
+    "i18n.md",
+    "lint.md",
+    "redesign.md",
+    "review.md",
+    "scaffold.md",
+    "storybook.md",
+    "testing.md"
+  ]
+}

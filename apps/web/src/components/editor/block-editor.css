@@ -1,0 +1,256 @@
+.block-editor-shell {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.block-editor-toolbar {
+	position: sticky;
+	top: 0.75rem;
+	z-index: 5;
+	display: flex;
+	width: 100%;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: color-mix(in oklch, var(--card) 94%, transparent);
+	padding: 0.375rem;
+	box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 6%, transparent);
+	backdrop-filter: blur(10px);
+}
+
+.block-editor-toolbar button {
+	border-radius: calc(var(--radius) - 2px);
+}
+
+.block-editor {
+	--bn-colors-editor-background: transparent;
+	--bn-colors-editor-text: var(--foreground);
+	--bn-colors-menu-text: var(--popover-foreground);
+	--bn-colors-menu-background: var(--popover);
+	--bn-colors-tooltip-text: var(--popover-foreground);
+	--bn-colors-tooltip-background: var(--popover);
+	--bn-colors-hovered-text: var(--foreground);
+	--bn-colors-hovered-background: color-mix(in oklch, var(--muted) 72%, transparent);
+	--bn-colors-selected-text: var(--accent-foreground);
+	--bn-colors-selected-background: var(--accent);
+	--bn-colors-disabled-text: var(--muted-foreground);
+	--bn-colors-disabled-background: var(--muted);
+	--bn-colors-shadow: color-mix(in oklch, var(--foreground) 14%, transparent);
+	--bn-colors-border: var(--border);
+	--bn-colors-side-menu: var(--muted-foreground);
+	--bn-colors-highlights-gray-background: var(--muted);
+	--bn-colors-highlights-blue-background: color-mix(in oklch, var(--primary) 16%, transparent);
+	--bn-colors-highlights-green-background: color-mix(in oklch, var(--primary) 12%, transparent);
+	--bn-border-radius: var(--radius);
+	color: var(--foreground);
+}
+
+.block-editor,
+.block-editor .bn-container,
+.block-editor .bn-editor {
+	background: transparent;
+	background-color: transparent;
+	font-family: inherit;
+}
+
+.block-editor .bn-editor {
+	min-height: 16rem;
+	padding-block: 0.25rem;
+	padding-inline: 2.25rem 0;
+	border-radius: 0;
+	box-shadow: none;
+	outline: none;
+}
+
+.block-editor .bn-block-content {
+	font-size: 0.98rem;
+	line-height: 1.75;
+	color: var(--foreground);
+}
+
+.block-editor .bn-block-outer {
+	line-height: 1.65;
+}
+
+.block-editor .bn-inline-content:has(> .ProseMirror-trailingBreak:only-child)::before {
+	color: var(--muted-foreground);
+	opacity: 0.72;
+}
+
+.block-editor .bn-block-content[data-content-type="heading"][data-level="1"] {
+	margin-top: 1.25rem;
+	margin-bottom: 0.6rem;
+	font-size: 2.35rem;
+	font-weight: 750;
+	line-height: 1.12;
+}
+
+.block-editor .bn-block-content[data-content-type="heading"][data-level="2"] {
+	margin-top: 1rem;
+	margin-bottom: 0.45rem;
+	font-size: 1.65rem;
+	font-weight: 700;
+	line-height: 1.22;
+}
+
+.block-editor .bn-block-content[data-content-type="heading"][data-level="3"] {
+	margin-top: 0.85rem;
+	margin-bottom: 0.35rem;
+	font-size: 1.2rem;
+	font-weight: 650;
+	line-height: 1.3;
+}
+
+.block-editor .bn-block-content[data-content-type="file"] {
+	border: 1px solid var(--border);
+	border-radius: calc(var(--radius) - 2px);
+	background: var(--card);
+}
+
+.block-editor .bn-block-content[data-content-type="image"] img {
+	border-radius: calc(var(--radius) - 2px);
+}
+
+.block-editor .bn-inline-content code {
+	border-radius: 0.25rem;
+	background: var(--muted);
+	padding: 0.12rem 0.3rem;
+}
+
+.block-editor .bn-block-content.ProseMirror-selectednode > *,
+.block-editor .ProseMirror-selectednode > .bn-block-content > * {
+	border-radius: calc(var(--radius) - 2px);
+	outline: 2px solid color-mix(in oklch, var(--primary) 45%, transparent);
+}
+
+.block-editor .bn-block-content[data-content-type="horizontalRule"].ProseMirror-selectednode > *,
+.block-editor .ProseMirror-selectednode > .bn-block-content[data-content-type="horizontalRule"] > * {
+	outline: none;
+	box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+.block-editor .bn-side-menu .mantine-UnstyledButton-root:not(.mantine-Menu-item) {
+	color: var(--muted-foreground);
+}
+
+.block-editor .bn-side-menu .mantine-UnstyledButton-root:not(.mantine-Menu-item):hover,
+.block-editor .bn-toolbar .mantine-Button-root:hover,
+.block-editor .bn-toolbar .mantine-ActionIcon-root:hover {
+	background: var(--muted);
+	color: var(--foreground);
+}
+
+/* Centraliza o handle (+/arrastar) na linha do bloco. O BlockNote alinha o
+   side menu pela ALTURA da caixa (height = caixa-da-linha + 6px de padding),
+   com valores calibrados para a tipografia padrao dele. Como sobrescrevemos
+   font-size/line-height de paragrafo e titulos, recalculamos essas alturas
+   para a nossa tipografia; caso contrario o handle fica abaixo (titulos) ou
+   levemente acima (paragrafo) do texto. */
+.block-editor .bn-side-menu {
+	height: 33px; /* 0.98rem * 1.75 + 6 */
+}
+
+.block-editor .bn-side-menu[data-block-type="heading"][data-level="1"] {
+	height: 48px; /* 2.35rem * 1.12 + 6 */
+}
+
+.block-editor .bn-side-menu[data-block-type="heading"][data-level="2"] {
+	height: 38px; /* 1.65rem * 1.22 + 6 */
+}
+
+.block-editor .bn-side-menu[data-block-type="heading"][data-level="3"] {
+	height: 31px; /* 1.2rem * 1.3 + 6 */
+}
+
+/* Preserva as alturas dos blocos não-textuais (a base acima venceria por
+   especificidade + ordem de import). */
+.block-editor .bn-side-menu[data-block-type="file"] {
+	height: 38px;
+}
+
+.block-editor .bn-side-menu[data-block-type="audio"] {
+	height: 60px;
+}
+
+.block-editor .bn-side-menu[data-url="false"] {
+	height: 54px;
+}
+
+.block-editor-readonly .bn-side-menu,
+.block-editor-readonly .bn-formatting-toolbar,
+.block-editor-readonly .bn-suggestion-menu {
+	display: none;
+}
+
+/* Tabela com aparência limpa (estilo Notion): contorno arredondado na própria
+   tabela (width:auto), respeitando o tamanho do conteúdo — não o wrapper. */
+.block-editor .bn-editor [data-content-type="table"] table {
+	border-collapse: separate;
+	border-spacing: 0;
+	border: 1px solid var(--border);
+	border-radius: calc(var(--radius) - 2px);
+	overflow: hidden;
+	font-size: 0.92rem;
+}
+
+/* Grade interna: cada célula desenha só direita/baixo (a borda da tabela faz o
+   contorno). Zera as bordas cima/esquerda do BlockNote (1px solid #ddd) que
+   apareciam claras sobre o tema escuro. */
+.block-editor .bn-editor [data-content-type="table"] th,
+.block-editor .bn-editor [data-content-type="table"] td {
+	border-top: none;
+	border-left: none;
+	border-right: 1px solid var(--border);
+	border-bottom: 1px solid var(--border);
+	padding: 0.45rem 0.65rem;
+	vertical-align: top;
+}
+
+.block-editor .bn-editor [data-content-type="table"] tr > *:last-child {
+	border-right: none;
+}
+
+.block-editor .bn-editor [data-content-type="table"] tr:last-child > * {
+	border-bottom: none;
+}
+
+.block-editor .bn-editor [data-content-type="table"] th {
+	background: color-mix(in oklch, var(--muted) 70%, transparent);
+	font-weight: 600;
+	color: var(--foreground);
+}
+
+.block-editor .bn-editor [data-content-type="table"] th > p,
+.block-editor .bn-editor [data-content-type="table"] td > p {
+	margin: 0;
+}
+
+/* Destaque temporário ao navegar por um título via sumário (TOC). */
+@keyframes kb-heading-flash {
+	0% {
+		background: color-mix(in oklch, var(--primary) 22%, transparent);
+		box-shadow:
+			-0.75rem 0 0 color-mix(in oklch, var(--primary) 22%, transparent),
+			0.75rem 0 0 color-mix(in oklch, var(--primary) 22%, transparent);
+	}
+	100% {
+		background: transparent;
+		box-shadow:
+			-0.75rem 0 0 transparent,
+			0.75rem 0 0 transparent;
+	}
+}
+
+.kb-heading-flash {
+	border-radius: var(--radius);
+	animation: kb-heading-flash 1.6s ease-out;
+}
+
+@media print {
+	.kb-print-hide {
+		display: none !important;
+	}
+}

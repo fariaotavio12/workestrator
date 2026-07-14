@@ -1,0 +1,7 @@
+{
+  "targets": [
+    "claude"
+  ],
+  "backend": "claude",
+  "version": "1.0"
+}

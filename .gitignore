@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+
+# Build outputs
+dist/
+build/
+release/
+storybook-static/
+dist-electron/
+apps/*/dist/
+apps/*/build/
+apps/*/release/
+apps/*/storybook-static/
+apps/*/dist-electron/
+
+# Local runtime output
+orchestrator-workspace/
+apps/*/orchestrator-workspace/
+
+# Logs
+*.log
+codex-vite-*.log
+vite-dev*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+!apps/*/.env.example
+
+# Tool caches
+.gradle/
+.kotlin/
+apps/*/.gradle/
+apps/*/.gradle-home/
+apps/*/.kotlin/
+.claude/settings.local.json
+apps/*/.claude/settings.local.json
+.turbo/
+.vite/
+.DS_Store

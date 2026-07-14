@@ -1,0 +1,17 @@
+# Robots.txt for Workestrator
+
+User-agent: *
+Allow: /
+Allow: /precos
+Allow: /download
+Allow: /politica-de-privacidade
+Allow: /help-center/
+Allow: /login
+Allow: /recuperar-senha
+Allow: /registrar
+Allow: /completar-cadastro
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /api
+
+Sitemap: https://workestrator.zappyon.com/sitemap.xml
