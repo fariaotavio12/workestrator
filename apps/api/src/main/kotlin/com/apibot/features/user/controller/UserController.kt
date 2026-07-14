@@ -6,6 +6,7 @@ import com.apibot.features.user.dto.UpdateUserRequest
 import com.apibot.features.user.dto.UserResponse
 import com.apibot.features.user.model.UserFilter
 import com.apibot.features.user.model.toResponse
+import com.apibot.shared.exceptions.ServiceUnavailableException
 import com.apibot.shared.extensions.PageRequestParams
 import com.apibot.shared.extensions.PageResult
 import com.apibot.shared.extensions.map
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -26,7 +28,7 @@ import java.util.UUID
 @Tag(name = "User")
 class UserController(
     private val userService: UserService,
-    private val mediaUploadService: MediaUploadService,
+    private val mediaUploadServiceProvider: ObjectProvider<MediaUploadService>,
 ) {
     @PostMapping
     @Operation(summary = "Create a new user")
@@ -113,6 +115,8 @@ class UserController(
         @PathVariable id: UUID,
         @RequestParam("file") file: MultipartFile,
     ): ResponseEntity<UserResponse> {
+        val mediaUploadService = mediaUploadServiceProvider.ifAvailable
+            ?: throw ServiceUnavailableException("Upload de mídia não está configurado")
         val uploadedMedia = mediaUploadService.uploadAvatar(file, id)
         val user = userService.updateUser(id, UpdateUserRequest(img = uploadedMedia.url))
         return ResponseEntity.ok(user.toResponse())

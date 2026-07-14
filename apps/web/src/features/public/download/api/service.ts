@@ -8,7 +8,7 @@ import type {
 	GitHubReleaseDto,
 } from "./types";
 
-const RELEASES_ENDPOINT = "https://api.github.com/repos/fariaotavio12/front-workestrador/releases";
+const RELEASES_ENDPOINT = "https://api.github.com/repos/fariaotavio12/workestrator/releases";
 const RELEASES_MANIFEST_ENDPOINT = "/releases.json";
 
 const INSTALLER_EXTENSIONS = [".exe", ".msi", ".dmg", ".appimage", ".deb", ".rpm", ".zip"];
