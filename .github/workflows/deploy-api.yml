@@ -32,6 +32,8 @@ jobs:
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_NAME}" = "main" ]; then
             echo "IMAGE_TAG=main" >> "$GITHUB_ENV"
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            echo "IMAGE_TAG=dev" >> "$GITHUB_ENV"
           else
             echo "IMAGE_TAG=pr" >> "$GITHUB_ENV"
           fi
@@ -40,7 +42,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        if: github.event_name == 'push' && github.ref_name == 'main'
+        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USER }}
@@ -51,20 +53,18 @@ jobs:
         with:
           context: apps/api
           file: apps/api/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          push: ${{ github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev') }}
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
   cd:
     name: Deploy API to VPS
     needs: ci
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
 
     env:
       IMAGE_NAME: fariaotavio12/backend-orquestrador
-      IMAGE_TAG: main
-      CONTAINER_NAME: backend-orquestrador-main
-      HOST_PORT: 8092
 
     steps:
       - name: SSH into server and deploy container
@@ -76,17 +76,39 @@ jobs:
           script: |
             set -eu
 
-            ENV_FILE="/tmp/${{ env.CONTAINER_NAME }}.env"
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              IMAGE_TAG="main"
+              CONTAINER_NAME="backend-orquestrador-main"
+              HOST_PORT="8092"
+              WEB_BASE_URL="https://workestrator.zappyon.com"
+              ALLOWED_REDIRECT_HOSTS="workestrator.zappyon.com,localhost,127.0.0.1"
+              DB_URL="${{ secrets.DB_URL_PROD }}"
+              DB_USERNAME="${{ secrets.DB_USERNAME_PROD }}"
+              DB_PASSWORD="${{ secrets.DB_PASSWORD_PROD }}"
+              SECRETS_MASTER_KEY="${{ secrets.SECRETS_MASTER_KEY_PROD }}"
+            else
+              IMAGE_TAG="dev"
+              CONTAINER_NAME="backend-orquestrador-dev"
+              HOST_PORT="8093"
+              WEB_BASE_URL="https://dev.workestrator.zappyon.com"
+              ALLOWED_REDIRECT_HOSTS="dev.workestrator.zappyon.com,localhost,127.0.0.1"
+              DB_URL="${{ secrets.DB_URL_DEV }}"
+              DB_USERNAME="${{ secrets.DB_USERNAME_DEV }}"
+              DB_PASSWORD="${{ secrets.DB_PASSWORD_DEV }}"
+              SECRETS_MASTER_KEY="${{ secrets.SECRETS_MASTER_KEY_PROD }}"
+            fi
+
+            ENV_FILE="/tmp/${CONTAINER_NAME}.env"
 
             {
               echo "SPRING_PROFILES_ACTIVE=prod"
               echo "TZ=America/Sao_Paulo"
-              echo "DB_URL=${{ secrets.DB_URL_PROD }}"
-              echo "DB_USERNAME=${{ secrets.DB_USERNAME_PROD }}"
-              echo "DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }}"
-              echo "APP_AUTH_GOOGLE_SUCCESS_REDIRECT=https://workestrator.zappyon.com/auth/google/success"
-              echo "APP_AUTH_PASSWORD_RESET_BASE_URL=https://workestrator.zappyon.com/recuperar-senha"
-              echo "APP_AUTH_ALLOWED_REDIRECT_HOSTS=workestrator.zappyon.com,localhost,127.0.0.1"
+              echo "DB_URL=${DB_URL}"
+              echo "DB_USERNAME=${DB_USERNAME}"
+              echo "DB_PASSWORD=${DB_PASSWORD}"
+              echo "APP_AUTH_GOOGLE_SUCCESS_REDIRECT=${WEB_BASE_URL}/auth/google/success"
+              echo "APP_AUTH_PASSWORD_RESET_BASE_URL=${WEB_BASE_URL}/recuperar-senha"
+              echo "APP_AUTH_ALLOWED_REDIRECT_HOSTS=${ALLOWED_REDIRECT_HOSTS}"
               echo "MAIL_HOST=smtp.hostinger.com"
               echo "MAIL_PORT=587"
               echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}"
@@ -98,7 +120,7 @@ jobs:
               echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
               echo "BETTERSTACK_SOURCE_TOKEN=${{ secrets.BETTERSTACK_SOURCE_TOKEN }}"
               echo "VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}"
-              echo "SECRETS_MASTER_KEY=${{ secrets.SECRETS_MASTER_KEY_PROD }}"
+              echo "SECRETS_MASTER_KEY=${SECRETS_MASTER_KEY}"
             } > "$ENV_FILE"
 
             echo "Env keys loaded for container:"
@@ -113,13 +135,13 @@ jobs:
             done
 
             docker login -u "${{ secrets.DOCKER_USER }}" -p "${{ secrets.DOCKER_TOKEN }}"
-            docker stop "${{ env.CONTAINER_NAME }}" || true
-            docker rm "${{ env.CONTAINER_NAME }}" || true
-            docker rmi "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" || true
-            docker pull "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+            docker stop "${CONTAINER_NAME}" || true
+            docker rm "${CONTAINER_NAME}" || true
+            docker rmi "${{ env.IMAGE_NAME }}:${IMAGE_TAG}" || true
+            docker pull "${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
             docker run -d \
               --restart unless-stopped \
-              -p "${{ env.HOST_PORT }}:8080" \
+              -p "${HOST_PORT}:8080" \
               --env-file "$ENV_FILE" \
-              --name "${{ env.CONTAINER_NAME }}" \
-              "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+              --name "${CONTAINER_NAME}" \
+              "${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
