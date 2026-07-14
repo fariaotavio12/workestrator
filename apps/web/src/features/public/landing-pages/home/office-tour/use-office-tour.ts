@@ -280,6 +280,7 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		walking,
 		direction,
 		tick,
+		scrolled,
 		chestOpen,
 		ctaVisible,
 		announcement,

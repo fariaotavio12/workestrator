@@ -107,6 +107,7 @@ export const OfficeTour = () => {
 
 					{stations.map((station, i) => {
 						const isPlayerStation = station.isPlayerStation;
+						const isActive = activeIndex === i && (i > 0 || tour.scrolled);
 						return (
 							<div
 								key={station.num}
@@ -114,6 +115,20 @@ export const OfficeTour = () => {
 								className="absolute z-[8] flex flex-col items-center gap-3"
 								style={{ bottom: "19.6%", left: world.xs[i], transform: "translateX(-50%)", width: "min(330px,78vw)" }}
 							>
+								<div
+									className="bg-card border-border rounded-2xl border p-4 text-center shadow-lg"
+									style={{
+										visibility: isActive ? "visible" : "hidden",
+										opacity: isActive ? 1 : 0,
+										transform: `translateY(${isActive ? 0 : 10}px)`,
+										transition: "opacity .25s ease, transform .25s ease",
+									}}
+								>
+									<Typography variant="title-sm">{station.quote}</Typography>
+									<Typography variant="body-sm" className="text-muted-foreground mt-1.5">
+										{station.subtitle}
+									</Typography>
+								</div>
 								{!isPlayerStation && (
 									<img
 										src={tour.avatarSrc(station.avatar, tour.poseFor(i), tour.tick)}
