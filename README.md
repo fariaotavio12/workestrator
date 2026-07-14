@@ -1,107 +1,95 @@
 # Workestrator
 
-Monorepo for the Workestrator product.
+**Monte squads de agentes de IA que colaboram automaticamente para cumprir uma tarefa — coordenados por um orquestrador que decide, passo a passo, quem age em seguida.**
 
-## Structure
+Não há pipeline fixo. Você monta um "escritório" com agentes (cada um com seu papel, prompt e modelo), senta eles em cadeiras, e um agente coordenador decide dinamicamente qual deles trabalha a cada passo até a tarefa terminar.
+
+> ⚠️ **Projeto em desenvolvimento ativo.** APIs, esquema e telas ainda mudam. Veja [Segurança](#segurança) antes de rodar com execução real habilitada.
+
+<!-- TODO: adicionar um GIF/screenshot do "escritório" com um run acontecendo. Uma demo visual aqui é o que mais converte visitante em usuário. -->
+<!-- ![Workestrator em ação](docs/assets/demo.gif) -->
+
+## Por que é diferente
+
+- **Orquestração dinâmica, não workflow fixo.** O coordenador escolhe o próximo agente a cada passo com base no que já rodou — não um DAG desenhado à mão.
+- **Roda com as CLIs locais que você já autenticou.** Em vez de exigir API keys, o runner pode usar o `claude`, `codex` ou `gpt` já logados na sua máquina (também suporta Anthropic API, OpenAI e endpoints OpenAI-compat).
+- **App desktop (Electron) para execução real.** Agentes podem usar ferramentas de verdade (Bash/Read/Write/Edit) numa pasta de trabalho escopada, além de scripts e servidores MCP.
+- **Checkpoints e perguntas no meio do run.** Um agente pode pausar pedindo aprovação humana ou fazer uma pergunta antes de continuar.
+- **Caminho para virar plataforma de comunidade** — compartilhar e importar squads, skills e knowledge bases (veja [`docs/community-platform-plan.md`](docs/community-platform-plan.md)).
+
+## Estrutura
 
 ```txt
 apps/
-  web/  # React, Vite and Electron client
-  api/  # Kotlin and Spring Boot API
+  web/  # Cliente React + Vite + Electron
+  api/  # API Kotlin + Spring Boot
 ```
 
-The root repository is for orchestration, CI, documentation and future shared contracts. Each app keeps its own toolchain and local project rules.
+Cada app mantém sua própria toolchain. A raiz do repositório serve para orquestração, CI, documentação e contratos compartilhados futuros.
 
-## Apps
+- [`apps/web`](apps/web/README.md) — SPA React e app desktop Electron. **Comece por aqui** — o README dele explica o domínio (squads, agentes, cadeiras, scripts, runtime) em detalhe.
+- [`apps/api`](apps/api/README.md) — API REST (auth, usuários, storage, embeddings).
 
-- `apps/web`: frontend SPA and Electron desktop client.
-- `apps/api`: backend REST API.
+## Requisitos
 
-## Commands
+- Node.js 20+ e npm
+- Java 21 (para o backend)
+- PostgreSQL (para o backend)
+- Para execução real de agentes via CLI local: `claude`, `codex` ou `gpt` instalados e autenticados no seu PATH
 
-From the monorepo root:
+## Quickstart
 
 ```bash
-npm run dev:web       # start the Vite web app
-npm run dev:api       # start the Spring Boot API
-npm run build:web     # build the frontend
-npm run build:api     # build the backend
-npm run verify:web    # frontend lint + build
-npm run verify:api    # backend Gradle build
-npm run verify        # verify web + API
+git clone https://github.com/fariaotavio12/workestrator.git
+cd workestrator
+
+# Frontend
+cp apps/web/.env.example apps/web/.env
+npm run dev:web        # http://localhost:5173
+
+# Backend (em outro terminal)
+cp apps/api/.env.example apps/api/.env   # preencha DB e as variáveis necessárias
+npm run dev:api        # http://localhost:8080  (Swagger em /swagger-ui.html)
 ```
 
-App-local commands still work:
+Para rodar o app desktop com execução real de agentes:
 
 ```bash
 cd apps/web
-npm run dev
-npm run verify
+npm run electron:dev
 ```
+
+## Comandos (raiz do monorepo)
 
 ```bash
-cd apps/api
-gradlew.bat bootRun
-gradlew.bat build
+npm run dev:web       # Vite dev server
+npm run dev:api       # Spring Boot API
+npm run build         # build web + API
+npm run test          # testes web + API
+npm run verify        # lint/build web + build API
 ```
 
-## Environment
+Comandos por app continuam funcionando de dentro de `apps/web` e `apps/api`.
 
-Frontend:
+## Como funciona uma execução (resumo)
 
-```txt
-apps/web/.env.example
-apps/web/.env
-apps/web/.env.main
-apps/web/.env.electron
-```
+1. Você escreve um briefing e dispara o run de um squad.
+2. O **coordenador** recebe o briefing + as cadeiras ocupadas + o histórico do run e responde qual agente age em seguida (ou `done`).
+3. O agente escolhido é chamado no provider configurado; a saída vira o "handoff" para o próximo passo.
+4. Repete até o coordenador dizer `done` ou atingir o `maxSteps`. Checkpoints e perguntas podem pausar o run pedindo interação humana.
 
-Backend:
+O detalhamento completo (motor de execução, streaming SSE, runtime efêmero em Zustand, server state em TanStack Query) está no [README do `apps/web`](apps/web/README.md).
 
-```txt
-apps/api/.env.example
-apps/api/.env
-```
+## Contribuindo
 
-Local `.env` files are ignored by Git. Keep real secrets out of the repository.
+Contribuições são bem-vindas! Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para o setup local e o fluxo de branches (`dev` → `main`). Antes de mexer no código, veja também `AGENTS.md` e `CLAUDE.md` na raiz.
 
-## CI and Deploy
+## Segurança
 
-GitHub Actions live at the monorepo root:
+O runner do Workestrator **executa binários e scripts locais** (com auto-aceite de permissões quando `canExecute` está ligado). Trate squads e scripts importados como código não confiável. Nunca commite segredos — use os arquivos `.env` (gitignored) a partir dos `.env.example`.
 
-```txt
-.github/workflows/
-  ci.yml                # frontend CI
-  deploy.yml            # frontend web deploy
-  deploy-api.yml        # backend Docker build/deploy
-  electron-release.yml  # desktop release
-```
+Para reportar uma vulnerabilidade, veja [SECURITY.md](SECURITY.md). **Não** abra issue pública para falhas de segurança.
 
-The backend deploy builds from `apps/api/Dockerfile`. The frontend deploy builds from `apps/web`.
+## Licença
 
-## Agent Guidance
-
-Read `AGENTS.md` and `CLAUDE.md` at the root before editing. App-specific rules remain close to each app:
-
-```txt
-apps/web/AGENTS.md
-apps/web/CLAUDE.md
-apps/web/.claude
-apps/api/CLAUDE.md
-apps/api/.claude
-```
-
-The root `.claude` folder is namespaced by app:
-
-```txt
-.claude/skills/web
-.claude/skills/api
-.claude/agents/web
-.claude/agents/api
-```
-
-## Next Steps
-
-- Decide whether the old standalone repositories should be archived after this monorepo is committed and pushed.
-- Update any deployment secrets or GitHub repository settings that still point to the old standalone repositories.
-- Add a generated API contract package under `packages/contracts` if frontend/backend contract drift becomes painful.
+[Apache License 2.0](LICENSE) © 2026 Otávio Faria.
