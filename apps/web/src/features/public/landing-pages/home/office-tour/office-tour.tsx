@@ -1,3 +1,6 @@
+import { useAuth } from "@/app/providers/authProvider";
+import { Rotas } from "@/app/routing/variables";
+import { CustomLink } from "@/components/link";
 import { Typography } from "@/components/typography";
 import { Volume2, VolumeX, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, type CSSProperties } from "react";
@@ -31,15 +34,12 @@ const SpriteLayer = ({ sprites, style }: { sprites: Sprite[]; style?: CSSPropert
 	</>
 );
 
-/**
- * Hero da home: escritório 2D com scroll horizontal (sticky + parallax). Cai pro fallback estático
- * em `prefers-reduced-motion` — a lógica de layout/scroll vive em `useOfficeTour`.
- */
 export const OfficeTour = () => {
 	const midRef = useRef<HTMLDivElement>(null);
 	const bgRef = useRef<HTMLDivElement>(null);
 	const fgRef = useRef<HTMLDivElement>(null);
 	const tour = useOfficeTour({ midRef, bgRef, fgRef });
+	const { user } = useAuth();
 
 	if (tour.reducedMotion || !tour.world) return <OfficeTourStatic />;
 
@@ -66,7 +66,7 @@ export const OfficeTour = () => {
 				Pular para o final — Entrar
 			</a>
 
-			<div className="sticky top-16 w-full overflow-hidden" style={{ height: "calc(100svh - 4rem)" }}>
+			<div className="sticky top-0 w-full overflow-hidden" style={{ height: "100svh" }}>
 				<div className="bg-layout absolute inset-0" />
 				<div className="bg-muted border-border absolute inset-x-0 bottom-0 border-t-[3px]" style={{ height: "21%" }} />
 
@@ -90,11 +90,14 @@ export const OfficeTour = () => {
 							O Escritório do Orquestrador
 						</Typography>
 						<Typography variant="body-md" className="text-muted-foreground max-w-[46ch]">
-							Monte squads de agentes de IA — Claude, GPT, Gemini ou modelos locais — num escritório que roda
-							inteiro no seu navegador. Aqui, quem coordena é um agente também.
+							Monte squads de agentes de IA — Claude, GPT, Gemini ou modelos locais — num escritório que roda inteiro no
+							seu navegador. Aqui, quem coordena é um agente também.
 						</Typography>
 						<div className="mt-1.5 flex items-center gap-2.5">
-							<span aria-hidden="true" className="text-primary animate-[wkhint_1.3s_ease-in-out_infinite] text-base font-semibold">
+							<span
+								aria-hidden="true"
+								className="text-primary animate-[wkhint_1.3s_ease-in-out_infinite] text-base font-semibold"
+							>
 								→
 							</span>
 							<Typography variant="caption" className="text-muted-foreground font-mono">
@@ -107,7 +110,8 @@ export const OfficeTour = () => {
 
 					{stations.map((station, i) => {
 						const isPlayerStation = station.isPlayerStation;
-						const isActive = activeIndex === i && (i > 0 || tour.scrolled);
+						const isLastStation = i === world.lastIndex;
+						const isActive = !isLastStation && activeIndex === i && (i > 0 || tour.scrolled);
 						return (
 							<div
 								key={station.num}
@@ -115,20 +119,22 @@ export const OfficeTour = () => {
 								className="absolute z-[8] flex flex-col items-center gap-3"
 								style={{ bottom: "19.6%", left: world.xs[i], transform: "translateX(-50%)", width: "min(330px,78vw)" }}
 							>
-								<div
-									className="bg-card border-border rounded-2xl border p-4 text-center shadow-lg"
-									style={{
-										visibility: isActive ? "visible" : "hidden",
-										opacity: isActive ? 1 : 0,
-										transform: `translateY(${isActive ? 0 : 10}px)`,
-										transition: "opacity .25s ease, transform .25s ease",
-									}}
-								>
-									<Typography variant="title-sm">{station.quote}</Typography>
-									<Typography variant="body-sm" className="text-muted-foreground mt-1.5">
-										{station.subtitle}
-									</Typography>
-								</div>
+								{!isLastStation && (
+									<div
+										className="bg-card border-border rounded-2xl border p-4 text-center shadow-lg"
+										style={{
+											visibility: isActive ? "visible" : "hidden",
+											opacity: isActive ? 1 : 0,
+											transform: `translateY(${isActive ? 0 : 10}px)`,
+											transition: "opacity .25s ease, transform .25s ease",
+										}}
+									>
+										<Typography variant="title-sm">{station.quote}</Typography>
+										<Typography variant="body-sm" className="text-muted-foreground mt-1.5">
+											{station.subtitle}
+										</Typography>
+									</div>
+								)}
 								{!isPlayerStation && (
 									<img
 										src={tour.avatarSrc(station.avatar, tour.poseFor(i), tour.tick)}
@@ -159,15 +165,38 @@ export const OfficeTour = () => {
 						<div aria-hidden="true" style={{ position: "relative", width: world.chestWidth }}>
 							<span
 								className="bg-yellow animate-[wkspark_1.6s_ease-out_infinite]"
-								style={{ position: "absolute", left: "16%", top: -8, width: 6, height: 6, display: chestOpen ? "block" : "none" }}
+								style={{
+									position: "absolute",
+									left: "16%",
+									top: -8,
+									width: 6,
+									height: 6,
+									display: chestOpen ? "block" : "none",
+								}}
 							/>
 							<span
 								className="bg-gold animate-[wkspark_1.9s_ease-out_infinite]"
-								style={{ position: "absolute", left: "52%", top: -14, width: 7, height: 7, animationDelay: "0.4s", display: chestOpen ? "block" : "none" }}
+								style={{
+									position: "absolute",
+									left: "52%",
+									top: -14,
+									width: 7,
+									height: 7,
+									animationDelay: "0.4s",
+									display: chestOpen ? "block" : "none",
+								}}
 							/>
 							<span
 								className="bg-yellow animate-[wkspark_1.5s_ease-out_infinite]"
-								style={{ position: "absolute", left: "80%", top: -6, width: 5, height: 5, animationDelay: "0.8s", display: chestOpen ? "block" : "none" }}
+								style={{
+									position: "absolute",
+									left: "80%",
+									top: -6,
+									width: 5,
+									height: 5,
+									animationDelay: "0.8s",
+									display: chestOpen ? "block" : "none",
+								}}
 							/>
 						</div>
 						<img
@@ -222,22 +251,35 @@ export const OfficeTour = () => {
 							}}
 						/>
 					</div>
-					<div aria-hidden="true" className="bg-foreground/10 mx-auto mt-0.5" style={{ width: "70%", height: 7, borderRadius: "50%" }} />
+					<div
+						aria-hidden="true"
+						className="bg-foreground/10 mx-auto mt-0.5"
+						style={{ width: "70%", height: 7, borderRadius: "50%" }}
+					/>
 				</div>
 
 				<div ref={fgRef} className="pointer-events-none absolute inset-0 z-[15]" style={{ willChange: "transform" }}>
 					<SpriteLayer sprites={world.foreground} style={{ filter: "brightness(.94)" }} />
 				</div>
 
-				<div className="absolute inset-x-0 top-0 z-40 flex items-center justify-end px-4 py-3.5">
+				<div className="absolute inset-x-0 top-0 z-40 flex items-center justify-end gap-2 px-4 py-3.5">
 					<button
 						type="button"
 						onClick={tour.toggleSound}
 						aria-label={sound ? "Desligar efeitos sonoros" : "Ligar efeitos sonoros"}
 						className="bg-card/85 border-border hover:bg-muted rounded-lg border px-3.5 py-2.5 font-mono text-[11px] font-semibold tracking-wider backdrop-blur-sm"
 					>
-						{sound ? <Volume2 className="inline size-3.5" /> : <VolumeX className="inline size-3.5" />} {sound ? "SOM ON" : "SOM OFF"}
+						{sound ? <Volume2 className="inline size-3.5" /> : <VolumeX className="inline size-3.5" />}{" "}
+						{sound ? "SOM ON" : "SOM OFF"}
 					</button>
+					<CustomLink
+						to={user ? Rotas.protegidas.dashboards.home : Rotas.desprotegidas.auth.login}
+						variant="ghost"
+						size="sm"
+						className="bg-card/85 border-border hover:bg-muted backdrop-blur-sm"
+					>
+						{user ? "Dashboard" : "Entrar"}
+					</CustomLink>
 				</div>
 
 				<button

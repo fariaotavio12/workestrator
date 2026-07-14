@@ -15,3 +15,15 @@ export const LayoutLandingPages = () => {
 		</>
 	);
 };
+
+/** Sem o header global — usado na home, cujo hero (office tour) tem seu próprio HUD flutuante. */
+export const LayoutLandingPagesNoHeader = () => {
+	return (
+		<div className="flex w-full flex-col">
+			<main className="bg-background flex w-full flex-col items-center">
+				<Outlet />
+			</main>
+			<FooterLanding />
+		</div>
+	);
+};

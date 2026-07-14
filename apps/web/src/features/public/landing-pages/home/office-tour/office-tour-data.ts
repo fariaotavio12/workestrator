@@ -290,12 +290,14 @@ export const buildWorld = (vw: number, pixelScale: number) => {
 
 	// frente (parallax 1.22)
 	const foreground: Sprite[] = [];
-	([
-		[0.5, "monstera"],
-		[2.4, "plant1"],
-		[3.6, "monstera"],
-		[5.45, "plant1"],
-	] as [number, FurnitureName][]).forEach(([p, name]) => {
+	(
+		[
+			[0.5, "monstera"],
+			[2.4, "plant1"],
+			[3.6, "monstera"],
+			[5.45, "plant1"],
+		] as [number, FurnitureName][]
+	).forEach(([p, name]) => {
 		foreground.push({
 			src: furnitureSrc(name),
 			left: Math.round((x0 + p * stationSpan) * 1.22),
