@@ -12,7 +12,7 @@ import { PageDevelopmentInterest } from "@/features/public/development-interest"
 import { PageDownload } from "@/features/public/download";
 import { PageExplore } from "@/features/public/explore";
 import { HomePage } from "@/features/public/landing-pages/home";
-import { LayoutLandingPages } from "@/features/public/landing-pages/layout";
+import { LayoutLandingPages, LayoutLandingPagesNoHeader } from "@/features/public/landing-pages/layout";
 import { PageCommands } from "@/features/security/commands";
 import { PageCommunityAssets } from "@/features/security/community-assets";
 import { PageConfigAssistant } from "@/features/security/config-assistant";
