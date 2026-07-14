@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { activityLabel } from "@/components/orchestrator/run-transcript";
 import type { AgentStatus, RunEvent, Squad } from "@/features/security/orchestrator-shared/types";
-import { seatToPosition } from "./office-geometry";
+import { ACTION_POINT, seatToPosition } from "./office-geometry";
 import type { OfficeSeatView } from "./office-types";
 
 export type BubbleTone = "neutral" | "warning" | "success";
@@ -57,7 +57,7 @@ export const useOfficeChoreography = (
 			const status = view?.status ?? "idle";
 			const isPending = runtime.pendingSeatId === seat.id;
 			const isActive = isPending && (status === "working" || status === "checkpoint");
-			const position = seatToPosition(seat.col, seat.row);
+			const position = isActive ? ACTION_POINT : seatToPosition(seat.col, seat.row);
 
 			let bubble: ActorBubble | undefined;
 			if (runtime.pendingQuestion && runtime.pendingQuestion.seatId === seat.id) {

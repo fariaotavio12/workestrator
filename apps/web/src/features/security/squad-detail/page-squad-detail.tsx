@@ -8,6 +8,7 @@ import {
 	useRunDialogStore,
 	useSquadHistoryDialogStore,
 } from "@/features/security/orchestrator-shared/model";
+import { answerPrompt, resolveCheckpoint } from "@/features/security/orchestrator-shared/runtime/orchestrator-runtime";
 import { getSquadReadiness, readinessMessage } from "@/features/security/orchestrator-shared/runtime/squad-readiness";
 import type { Agent, Squad } from "@/features/security/orchestrator-shared/types";
 import { useProvidersQuery } from "@/features/security/models/api";
@@ -226,6 +227,7 @@ export const PageSquadDetail = () => {
 					</div>
 				)}
 				<OfficeCanvas
+					squad={squad}
 					seats={seatsView}
 					coordinator={{
 						model: modelLabel(providers, squad.orchestrator.modelRef.providerId, squad.orchestrator.modelRef.model),
@@ -233,6 +235,9 @@ export const PageSquadDetail = () => {
 					}}
 					onCoordinatorClick={() => setOrchestratorOpen(true)}
 					onSeatClick={openSeat}
+					onAnswerQuestion={(answer) => answerPrompt(squad.id, answer)}
+					onApproveCheckpoint={() => resolveCheckpoint(squad.id, true)}
+					onRejectCheckpoint={() => resolveCheckpoint(squad.id, false)}
 				/>
 			</div>
 

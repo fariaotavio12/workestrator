@@ -18,9 +18,9 @@ type Props = {
 };
 
 const TONE_CLASS: Record<ActorBubble["tone"], string> = {
-	neutral: "bg-popover border-border",
-	warning: "bg-warning/10 border-warning/45",
-	success: "bg-success/10 border-success/45",
+	neutral: "bg-card border-border",
+	warning: "bg-warning/10 border-warning/40",
+	success: "bg-success/10 border-success/40",
 };
 
 /** Balão de fala/checkpoint/pergunta ancorado acima de um ator do escritório (ou cartão inline no mobile). */
@@ -41,25 +41,25 @@ export const SpeechBubble = (props: Props) => {
 			role="status"
 			aria-live="polite"
 			className={cn(
-				"rounded-xl border text-left",
-				inline ? "w-full p-3" : "absolute bottom-full left-1/2 mb-2.5 w-64 -translate-x-1/2 p-3 shadow-lg",
+				"rounded-xl border p-2.5 text-left",
+				inline ? "w-full" : "absolute bottom-full left-1/2 mb-2 w-60 -translate-x-1/2 shadow-sm",
 				TONE_CLASS[bubble.tone],
 				className,
 			)}
 		>
 			{bubble.toolLabel && (
-				<span className="text-muted-foreground border-border/60 mb-1.5 flex items-center gap-1.5 border-b pb-1.5">
+				<span className="text-muted-foreground mb-1 flex items-center gap-1.5">
 					<Wrench className="size-3 shrink-0" />
-					<Typography variant="caption" as="span" className="truncate font-medium">
+					<Typography variant="caption" as="span" className="truncate">
 						{bubble.toolLabel}
 					</Typography>
 				</span>
 			)}
 
-			<div className="max-h-28 overflow-hidden [&_.text-sm]:text-[13px] [&_.text-sm]:leading-relaxed">
+			<div className="max-h-24 overflow-hidden text-sm leading-snug [&_.text-sm]:text-inherit">
 				<Markdown content={bubble.text} className="text-foreground [&_p]:my-0" />
 				{bubble.streaming && (
-					<span className="bg-primary ml-0.5 inline-block h-3.5 w-1 animate-pulse align-middle" />
+					<span className="bg-foreground ml-0.5 inline-block h-3.5 w-1 animate-pulse align-middle" />
 				)}
 			</div>
 
