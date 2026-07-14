@@ -6,8 +6,7 @@ Não há pipeline fixo. Você monta um "escritório" com agentes (cada um com se
 
 > ⚠️ **Projeto em desenvolvimento ativo.** APIs, esquema e telas ainda mudam. Veja [Segurança](#segurança) antes de rodar com execução real habilitada.
 
-<!-- TODO: adicionar um GIF/screenshot do "escritório" com um run acontecendo. Uma demo visual aqui é o que mais converte visitante em usuário. -->
-<!-- ![Workestrator em ação](docs/assets/demo.gif) -->
+![Workestrator em ação](docs/assets/demo.gif)
 
 ## Por que é diferente
 
