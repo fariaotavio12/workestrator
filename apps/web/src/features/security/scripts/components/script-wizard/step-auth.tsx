@@ -17,10 +17,10 @@ export const StepAuth = ({ authRef, onChange }: StepAuthProps) => {
 	return (
 		<div className="flex flex-col gap-4">
 			<Typography variant="body-sm" className="text-muted-foreground">
-				Escolha um segredo já cadastrado no cofre local, ou crie um novo — o valor real nunca fica salvo no script.
+				Escolha uma conexão já cadastrada, ou crie uma nova. O valor real nunca fica salvo na ferramenta.
 			</Typography>
 
-			<FieldWrapper label="Referência de segredo">
+			<FieldWrapper label="Conexão">
 				<Select value={authRef || "none"} onValueChange={(v) => onChange(v === "none" ? "" : v)}>
 					<SelectTrigger>
 						<SelectValue placeholder="Nenhuma" />
@@ -38,7 +38,7 @@ export const StepAuth = ({ authRef, onChange }: StepAuthProps) => {
 
 			<Button type="button" variant="outline" size="sm" className="self-start" onClick={() => setCreatingSecret(true)}>
 				<Plus />
-				Criar novo segredo
+				Criar conexão
 			</Button>
 
 			<SecretFormDialog open={creatingSecret} onOpenChange={setCreatingSecret} />

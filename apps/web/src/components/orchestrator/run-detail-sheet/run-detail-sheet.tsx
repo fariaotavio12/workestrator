@@ -209,7 +209,7 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 											}
 										>
 											<FileCode />
-											Salvar como script
+											Salvar como ferramenta
 										</Button>
 									)}
 								</div>

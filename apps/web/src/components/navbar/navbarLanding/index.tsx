@@ -11,6 +11,7 @@ import { useLocation } from "react-router-dom";
 
 const navItems = [
 	{ label: "Features", to: `${Rotas.desprotegidas.landingPages.home}#features` },
+	{ label: "Explorar", to: Rotas.desprotegidas.landingPages.explore },
 	{ label: "Download", to: Rotas.desprotegidas.landingPages.download },
 	{ label: "Sugerir melhoria", to: Rotas.desprotegidas.landingPages.participate },
 ];
@@ -75,12 +76,7 @@ export const NavBarLanding = () => {
 								Login
 							</CustomLink>
 
-							<CustomLink
-								className="justify-center"
-								to={Rotas.desprotegidas.auth.login}
-								state={loginState}
-								size="sm"
-							>
+							<CustomLink className="justify-center" to={Rotas.desprotegidas.auth.login} state={loginState} size="sm">
 								Acessar demo
 							</CustomLink>
 						</>

@@ -10,6 +10,7 @@ const footerGroups = [
 			{ label: "Features", to: `${Rotas.desprotegidas.landingPages.home}#features` },
 			{ label: "Included", to: `${Rotas.desprotegidas.landingPages.home}#included` },
 			{ label: "Stack", to: `${Rotas.desprotegidas.landingPages.home}#stack` },
+			{ label: "Explorar", to: Rotas.desprotegidas.landingPages.explore },
 			{ label: "Download", to: Rotas.desprotegidas.landingPages.download },
 			{ label: "Sugerir melhoria", to: Rotas.desprotegidas.landingPages.participate },
 		],

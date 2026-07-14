@@ -90,6 +90,9 @@ export const HomePage = () => {
 								<CustomLink to={Rotas.desprotegidas.auth.login} state={loginState} variant="outline">
 									Entrar
 								</CustomLink>
+								<CustomLink to={Rotas.desprotegidas.landingPages.explore} variant="ghost">
+									Explorar recursos
+								</CustomLink>
 								<CustomLink to={Rotas.desprotegidas.landingPages.participate} variant="ghost">
 									Sugerir melhoria
 								</CustomLink>

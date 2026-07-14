@@ -1,4 +1,4 @@
-// Catálogo de templates do wizard de scripts — data-driven: adicionar uma integração nova é
+// Catálogo de templates do wizard de ferramentas — data-driven: adicionar uma integração nova é
 // adicionar 1 objeto aqui, sem tocar no resto do wizard. `kind`/`defaults` mapeiam pro modelo de
 // dados `Script` já existente (nenhuma migração); o wizard só monta a UI em cima dele.
 import type {
@@ -146,7 +146,7 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 	},
 	{
 		id: "inline",
-		label: "Script inline",
+		label: "Código inline",
 		description: "Bash, Node ou Python",
 		icon: Bot,
 		category: "scratch",
@@ -156,8 +156,8 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 	},
 	{
 		id: "mcp-server",
-		label: "Servidor MCP",
-		description: "Local (stdio) ou remoto (HTTP)",
+		label: "Servidor MCP avançado",
+		description: "Exponha tools de um servidor local ou remoto",
 		icon: Server,
 		category: "scratch",
 		kind: "mcp",
@@ -178,7 +178,7 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 
 export const findTemplateById = (id: string): ToolTemplate | undefined => TOOL_TEMPLATES.find((t) => t.id === id);
 
-/** Ao editar um script existente, infere o template mais próximo a partir do `kind` salvo — usado
+/** Ao editar uma ferramenta existente, infere o template mais próximo a partir do `kind` salvo — usado
  * só pra decidir em qual "família" de campos o wizard abre; os valores reais vêm do próprio script. */
 export const inferTemplateFromKind = (kind: ScriptKind): ToolTemplate =>
 	TOOL_TEMPLATES.find((t) => t.kind === kind && t.category === "scratch") ??

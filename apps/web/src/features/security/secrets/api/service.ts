@@ -23,7 +23,7 @@ export const useCreateSecret = () => {
 	return useMutation({
 		mutationFn: (payload: CreateSecretPayload) => api.post<Secret>("/secrets", payload).then((r) => r.data),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível criar a referência.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível criar a conexão.")),
 	});
 };
 
@@ -33,7 +33,7 @@ export const useUpdateSecret = () => {
 		mutationFn: ({ id, payload }: { id: string; payload: UpdateSecretPayload }) =>
 			api.put<Secret>(`/secrets/${id}`, payload).then((r) => r.data),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível atualizar a referência.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível atualizar a conexão.")),
 	});
 };
 
@@ -52,7 +52,7 @@ export const useDeleteSecret = () => {
 	return useMutation({
 		mutationFn: (id: string) => api.delete(`/secrets/${id}`),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível excluir a referência.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível excluir a conexão.")),
 	});
 };
 

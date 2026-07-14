@@ -100,6 +100,7 @@ class SecurityConfig(
                 "/waha/webhook",
                 "/subscriptions/webhook/stripe",
             ).permitAll()
+                .requestMatchers(HttpMethod.GET, "/explore/assets").permitAll()
                 .requestMatchers(HttpMethod.GET, "/shares/*").permitAll()
                 .anyRequest().authenticated()
         }

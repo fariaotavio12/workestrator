@@ -4,12 +4,17 @@ export type ConfigAssistantMessage = {
 	id: string;
 	role: "user" | "assistant" | "system";
 	content: string;
+	actions?: ConfigAssistantMessageAction[];
 	/**
 	 * Contexto extra visível só para o modelo (ex.: JSON de retorno de uma operação), anexado em
 	 * `buildConversationPrompt` mas nunca renderizado no chat — mantém o bubble limpo sem cegar o modelo.
 	 */
 	promptData?: string;
 };
+
+export type ConfigAssistantMessageAction =
+	| { type: "open_resources"; label: string }
+	| { type: "publish_asset"; label: string; assetId: string };
 
 export type ConfigAssistantPendingConfirmation = {
 	operation: string;

@@ -47,7 +47,7 @@ const schema = z
 		path: ["command"],
 	})
 	.refine((v) => v.kind !== "inline" || Boolean(v.content?.trim()), {
-		message: "Escreva o conteúdo do script",
+		message: "Escreva o conteúdo da ferramenta",
 		path: ["content"],
 	})
 	.refine((v) => v.kind !== "file" || Boolean(v.path?.trim()), {
@@ -71,7 +71,7 @@ const schema = z
 		path: ["connectorProvider"],
 	});
 
-/** Kinds que referenciam um segredo (nunca o valor cru — só a referência resolvida pelo runner). */
+/** Kinds que referenciam uma conexão (nunca o valor cru — só a referência resolvida pelo runner). */
 const KINDS_WITH_AUTH_REF = new Set<ScriptFormValues["kind"]>(["http", "mcp", "connector"]);
 
 /** Monta o payload real do `Script` a partir dos valores "achatados" do form — usado tanto pelo
@@ -142,11 +142,11 @@ const scriptToFormValues = (script: Script): ScriptFormValues => ({
 type Props = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	/** Quando presente, o wizard edita o script; senão, cria um novo. */
+	/** Quando presente, o wizard edita a ferramenta; senão, cria uma nova. */
 	script?: Script;
-	/** Conteúdo pré-preenchido (ex.: "Salvar como script" a partir de uma saída de run). */
+	/** Conteúdo pré-preenchido (ex.: "Salvar como ferramenta" a partir de uma saída de run). */
 	prefill?: { name?: string; content?: string };
-	/** Chamado com o script criado/atualizado após salvar — permite o chamador anexá-lo em algo (ex.: um agent). */
+	/** Chamado com a ferramenta criada/atualizada após salvar — permite o chamador anexá-la em algo (ex.: um agent). */
 	onSaved?: (script: Script) => void;
 };
 
@@ -266,7 +266,7 @@ const ScriptWizardContent = ({ open, onOpenChange, script, prefill, onSaved }: P
 			const saved = script
 				? await updateScript.mutateAsync({ id: script.id, payload: draft })
 				: await createScript.mutateAsync(draft);
-			notify.success(script ? "Script atualizado" : "Script criado");
+			notify.success(script ? "Ferramenta atualizada" : "Ferramenta criada");
 			onSaved?.(saved);
 			onOpenChange(false);
 		} catch {
@@ -282,7 +282,7 @@ const ScriptWizardContent = ({ open, onOpenChange, script, prefill, onSaved }: P
 		<AppSheet
 			open={open}
 			onOpenChange={onOpenChange}
-			title={isEdit ? "Editar script" : "Novo script"}
+			title={isEdit ? "Editar ferramenta" : "Nova ferramenta"}
 			description={
 				stepId === "catalog" ? "Escolha o que você quer que o agente consiga fazer." : (template?.label ?? "")
 			}
@@ -310,7 +310,7 @@ const ScriptWizardContent = ({ open, onOpenChange, script, prefill, onSaved }: P
 							onClick={goNext}
 							disabled={!canSubmit || createScript.isPending || updateScript.isPending}
 						>
-							{isLastStep ? (isEdit ? "Salvar" : "Criar script") : "Avançar"}
+							{isLastStep ? (isEdit ? "Salvar" : "Criar ferramenta") : "Avançar"}
 							{!isLastStep && <ArrowRight />}
 						</Button>
 					</>

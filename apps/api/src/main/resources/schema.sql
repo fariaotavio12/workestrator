@@ -177,6 +177,32 @@ CREATE TABLE IF NOT EXISTS user_notification_preferences (
 );
 
 -- ============================================================
+-- Community Explore catalog
+-- ============================================================
+CREATE TABLE IF NOT EXISTS community_assets (
+    id UUID PRIMARY KEY,
+    owner_user_id UUID,
+    kind VARCHAR(32) NOT NULL,
+    title VARCHAR(160) NOT NULL,
+    description TEXT NOT NULL,
+    author_name VARCHAR(120) NOT NULL,
+    tags JSONB NOT NULL,
+    payload JSONB NOT NULL,
+    visibility VARCHAR(32) NOT NULL DEFAULT 'PRIVATE',
+    origin_asset_id UUID,
+    import_count BIGINT NOT NULL DEFAULT 0,
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT community_assets_kind_check CHECK (kind IN ('SQUAD', 'SKILL', 'KNOWLEDGE', 'SCRIPT', 'COMMAND', 'MCP')),
+    CONSTRAINT community_assets_visibility_check CHECK (visibility IN ('PRIVATE', 'PUBLIC'))
+);
+CREATE INDEX IF NOT EXISTS idx_community_assets_visibility ON community_assets(visibility);
+CREATE INDEX IF NOT EXISTS idx_community_assets_kind ON community_assets(kind);
+CREATE INDEX IF NOT EXISTS idx_community_assets_owner_user_id ON community_assets(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_community_assets_import_count ON community_assets(import_count DESC);
+
+-- ============================================================
 -- Knowledge base (RAG) — pgvector
 -- ============================================================
 -- Este script roda DEPOIS do Hibernate (spring.jpa.defer-datasource-initialization=true), então as

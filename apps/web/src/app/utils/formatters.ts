@@ -287,6 +287,22 @@ export const trimSafe = (v?: string | null) => {
 
 export const isValidDate = (d: Date) => !isNaN(d.getTime());
 
+/**
+ * @description Idade compacta tipo "1s", "6h", "1d", "10d" — para listas densas (sidebar).
+ * @param iso Data ISO de referência.
+ */
+export const formatCompactAge = (iso: string): string => {
+	const diffMs = Date.now() - new Date(iso).getTime();
+	const minute = 60_000;
+	const hour = 60 * minute;
+	const day = 24 * hour;
+
+	if (diffMs < minute) return `${Math.max(1, Math.floor(diffMs / 1000))}s`;
+	if (diffMs < hour) return `${Math.floor(diffMs / minute)}min`;
+	if (diffMs < day) return `${Math.floor(diffMs / hour)}h`;
+	return `${Math.floor(diffMs / day)}d`;
+};
+
 // export function summarizeAddress(nf: InvoiceApiMin) {
 //   const rua = trimSafe(nf.rua);
 //   const bairro = trimSafe(nf.bairro);

@@ -202,8 +202,8 @@ export const PageSecrets = () => {
 	return (
 		<div className="flex w-full flex-col gap-8">
 			<PageHeader
-				title="Segredos"
-				description="Referências de credenciais. O valor real é cifrado no backend e nunca é exibido de volta."
+				title="Conexões"
+				description="Credenciais e conectores reutilizáveis por modelos, ferramentas HTTP, MCP e integrações. O valor real é cifrado no backend."
 				actions={
 					<>
 						<Button variant="outline" onClick={() => setCatalogOpen(true)}>
@@ -212,7 +212,7 @@ export const PageSecrets = () => {
 						</Button>
 						<Button onClick={openCreate}>
 							<Plus />
-							Referência manual
+							Conexão manual
 						</Button>
 					</>
 				}
@@ -220,18 +220,18 @@ export const PageSecrets = () => {
 
 			<section className="flex flex-col gap-3 px-4">
 				<Typography variant="title-sm" as="h2">
-					Todas as referências
+					Credenciais e conectores
 				</Typography>
 
 				{isError ? (
-					<ErrorState message="Não foi possível carregar os segredos." onRetry={() => refetch()} />
+					<ErrorState message="Não foi possível carregar as conexões." onRetry={() => refetch()} />
 				) : !isLoading && secrets.length === 0 ? (
 					<EmptyState
 						icon={KeyRound}
-						title="Nenhuma referência"
-						message="Cadastre uma referência para usar em providers, tools HTTP, MCP ou conectores."
+						title="Nenhuma conexão"
+						message="Cadastre uma conexão para modelos, ferramentas HTTP, servidores MCP ou conectores."
 						onAction={openCreate}
-						actionLabel="Nova referência"
+						actionLabel="Nova conexão"
 						actionIcon={<Plus />}
 					/>
 				) : (
@@ -276,10 +276,10 @@ export const PageSecrets = () => {
 			<ConfirmDialog
 				open={Boolean(toDelete)}
 				onOpenChange={(next) => !next && setToDelete(null)}
-				title="Excluir referência?"
+				title="Excluir conexão?"
 				description={
 					toDelete
-						? `"${toDelete.label}" será removida. Providers/tools que a usavam ficarão com uma referência inexistente.`
+						? `"${toDelete.label}" será removida. Modelos e ferramentas que a usavam ficarão com uma referência inexistente.`
 						: undefined
 				}
 				confirmLabel="Excluir"
@@ -288,7 +288,7 @@ export const PageSecrets = () => {
 					if (!toDelete) return;
 					try {
 						await deleteSecret.mutateAsync(toDelete.id);
-						notify.success("Referência excluída");
+						notify.success("Conexão excluída");
 						setToDelete(null);
 					} catch {
 						// useDeleteSecret already shows the API error toast.

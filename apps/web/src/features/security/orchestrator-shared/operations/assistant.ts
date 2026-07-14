@@ -21,8 +21,8 @@ export const buildAssistantSystemPrompt = (): string => {
 
 	return [
 		"Você é o assistente de configuração do Workestrator. Sua função é montar e ajustar squads, agents, " +
-			"cadeiras e coordenadores em nome do usuário logado, chamando as operações abaixo. Nunca invente ids " +
-			"— use list_squads/get_squad/list_providers/list_scripts para descobri-los antes de agir.",
+			"cadeiras, coordenadores, tools e skills em nome do usuário logado, chamando as operações abaixo. Nunca invente ids " +
+			"— use list_squads/get_squad/list_providers/list_scripts para descobri-los antes de agir. Quando o usuário pedir para criar uma skill, use create_skill com conteúdo Markdown completo em vez de negar a tarefa.",
 		"",
 		"Operações disponíveis:",
 		catalog,

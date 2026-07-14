@@ -10,7 +10,7 @@ const apiMock = vi.hoisted(() => ({
 vi.mock("@/app/api/clients", () => ({ api: apiMock }));
 
 import { useOperationsAuditStore } from "./audit";
-import { attachTool, createSquad, deleteSquad, getSquad } from "./operations";
+import { attachTool, createSkill, createSquad, deleteSquad, getSquad } from "./operations";
 
 const ISO = "2026-01-01T00:00:00.000Z";
 
@@ -130,6 +130,40 @@ describe("attachTool", () => {
 
 		expect(apiMock.put).toHaveBeenCalledWith("/squads/squad-1/agents/agent-1", {
 			scriptIds: ["script-existing", "script-new"],
+		});
+	});
+});
+
+describe("createSkill", () => {
+	it("cria uma skill como asset markdown privado por padrÃ£o", async () => {
+		apiMock.post.mockResolvedValueOnce({
+			data: {
+				id: "skill-1",
+				title: "Skill de teste",
+				description: "Skill criada pelo assistente",
+				visibility: "PRIVATE",
+			},
+		});
+
+		const result = await createSkill({
+			title: "Skill de teste",
+			description: "Skill criada pelo assistente",
+			content: "# Skill de teste\n\n## Objetivo\n\nValidar criaÃ§Ã£o.",
+			tags: ["teste"],
+		});
+
+		expect(result.ok).toBe(true);
+		expect(apiMock.post).toHaveBeenCalledWith("/explore/assets", {
+			kind: "SKILL",
+			title: "Skill de teste",
+			description: "Skill criada pelo assistente",
+			tags: ["teste"],
+			visibility: "PRIVATE",
+			payload: {
+				format: "markdown",
+				content: "# Skill de teste\n\n## Objetivo\n\nValidar criaÃ§Ã£o.",
+				source: "assistant",
+			},
 		});
 	});
 });
