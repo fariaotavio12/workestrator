@@ -114,24 +114,43 @@ Copy `.env.example` to `.env` and fill in the required values.
 | `GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
 | `MAIL_USERNAME` | SMTP username |
 | `MAIL_PASSWORD` | SMTP password |
+| `APP_MAIL_FROM_EMAIL` | Email sender address |
+| `SECRETS_MASTER_KEY` | Base64 AES-256 master key for encrypted app secrets |
 
-### Optional (have defaults)
+### Optional
 
 | Variable | Default | Description |
 |---|---|---|
-| `APP_AUTH_COOKIE_NAME` | `AUTH_TOKEN` | Session cookie name |
-| `APP_AUTH_SESSION_DURATION_HOURS` | `720` | Session lifetime (30 days) |
-| `APP_CORS_ALLOWED_ORIGIN_PATTERNS` | `*` | CORS allowed origins |
-| `ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key — blank disables AI features |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64` | _(empty)_ | Firebase service account JSON (base64) |
-| `JPA_DDL_AUTO` | `update` | Hibernate DDL mode |
+| `APP_AUTH_GOOGLE_SUCCESS_REDIRECT` | `http://localhost:5173/auth/google/success` | Redirect after Google login |
+| `APP_AUTH_PASSWORD_RESET_BASE_URL` | `http://localhost:5173/reset-password` | Frontend URL for password reset |
+| `APP_AUTH_ALLOWED_REDIRECT_HOSTS` | `localhost,127.0.0.1` | Hosts accepted for auth redirects |
+| `APP_CORS_ALLOWED_ORIGIN_PATTERNS` | Production and local web URLs | CORS allowed origins |
+| `APP_MAIL_FROM_NAME` | `no-reply` | Email sender display name |
+| `MAIL_HOST` | `smtp.hostinger.com` | SMTP host |
+| `MAIL_PORT` | `587` | SMTP port |
+| `ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key; blank disables AI features |
+| `VOYAGE_API_KEY` | _(empty)_ | Voyage embeddings API key |
+| `OPENAI_API_KEY` | _(empty)_ | OpenAI embeddings API key when using OpenAI |
+
+### Optional storage and integrations
+
+Cloudflare R2 storage is disabled by default. If `app.storage.cloudflare.enabled` is turned on, provide:
+
+| Variable | Description |
+|---|---|
+| `APP_STORAGE_CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `APP_STORAGE_CLOUDFLARE_ACCESS_KEY_ID` | R2 access key |
+| `APP_STORAGE_CLOUDFLARE_SECRET_ACCESS_KEY` | R2 secret access key |
+| `APP_STORAGE_CLOUDFLARE_BUCKET` | R2 bucket |
+| `APP_STORAGE_CLOUDFLARE_PUBLIC_URL_BASE` | Public URL base |
+
+Firebase is optional. Provide `FIREBASE_SERVICE_ACCOUNT_BASE64` only when Firebase integrations are enabled.
 
 ### Observability (production)
 
 | Variable | Description |
 |---|---|
-| `SENTRY_DSN` | Sentry project DSN — empty disables Sentry |
-| `SENTRY_ENVIRONMENT` | Environment label shown in Sentry (`production`, `staging`) |
+| `SENTRY_DSN` | Sentry project DSN; empty disables Sentry |
 | `BETTERSTACK_SOURCE_TOKEN` | Better Stack log source token |
 | `SPRING_PROFILES_ACTIVE` | Set to `prod` to enable JSON logging and Better Stack shipping |
 
@@ -178,7 +197,6 @@ Every unhandled exception is automatically captured with full context: stack tra
 Setup:
 1. Create a project at [sentry.io](https://sentry.io)
 2. Set `SENTRY_DSN` in your environment
-3. Set `SENTRY_ENVIRONMENT=production`
 
 ### Better Stack (log management)
 
