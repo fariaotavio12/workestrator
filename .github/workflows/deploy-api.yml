@@ -80,48 +80,57 @@ jobs:
               IMAGE_TAG="main"
               CONTAINER_NAME="backend-orquestrador-main"
               HOST_PORT="8092"
-              WEB_BASE_URL="https://workestrator.zappyon.com"
-              ALLOWED_REDIRECT_HOSTS="workestrator.zappyon.com,localhost,127.0.0.1"
-              DB_URL="${{ secrets.DB_URL_PROD }}"
-              DB_USERNAME="${{ secrets.DB_USERNAME_PROD }}"
-              DB_PASSWORD="${{ secrets.DB_PASSWORD_PROD }}"
-              SECRETS_MASTER_KEY="${{ secrets.SECRETS_MASTER_KEY_PROD }}"
+              ENV_FILE="/tmp/${CONTAINER_NAME}.env"
+              cat > "$ENV_FILE" <<'ENV'
+            SPRING_PROFILES_ACTIVE=prod
+            TZ=America/Sao_Paulo
+            DB_URL=${{ secrets.DB_URL_PROD }}
+            DB_USERNAME=${{ secrets.DB_USERNAME_PROD }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD_PROD }}
+            APP_AUTH_GOOGLE_SUCCESS_REDIRECT=https://workestrator.zappyon.com/auth/google/success
+            APP_AUTH_PASSWORD_RESET_BASE_URL=https://workestrator.zappyon.com/recuperar-senha
+            APP_AUTH_ALLOWED_REDIRECT_HOSTS=workestrator.zappyon.com,localhost,127.0.0.1
+            MAIL_HOST=smtp.hostinger.com
+            MAIL_PORT=587
+            MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
+            MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+            APP_MAIL_FROM_EMAIL=${{ vars.APP_MAIL_FROM_EMAIL }}
+            APP_MAIL_FROM_NAME=Workestrator
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+            BETTERSTACK_SOURCE_TOKEN=${{ secrets.BETTERSTACK_SOURCE_TOKEN }}
+            VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}
+            SECRETS_MASTER_KEY=${{ secrets.SECRETS_MASTER_KEY_PROD }}
+            ENV
             else
               IMAGE_TAG="dev"
               CONTAINER_NAME="backend-orquestrador-dev"
               HOST_PORT="8093"
-              WEB_BASE_URL="https://dev.workestrator.zappyon.com"
-              ALLOWED_REDIRECT_HOSTS="dev.workestrator.zappyon.com,localhost,127.0.0.1"
-              DB_URL="${{ secrets.DB_URL_DEV }}"
-              DB_USERNAME="${{ secrets.DB_USERNAME_DEV }}"
-              DB_PASSWORD="${{ secrets.DB_PASSWORD_DEV }}"
-              SECRETS_MASTER_KEY="${{ secrets.SECRETS_MASTER_KEY_PROD }}"
+              ENV_FILE="/tmp/${CONTAINER_NAME}.env"
+              cat > "$ENV_FILE" <<'ENV'
+            SPRING_PROFILES_ACTIVE=prod
+            TZ=America/Sao_Paulo
+            DB_URL=${{ secrets.DB_URL_DEV }}
+            DB_USERNAME=${{ secrets.DB_USERNAME_DEV }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD_DEV }}
+            APP_AUTH_GOOGLE_SUCCESS_REDIRECT=https://dev.workestrator.zappyon.com/auth/google/success
+            APP_AUTH_PASSWORD_RESET_BASE_URL=https://dev.workestrator.zappyon.com/recuperar-senha
+            APP_AUTH_ALLOWED_REDIRECT_HOSTS=dev.workestrator.zappyon.com,localhost,127.0.0.1
+            MAIL_HOST=smtp.hostinger.com
+            MAIL_PORT=587
+            MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
+            MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+            APP_MAIL_FROM_EMAIL=${{ vars.APP_MAIL_FROM_EMAIL }}
+            APP_MAIL_FROM_NAME=Workestrator
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+            BETTERSTACK_SOURCE_TOKEN=${{ secrets.BETTERSTACK_SOURCE_TOKEN }}
+            VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}
+            SECRETS_MASTER_KEY=${{ secrets.SECRETS_MASTER_KEY_PROD }}
+            ENV
             fi
-
-            ENV_FILE="/tmp/${CONTAINER_NAME}.env"
-
-            {
-              echo "SPRING_PROFILES_ACTIVE=prod"
-              echo "TZ=America/Sao_Paulo"
-              echo "DB_URL=${DB_URL}"
-              echo "DB_USERNAME=${DB_USERNAME}"
-              echo "DB_PASSWORD=${DB_PASSWORD}"
-              echo "APP_AUTH_GOOGLE_SUCCESS_REDIRECT=${WEB_BASE_URL}/auth/google/success"
-              echo "APP_AUTH_PASSWORD_RESET_BASE_URL=${WEB_BASE_URL}/recuperar-senha"
-              echo "APP_AUTH_ALLOWED_REDIRECT_HOSTS=${ALLOWED_REDIRECT_HOSTS}"
-              echo "MAIL_HOST=smtp.hostinger.com"
-              echo "MAIL_PORT=587"
-              echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}"
-              echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}"
-              echo "APP_MAIL_FROM_EMAIL=${{ vars.APP_MAIL_FROM_EMAIL }}"
-              echo "APP_MAIL_FROM_NAME=Workestrator"
-              echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
-              echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}"
-              echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
-              echo "BETTERSTACK_SOURCE_TOKEN=${{ secrets.BETTERSTACK_SOURCE_TOKEN }}"
-              echo "VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}"
-              echo "SECRETS_MASTER_KEY=${SECRETS_MASTER_KEY}"
-            } > "$ENV_FILE"
 
             echo "Env keys loaded for container:"
             cut -d '=' -f1 "$ENV_FILE"
