@@ -1,8 +1,8 @@
-name: Electron Release
+name: Web - Electron Release
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Web - CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:

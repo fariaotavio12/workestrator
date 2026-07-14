@@ -1,5 +1,6 @@
 appId: com.workestrator.app
 productName: Workestrator
+executableName: Workestrator
 directories:
   output: release
 files:
