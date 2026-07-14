@@ -11,7 +11,7 @@ import { PageDesignSystem } from "@/features/public/design-system/page-design-sy
 import { PageDevelopmentInterest } from "@/features/public/development-interest";
 import { PageDownload } from "@/features/public/download";
 import { HomePage } from "@/features/public/landing-pages/home";
-import { LayoutLandingPages } from "@/features/public/landing-pages/layout";
+import { LayoutLandingPages, LayoutLandingPagesNoHeader } from "@/features/public/landing-pages/layout";
 import { PageConfigAssistant } from "@/features/security/config-assistant";
 import { PageExecutions } from "@/features/security/executions";
 import { PageKnowledge, PageKnowledgeDetail } from "@/features/security/knowledge";
@@ -56,7 +56,7 @@ export const AppRouter = () => (
 
 			<Route
 				path={Rotas.desprotegidas.landingPages.home}
-				element={window.__ORCH_API__ ? <RootRedirect /> : <LayoutLandingPages />}
+				element={window.__ORCH_API__ ? <RootRedirect /> : <LayoutLandingPagesNoHeader />}
 			>
 				<Route index element={<HomePage />} />
 			</Route>
