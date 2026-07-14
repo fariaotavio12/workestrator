@@ -80,6 +80,16 @@ Comandos por app continuam funcionando de dentro de `apps/web` e `apps/api`.
 
 O detalhamento completo (motor de execução, streaming SSE, runtime efêmero em Zustand, server state em TanStack Query) está no [README do `apps/web`](apps/web/README.md).
 
+## Roadmap
+
+Direções que quero desenvolver — contribuições nesses temas são muito bem-vindas. Veja também o plano completo em [`docs/community-platform-plan.md`](docs/community-platform-plan.md).
+
+- **Assistente como plataforma** — levar a experiência do app desktop para um assistente-workspace completo (command palette, contexto de skill/squad/knowledge, histórico de runs). Base na Fase 9 do plano de comunidade.
+- **Auto-conhecimento (opt-in)** — cada recurso criado (squad, skill, script) carregar uma descrição opcional do que faz e por quê, para o assistente e a comunidade entenderem o propósito sem precisar ler o código.
+- 🚧 **Squads com sprints** — design de squad orientado a sprints bem definidas _(em andamento)_.
+- **Páginas públicas de melhorias e conhecimento** — roadmap/changelog público e base de conhecimento navegável.
+- **Polimento de design e padrões** — refino visual e correção de inconsistências no design system.
+
 ## Contribuindo
 
 Contribuições são bem-vindas! Leia o [CONTRIBUTING.md](CONTRIBUTING.md) para o setup local e o fluxo de branches (`dev` → `main`). Antes de mexer no código, veja também `AGENTS.md` e `CLAUDE.md` na raiz.
