@@ -4,12 +4,14 @@ on:
   pull_request:
     branches:
       - main
+      - dev
     paths:
       - "apps/api/**"
       - ".github/workflows/deploy-api.yml"
   push:
     branches:
       - main
+      - dev
     paths:
       - "apps/api/**"
       - ".github/workflows/deploy-api.yml"
