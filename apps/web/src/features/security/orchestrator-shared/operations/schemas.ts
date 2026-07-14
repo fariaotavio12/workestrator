@@ -119,6 +119,14 @@ export const attachToolInputSchema = z.object({
 	scriptId: z.string().min(1),
 });
 
+export const createSkillInputSchema = z.object({
+	title: z.string().min(1, "Título é obrigatório"),
+	description: z.string().min(1, "Descrição é obrigatória"),
+	content: z.string().min(1, "Conteúdo Markdown é obrigatório"),
+	tags: z.array(z.string()).optional(),
+	visibility: z.enum(["PRIVATE", "PUBLIC"]).optional(),
+});
+
 export const runSquadInputSchema = z.object({
 	squadId: z.string().min(1),
 	briefing: z.string().optional(),

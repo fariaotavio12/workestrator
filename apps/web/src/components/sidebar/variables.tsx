@@ -1,5 +1,17 @@
 import { Rotas } from "@/app/routing/variables";
-import { Boxes, Cpu, History, KeyRound, Library, Sparkles, Terminal, type LucideIcon } from "lucide-react";
+import {
+	Boxes,
+	Command,
+	Cpu,
+	History,
+	KeyRound,
+	Library,
+	PackageOpen,
+	Sparkles,
+	Terminal,
+	WandSparkles,
+	type LucideIcon,
+} from "lucide-react";
 
 export type SidebarNavSubItem = {
 	title: string;
@@ -40,14 +52,20 @@ export const squadNavItems: SidebarNavItem[] = [
 
 /** Áreas de configuração — movidas do nav principal para o dropdown do usuário (rodapé da sidebar). */
 export const userMenuNavItems: SidebarNavItem[] = [
-	{ title: "Scripts", url: Rotas.protegidas.orchestrator.scripts, icon: Terminal },
+	{ title: "Comandos", url: Rotas.protegidas.orchestrator.commands, icon: Command },
+	{ title: "Skills", url: Rotas.protegidas.orchestrator.skills, icon: WandSparkles },
+	{ title: "Recursos", url: Rotas.protegidas.orchestrator.communityAssets, icon: PackageOpen },
+	{ title: "Ferramentas", url: Rotas.protegidas.orchestrator.tools, icon: Terminal },
 	{ title: "Modelos", url: Rotas.protegidas.orchestrator.models, icon: Cpu },
 	{ title: "Conhecimento", url: Rotas.protegidas.orchestrator.knowledge, icon: Library },
-	{ title: "Segredos", url: Rotas.protegidas.orchestrator.secrets, icon: KeyRound },
+	{ title: "Conexões", url: Rotas.protegidas.orchestrator.secrets, icon: KeyRound },
 ];
 
 /** Nav inferior do mobile — sem tabs; expõe as áreas principais como links diretos. */
 export const getMobileSidebarItems = (): SidebarNavItem[] => [
 	{ title: "Assistente", url: Rotas.protegidas.orchestrator.assistant, icon: Sparkles },
+	{ title: "Comandos", url: Rotas.protegidas.orchestrator.commands, icon: Command },
+	{ title: "Skills", url: Rotas.protegidas.orchestrator.skills, icon: WandSparkles },
+	{ title: "Recursos", url: Rotas.protegidas.orchestrator.communityAssets, icon: PackageOpen },
 	...squadNavItems,
 ];

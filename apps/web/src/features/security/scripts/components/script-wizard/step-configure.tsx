@@ -103,8 +103,8 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 						</Select>
 					</FieldWrapper>
 					<Textarea
-						label="Conteúdo do script"
-						description="Materializado em arquivo só quando um agent com 'Pode executar scripts' o usar."
+						label="Conteúdo"
+						description="Materializado em arquivo só quando um agent com permissão de execução usar esta ferramenta."
 						rows={10}
 						className="font-mono text-xs"
 						error={errors.content?.message}
@@ -217,8 +217,8 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 						onChange={(next) => setValue("env", next, { shouldValidate: true })}
 					/>
 					<Input
-						label="Whitelist de tools (separadas por vírgula, opcional)"
-						description="Deixe vazio pra expor todas as tools do servidor — restrinja pra controlar o orçamento de contexto."
+						label="Ferramentas MCP permitidas (separadas por vírgula, opcional)"
+						description="Deixe vazio pra expor tudo que o servidor oferece. Restrinja quando quiser controlar o contexto."
 						placeholder="Ex.: search, get_metadata"
 						{...register("toolAllowlist")}
 					/>
@@ -246,7 +246,7 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 					</FieldWrapper>
 					<KeyValueEditor
 						label="Config (opcional)"
-						description='Ex.: chave "gatewayUrl", valor a URL do gateway MCP remoto (Composio/Zapier/n8n).'
+						description='Ex.: chave "gatewayUrl", valor da URL do gateway remoto (Composio/Zapier/n8n).'
 						keyPlaceholder="Ex.: gatewayUrl"
 						valuePlaceholder="Ex.: https://gateway.composio.dev/..."
 						addLabel="Adicionar campo"

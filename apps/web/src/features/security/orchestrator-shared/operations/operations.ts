@@ -18,6 +18,7 @@ import {
 	addSeatInputSchema,
 	assignSeatInputSchema,
 	attachToolInputSchema,
+	createSkillInputSchema,
 	createSquadInputSchema,
 	deleteSquadInputSchema,
 	getSquadInputSchema,
@@ -30,6 +31,13 @@ import {
 	updateSquadInputSchema,
 } from "./schemas";
 import type { AuditEntryStatus, OperationCallOptions, OperationFailure, OperationResult } from "./types";
+
+type ExploreAssetResponse = {
+	id: string;
+	title: string;
+	description: string;
+	visibility: "PRIVATE" | "PUBLIC";
+};
 
 const record = (operation: string, input: unknown, status: AuditEntryStatus, summary: string) => {
 	useOperationsAuditStore.getState().record({ operation, input, status, summary });
@@ -287,6 +295,35 @@ export const attachTool = async (input: z.infer<typeof attachToolInputSchema>): 
 			const { data } = await api.put<AgentResponseDto>(`/squads/${squadId}/agents/${agentId}`, { scriptIds });
 			const agent = mapAgentDto(data);
 			return { data: agent, summary: `Ferramenta anexada ao agent "${agent.name}".` };
+		},
+	});
+};
+
+export const createSkill = async (
+	input: z.infer<typeof createSkillInputSchema>,
+): Promise<OperationResult<ExploreAssetResponse>> => {
+	const parsed = createSkillInputSchema.safeParse(input);
+	if (!parsed.success) return validationFailure("create_skill", input, parsed.error);
+	return execute({
+		operation: "create_skill",
+		input: parsed.data,
+		run: async () => {
+			const { data } = await api.post<ExploreAssetResponse>("/explore/assets", {
+				kind: "SKILL",
+				title: parsed.data.title,
+				description: parsed.data.description,
+				tags: parsed.data.tags ?? ["skill"],
+				visibility: parsed.data.visibility ?? "PRIVATE",
+				payload: {
+					format: "markdown",
+					content: parsed.data.content,
+					source: "assistant",
+				},
+			});
+			return {
+				data,
+				summary: `Skill "${data.title}" criada como ${data.visibility === "PUBLIC" ? "pública" : "privada"}.`,
+			};
 		},
 	});
 };

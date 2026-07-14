@@ -53,6 +53,13 @@ const serializeObservationData = (data: unknown): string | undefined => {
 };
 
 /** System prompt do modo execução — o CLI opera com tools reais na pasta escolhida. */
+const getCreatedSkillData = (data: unknown): { id: string; title: string } | null => {
+	if (!data || typeof data !== "object") return null;
+	const record = data as Record<string, unknown>;
+	if (typeof record.id !== "string" || typeof record.title !== "string") return null;
+	return { id: record.id, title: record.title };
+};
+
 const buildExecutionSystemPrompt = (workingDir: string): string =>
 	[
 		"Você é um assistente de engenharia que trabalha DENTRO de um diretório de projeto local.",
@@ -178,6 +185,21 @@ const runConfigLoop = async (provider: ModelProvider, model: string, signal: Abo
 			content: observation,
 			promptData: opResult.ok ? serializeObservationData(opResult.data) : undefined,
 		});
+		if (opResult.ok && def.name === "create_skill") {
+			const skill = getCreatedSkillData(opResult.data);
+			store.getState().appendMessage({
+				role: "assistant",
+				content: skill ? `Skill criada: **${skill.title}**.` : "Skill criada.",
+				actions: skill
+					? [
+							{ type: "open_resources", label: "Abrir recursos" },
+							{ type: "publish_asset", label: "Publicar no Explore", assetId: skill.id },
+						]
+					: [{ type: "open_resources", label: "Abrir recursos" }],
+			});
+			store.getState().setRunning(false);
+			return;
+		}
 		// Sem early-return aqui: o loop chama o modelo de novo já com essa observação no histórico.
 	}
 

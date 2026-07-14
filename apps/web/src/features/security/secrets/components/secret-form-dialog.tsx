@@ -76,7 +76,7 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 					id: secret.id,
 					payload: { label: values.label, authType: values.authType, metadata, connectorId: secret.connectorId },
 				});
-				notify.success("Referencia atualizada");
+				notify.success("Conexão atualizada");
 			} else {
 				await createSecret.mutateAsync({
 					label: values.label,
@@ -85,7 +85,7 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 					value: toValue(values),
 					connectorId: preset?.id,
 				});
-				notify.success(preset ? `${preset.name} conectado` : "Referencia criada");
+				notify.success(preset ? `${preset.name} conectado` : "Conexão criada");
 			}
 			onOpenChange(false);
 		} catch {
@@ -99,8 +99,8 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 		<AppSheet
 			open={open}
 			onOpenChange={onOpenChange}
-			title={isEditing ? "Editar referencia" : preset ? `Conectar ${preset.name}` : "Nova referencia de segredo"}
-			description="O valor real e cifrado no backend e nunca e devolvido, nem para esta tela."
+			title={isEditing ? "Editar conexão" : preset ? `Conectar ${preset.name}` : "Nova conexão"}
+			description="O valor real é cifrado no backend e nunca é devolvido, nem para esta tela."
 			contentClassName="sm:max-w-lg"
 			headerLeading={
 				<div
@@ -120,15 +120,15 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 						size="sm"
 						disabled={createSecret.isPending || updateSecret.isPending}
 					>
-						{isEditing ? "Salvar" : "Criar referencia"}
+						{isEditing ? "Salvar" : "Criar conexão"}
 					</Button>
 				</>
 			}
 		>
 			<form id="secret-form" onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
-				<SheetSection label="Identificacao">
+				<SheetSection label="Identificação">
 					<Input
-						label="Nome de referencia"
+						label="Nome da conexão"
 						placeholder="Ex.: openai-principal"
 						error={errors.label?.message}
 						{...register("label")}

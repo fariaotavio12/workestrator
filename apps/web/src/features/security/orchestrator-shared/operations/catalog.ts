@@ -4,6 +4,7 @@ import {
 	addSeatInputSchema,
 	assignSeatInputSchema,
 	attachToolInputSchema,
+	createSkillInputSchema,
 	createSquadInputSchema,
 	deleteSquadInputSchema,
 	getSquadInputSchema,
@@ -30,6 +31,7 @@ export type OperationName =
 	| "remove_seat"
 	| "set_orchestrator"
 	| "attach_tool"
+	| "create_skill"
 	| "run_squad"
 	| "list_runs"
 	| "list_providers"
@@ -127,6 +129,13 @@ export const OPERATIONS_META: OperationMeta[] = [
 		description: "Anexa um script/tool da biblioteca a um agent. Parâmetros: { squadId, agentId, scriptId }.",
 		destructive: false,
 		schema: attachToolInputSchema,
+	},
+	{
+		name: "create_skill",
+		description:
+			"Cria uma skill Markdown na biblioteca do usuário. Parâmetros: { title, description, content, tags?, visibility?: 'PRIVATE' | 'PUBLIC' }.",
+		destructive: false,
+		schema: createSkillInputSchema,
 	},
 	{
 		name: "run_squad",

@@ -4,11 +4,11 @@ import type { Script } from "@/features/security/orchestrator-shared/types";
 type Props = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	/** Quando presente, o formulário edita o script; senão, cria um novo. */
+	/** Quando presente, o formulário edita a ferramenta; senão, cria uma nova. */
 	script?: Script;
-	/** Conteúdo pré-preenchido (ex.: "Salvar como script" a partir de uma saída de run). */
+	/** Conteúdo pré-preenchido (ex.: "Salvar como ferramenta" a partir de uma saída de run). */
 	prefill?: { name?: string; content?: string };
-	/** Chamado com o script criado/atualizado após salvar — permite o chamador anexá-lo em algo (ex.: um agent). */
+	/** Chamado com a ferramenta criada/atualizada após salvar — permite o chamador anexá-la em algo (ex.: um agent). */
 	onSaved?: (script: Script) => void;
 };
 

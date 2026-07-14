@@ -280,8 +280,8 @@ export const ProviderFormDialog = ({ open, onOpenChange, provider }: Props) => {
 
 				{!LOCAL_CLI_KINDS.includes(kind) && (
 					<FieldWrapper
-						label="Referência de segredo (opcional)"
-						description="Referência à credencial cifrada no backend. Cadastre em Segredos."
+						label="Conexão de credencial (opcional)"
+						description="Referência à credencial cifrada no backend. Cadastre em Conexões."
 						error={errors.apiKeyRef?.message}
 					>
 						<Select value={apiKeyRef || "none"} onValueChange={(v) => setValue("apiKeyRef", v === "none" ? "" : v)}>

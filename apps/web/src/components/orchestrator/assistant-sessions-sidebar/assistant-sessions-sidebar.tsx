@@ -1,4 +1,6 @@
 import { Rotas } from "@/app/routing/variables";
+import { cn } from "@/app/utils/cn";
+import { formatCompactAge } from "@/app/utils/formatters";
 import {
 	Button,
 	Collapsible,
@@ -43,32 +45,10 @@ import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ConfirmDialog } from "../confirm-dialog";
 
-const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-const DAY_MS = 86_400_000;
+const RECENT_MS = 60 * 60_000;
 
 const byUpdatedDesc = (a: AssistantSessionSummary, b: AssistantSessionSummary) =>
 	(b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
-
-/** Agrupa sessões por recência (mais recente primeiro). */
-const groupByDate = (sessions: AssistantSessionSummary[]): [string, AssistantSessionSummary[]][] => {
-	const today = startOfDay(new Date());
-	const yesterday = today - DAY_MS;
-	const weekAgo = today - 7 * DAY_MS;
-	const buckets: Record<string, AssistantSessionSummary[]> = {
-		Hoje: [],
-		Ontem: [],
-		"Últimos 7 dias": [],
-		Anteriores: [],
-	};
-	for (const session of [...sessions].sort(byUpdatedDesc)) {
-		const time = new Date(session.updatedAt).getTime();
-		if (time >= today) buckets["Hoje"].push(session);
-		else if (time >= yesterday) buckets["Ontem"].push(session);
-		else if (time >= weekAgo) buckets["Últimos 7 dias"].push(session);
-		else buckets["Anteriores"].push(session);
-	}
-	return Object.entries(buckets).filter(([, items]) => items.length > 0);
-};
 
 type GroupDialogState = { mode: "create" | "rename"; group?: AssistantSessionGroup; moveSessionId?: string };
 
@@ -83,6 +63,7 @@ export const AssistantSessionsSidebar = () => {
 	const createGroup = useCreateAssistantSessionGroup();
 	const updateGroup = useUpdateAssistantSessionGroup();
 	const deleteGroup = useDeleteAssistantSessionGroup();
+	const [now] = useState(() => Date.now());
 
 	const activeSessionId = pathname.startsWith(`${Rotas.protegidas.orchestrator.assistant}/`)
 		? pathname.split("/")[3]
@@ -177,22 +158,36 @@ export const AssistantSessionsSidebar = () => {
 		setDeletingGroup(undefined);
 	};
 
-	const renderSessionRow = (session: AssistantSessionSummary) => (
-		<ContextMenu key={session.id}>
-			<ContextMenuTrigger asChild>
-				<SidebarMenuItem>
-					<SidebarMenuButton
-						type="button"
-						tooltip={session.title}
-						isActive={activeSessionId === session.id}
-						onClick={() => openSession(session.id)}
-					>
-						<Typography variant="nav-link" as="span" className="truncate">
-							{session.title}
-						</Typography>
-					</SidebarMenuButton>
-				</SidebarMenuItem>
-			</ContextMenuTrigger>
+	const renderSessionRow = (session: AssistantSessionSummary) => {
+		const isRecent = now - new Date(session.updatedAt).getTime() < RECENT_MS;
+
+		return (
+			<ContextMenu key={session.id}>
+				<ContextMenuTrigger asChild>
+					<SidebarMenuItem>
+						<SidebarMenuButton
+							type="button"
+							tooltip={session.title}
+							isActive={activeSessionId === session.id}
+							onClick={() => openSession(session.id)}
+						>
+							<span
+								aria-hidden
+								className={cn("size-1.5 shrink-0 rounded-full", isRecent ? "bg-success" : "bg-border")}
+							/>
+							<Typography variant="nav-link" as="span" className="min-w-0 flex-1 truncate">
+								{session.title}
+							</Typography>
+							<Typography
+								variant="caption"
+								as="span"
+								className="text-muted-foreground shrink-0 group-data-[collapsible=icon]:hidden"
+							>
+								{formatCompactAge(session.updatedAt)}
+							</Typography>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				</ContextMenuTrigger>
 			<ContextMenuContent className="w-52">
 				<ContextMenuItem onClick={() => openRename(session)}>Renomear</ContextMenuItem>
 				<ContextMenuSub>
@@ -224,7 +219,8 @@ export const AssistantSessionsSidebar = () => {
 				</ContextMenuItem>
 			</ContextMenuContent>
 		</ContextMenu>
-	);
+		);
+	};
 
 	return (
 		<>
@@ -292,25 +288,17 @@ export const AssistantSessionsSidebar = () => {
 				);
 			})}
 
-			{/* Sessões sem grupo, por data */}
-			{sessions.length === 0 ? (
-				<SidebarGroup>
-					<SidebarMenuItem className="list-none group-data-[collapsible=icon]:hidden">
-						<div className="border-sidebar-border bg-muted/40 rounded-lg border border-dashed px-3 py-3">
-							<Typography variant="caption" className="text-muted-foreground">
-								Nenhuma conversa ainda. Comece uma nova acima.
-							</Typography>
-						</div>
-					</SidebarMenuItem>
-				</SidebarGroup>
-			) : (
-				groupByDate(ungrouped).map(([label, items]) => (
-					<SidebarGroup key={label} className="group-data-[collapsible=icon]:hidden">
-						<SidebarGroupLabel>{label}</SidebarGroupLabel>
-						<SidebarMenu>{items.map(renderSessionRow)}</SidebarMenu>
-					</SidebarGroup>
-				))
-			)}
+			{/* Sessões sem grupo — lista única por recência, sem separar por data */}
+			<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+				<SidebarGroupLabel>Conversas</SidebarGroupLabel>
+				{ungrouped.length === 0 ? (
+					<Typography variant="caption" className="text-muted-foreground px-2 py-1">
+						Nenhuma conversa ainda. Comece uma nova acima.
+					</Typography>
+				) : (
+					<SidebarMenu>{[...ungrouped].sort(byUpdatedDesc).map(renderSessionRow)}</SidebarMenu>
+				)}
+			</SidebarGroup>
 
 			<SmartOverlay
 				open={Boolean(renaming)}
