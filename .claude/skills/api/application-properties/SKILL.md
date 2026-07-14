@@ -57,7 +57,6 @@ Rule of thumb: if leaking the default would be a security incident, the value is
 Sensitive keys (always env-only, no inline default):
 - `DB_PASSWORD`, `DB_USERNAME`, `DB_URL`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `ANTHROPIC_API_KEY`
 - `MAIL_PASSWORD`
 - `CLOUDFLARE_*_KEY`, `CLOUDFLARE_ACCOUNT_ID`
 - `FIREBASE_SERVICE_ACCOUNT_BASE64`
@@ -82,7 +81,6 @@ So in production you never set a `.env` — the platform's env vars take over.
 DB_URL=jdbc:postgresql://localhost:5432/gainz_dev
 DB_USERNAME=admin
 DB_PASSWORD=devpassword
-ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 When adding a new secret:

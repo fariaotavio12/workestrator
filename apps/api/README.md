@@ -10,7 +10,7 @@ gradlew.bat build
 gradlew.bat test
 ```
 
-Production-ready REST API template built with Kotlin + Spring Boot 3.5. Includes authentication, user management, structured logging, error tracking, file storage, email, and AI integration — all pre-wired so you can focus on your domain.
+Production-ready REST API template built with Kotlin + Spring Boot 3.5. Includes authentication, user management, structured logging, error tracking, file storage, email, and knowledge embeddings — all pre-wired so you can focus on your domain.
 
 ## Stack
 
@@ -23,7 +23,7 @@ Production-ready REST API template built with Kotlin + Spring Boot 3.5. Includes
 | API Docs | SpringDoc OpenAPI 3 (Swagger UI) |
 | Storage | Cloudflare R2 (S3-compatible) |
 | Email | SMTP via Hostinger |
-| AI | Anthropic Java SDK |
+| AI embeddings | Voyage/OpenAI-compatible HTTP APIs |
 | Push | Firebase Admin SDK |
 | Error tracking | Sentry |
 | Log shipping | Better Stack (Logtail) |
@@ -75,7 +75,7 @@ features/<name>/
 - **i18n error messages** — `{messageKey}` in exceptions resolved from `messages_pt/en.properties`
 - **Email templates** — HTML templates with `{{variable}}` interpolation (welcome, verification, password recovery)
 - **File storage** — Cloudflare R2 via AWS SDK S3, toggled with `app.storage.cloudflare.enabled`
-- **AI integration** — Anthropic Java SDK pre-configured, blank key allowed locally
+- **Knowledge embeddings** — Voyage provider configured by default, with optional OpenAI embedding key
 - **Firebase** — Admin SDK for push notifications and storage
 - **Swagger UI** — auto-generated at `/swagger-ui.html`
 - **Docker** — `Dockerfile` included, ready for VPS or container deploy
@@ -128,7 +128,6 @@ Copy `.env.example` to `.env` and fill in the required values.
 | `APP_MAIL_FROM_NAME` | `no-reply` | Email sender display name |
 | `MAIL_HOST` | `smtp.hostinger.com` | SMTP host |
 | `MAIL_PORT` | `587` | SMTP port |
-| `ANTHROPIC_API_KEY` | _(empty)_ | Anthropic API key; blank disables AI features |
 | `VOYAGE_API_KEY` | _(empty)_ | Voyage embeddings API key |
 | `OPENAI_API_KEY` | _(empty)_ | OpenAI embeddings API key when using OpenAI |
 
@@ -254,7 +253,6 @@ Required GitHub secrets for the CD pipeline:
 | `DB_URL_PROD` | Production database URL |
 | `DB_USERNAME_PROD` | Production database user |
 | `DB_PASSWORD_PROD` | Production database password |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
 
 ## AI agents and skills
 

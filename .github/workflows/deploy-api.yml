@@ -93,7 +93,6 @@ jobs:
               echo "APP_MAIL_FROM_NAME=Workestrator"
               echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
               echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}"
-              echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
               echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
               echo "BETTERSTACK_SOURCE_TOKEN=${{ secrets.BETTERSTACK_SOURCE_TOKEN }}"
               echo "VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}"

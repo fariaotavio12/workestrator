@@ -36,7 +36,6 @@ dependencies {
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	developmentOnly("org.springframework.boot:spring-boot-devtools")
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
-	implementation("com.anthropic:anthropic-java:2.18.0")
 	implementation("com.google.firebase:firebase-admin:9.3.0")
 	implementation("software.amazon.awssdk:s3:2.25.11")
 	// RAG: document text extraction (PDF/DOCX/PPTX/HTML/MD/TXT)
