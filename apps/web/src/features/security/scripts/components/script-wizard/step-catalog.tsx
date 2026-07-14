@@ -42,7 +42,7 @@ const TemplateCard = ({ template, onSelect }: { template: ToolTemplate; onSelect
 	);
 };
 
-/** Passo 1 do wizard — grid de cards por intenção ("o que você quer conectar"), não por `kind` técnico. */
+/** Passo 1 do wizard — grid de cards por intenção ("o que você quer habilitar"), não por `kind` técnico. */
 export const StepCatalog = ({ onSelect }: StepCatalogProps) => {
 	const ready = TOOL_TEMPLATES.filter((t) => t.category === "ready");
 	const scratch = TOOL_TEMPLATES.filter((t) => t.category === "scratch");
@@ -51,7 +51,7 @@ export const StepCatalog = ({ onSelect }: StepCatalogProps) => {
 		<div className="flex flex-col gap-4">
 			<div>
 				<Typography variant="caption" className="text-muted-foreground mb-1.5">
-					Integrações prontas
+					Ferramentas prontas
 				</Typography>
 				<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
 					{ready.map((template) => (

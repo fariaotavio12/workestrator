@@ -24,7 +24,7 @@ export const useCreateScript = () => {
 	return useMutation({
 		mutationFn: (payload: ScriptPayload) => api.post<Script>("/scripts", payload).then((r) => r.data),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível criar o script.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível criar a ferramenta.")),
 	});
 };
 
@@ -34,7 +34,7 @@ export const useUpdateScript = () => {
 		mutationFn: ({ id, payload }: { id: string; payload: Partial<ScriptPayload> }) =>
 			api.put<Script>(`/scripts/${id}`, payload).then((r) => r.data),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível atualizar o script.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível atualizar a ferramenta.")),
 	});
 };
 
@@ -43,6 +43,6 @@ export const useDeleteScript = () => {
 	return useMutation({
 		mutationFn: (id: string) => api.delete(`/scripts/${id}`),
 		onSuccess: invalidate,
-		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível excluir o script.")),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível excluir a ferramenta.")),
 	});
 };

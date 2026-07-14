@@ -1,5 +1,5 @@
 import { Button, ChatMessage, Typography } from "@/components";
-import type { ConfigAssistantMessage } from "@/features/security/orchestrator-shared/model";
+import type { ConfigAssistantMessage, ConfigAssistantMessageAction } from "@/features/security/orchestrator-shared/model";
 import { Eye, Loader2 } from "lucide-react";
 import type { RefObject } from "react";
 import { extractHtml } from "../utils";
@@ -10,9 +10,17 @@ type Props = {
 	streamingText: string;
 	endRef: RefObject<HTMLDivElement | null>;
 	onOpenHtmlPreview: (html: string) => void;
+	onMessageAction: (action: ConfigAssistantMessageAction) => void;
 };
 
-export const AssistantThread = ({ messages, isRunning, streamingText, endRef, onOpenHtmlPreview }: Props) => (
+export const AssistantThread = ({
+	messages,
+	isRunning,
+	streamingText,
+	endRef,
+	onOpenHtmlPreview,
+	onMessageAction,
+}: Props) => (
 	<div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-4 pt-5 pb-8">
 		{messages.map((message) => {
 			const html = message.role === "assistant" ? extractHtml(message.content) : null;
@@ -22,11 +30,25 @@ export const AssistantThread = ({ messages, isRunning, streamingText, endRef, on
 					role={message.role}
 					content={message.content}
 					footer={
-						html ? (
-							<Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenHtmlPreview(html)}>
-								<Eye className="size-4" />
-								Visualizar HTML
-							</Button>
+						html || message.actions?.length ? (
+							<div className="mt-2 flex flex-wrap gap-2">
+								{html && (
+									<Button variant="outline" size="sm" onClick={() => onOpenHtmlPreview(html)}>
+										<Eye className="size-4" />
+										Visualizar HTML
+									</Button>
+								)}
+								{message.actions?.map((action) => (
+									<Button
+										key={`${message.id}-${action.type}-${action.label}`}
+										variant={action.type === "publish_asset" ? "default" : "outline"}
+										size="sm"
+										onClick={() => onMessageAction(action)}
+									>
+										{action.label}
+									</Button>
+								))}
+							</div>
 						) : undefined
 					}
 				/>

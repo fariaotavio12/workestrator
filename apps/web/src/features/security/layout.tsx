@@ -14,7 +14,7 @@ export const LayoutDashboard = () => {
 
 	return (
 		<>
-			<AppSidebar variant="floating" id="sideBarLayout" />
+			<AppSidebar id="sideBarLayout" />
 			<SidebarInset
 				className={cn("min-w-0 overflow-x-hidden", isAssistantRoute && "max-h-svh min-h-0 overflow-hidden")}
 			>

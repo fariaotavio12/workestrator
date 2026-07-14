@@ -6,33 +6,94 @@ import {
 	useCreateAssistantSession,
 	useUpdateAssistantSession,
 } from "@/features/security/assistant-sessions/api";
+import { commandTemplates } from "@/features/security/commands/data/command-templates";
+import { useCollectionsQuery } from "@/features/security/knowledge/api";
+import { useMyExploreAssetsQuery, usePublishExploreAsset, type ExploreAsset } from "@/features/public/explore/api";
 import { useProvidersQuery } from "@/features/security/models/api";
 import { useConfigAssistantStore } from "@/features/security/orchestrator-shared/model";
+import type { ConfigAssistantMessageAction } from "@/features/security/orchestrator-shared/model";
 import {
 	cancelPendingAction,
 	confirmPendingAction,
 	sendAssistantMessage,
 	stopAssistant,
 } from "@/features/security/orchestrator-shared/runtime/config-assistant-runtime";
+import { useScriptsQuery } from "@/features/security/scripts/api";
+import { skillTemplates } from "@/features/security/skills/data/skill-templates";
+import { useSquadsQuery } from "@/features/security/squads/api";
 import { Eye, FolderOpen, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AssistantComposer } from "./components/assistant-composer";
 import { AssistantEmptyState } from "./components/assistant-empty-state";
 import { AssistantThread } from "./components/assistant-thread";
+import {
+	AssistantActiveContextPanel,
+	AssistantResourceSheet,
+	type AssistantWorkspaceResource,
+} from "./components/assistant-workspace-panels";
 import { ExecutionModeWarning } from "./components/execution-mode-warning";
 import { PendingConfirmationBanner } from "./components/pending-confirmation-banner";
 import { ASSISTANT_ROUTINES } from "./routines";
 import { useConfigAssistantPreview } from "./use-config-assistant-preview";
 import { deriveTitle, orchApi } from "./utils";
 
+const staticWorkspaceResources: AssistantWorkspaceResource[] = [
+	{
+		id: "skill:create-skill",
+		kind: "skill",
+		title: "Criar skill",
+		description: "Estruture uma skill reutilizavel com objetivo, gatilhos e passos claros.",
+		actionLabel: "Usar",
+		prompt:
+			"Me ajude a criar uma skill nova. Quero que ela tenha objetivo, gatilhos, entradas, passos e checklist de qualidade.",
+	},
+	{
+		id: "skill:review-plan",
+		kind: "skill",
+		title: "Revisar plano",
+		description: "Transforme uma ideia solta em tarefas executaveis.",
+		actionLabel: "Planejar",
+		prompt: "Transforme esta ideia em um plano com fases, tarefas, riscos e definicao de pronto: ",
+	},
+];
+
+const getAssetPrompt = (asset: ExploreAsset): string => {
+	const payload = asset.payload;
+	const content =
+		payload && typeof payload === "object" && "content" in payload && typeof payload.content === "string"
+			? payload.content
+			: null;
+
+	if (asset.kind === "SKILL" && content) {
+		return `Use esta skill salva no Workestrator como contexto:\n\n${content}\n\nMinha tarefa: `;
+	}
+
+	return `Use o recurso "${asset.title}" (${asset.kind}) como contexto para esta tarefa: ${asset.description}\n\n`;
+};
+
+const getAssetResourceKind = (asset: ExploreAsset): AssistantWorkspaceResource["kind"] => {
+	if (asset.kind === "SQUAD") return "squad";
+	if (asset.kind === "KNOWLEDGE") return "knowledge";
+	if (asset.kind === "SCRIPT") return "script";
+	if (asset.kind === "SKILL") return "skill";
+	if (asset.kind === "MCP") return "mcp";
+	return "command";
+};
+
 export const PageConfigAssistant = () => {
 	const navigate = useNavigate();
 	const { sessionId } = useParams<{ sessionId: string }>();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const { data: providers = [] } = useProvidersQuery();
+	const { data: squads = [] } = useSquadsQuery();
+	const { data: collections = [] } = useCollectionsQuery();
+	const { data: scripts = [] } = useScriptsQuery();
+	const { data: myAssetsPage, refetch: refetchMyAssets } = useMyExploreAssetsQuery({ page: 0, size: 100 });
 	const { data: session } = useAssistantSessionQuery(sessionId);
 	const createSession = useCreateAssistantSession();
 	const updateSession = useUpdateAssistantSession();
+	const publishAsset = usePublishExploreAsset();
 
 	const messages = useConfigAssistantStore((state) => state.messages);
 	const isRunning = useConfigAssistantStore((state) => state.isRunning);
@@ -47,11 +108,23 @@ export const PageConfigAssistant = () => {
 	const { hydrate, reset, setModel, setWorkingDir, setActiveSessionId, clearActivity } =
 		useConfigAssistantStore.getState();
 
-	const [input, setInput] = useState("");
+	const [input, setInput] = useState(() => searchParams.get("prompt") ?? "");
+	const [resourceQuery, setResourceQuery] = useState("");
+	const [resourceSheetOpen, setResourceSheetOpen] = useState(false);
+	const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
 	const endRef = useRef<HTMLDivElement>(null);
 	const wasRunning = useRef(false);
 	const { previewOpen, previewItems, canShowDesign, setPreviewOpen, openDesignPreview, openHtmlPreview } =
 		useConfigAssistantPreview({ workingDir, artifacts });
+
+	useEffect(() => {
+		const prompt = searchParams.get("prompt");
+		if (!prompt) return;
+
+		const nextSearchParams = new URLSearchParams(searchParams);
+		nextSearchParams.delete("prompt");
+		setSearchParams(nextSearchParams, { replace: true });
+	}, [searchParams, setSearchParams]);
 
 	useEffect(() => {
 		if (!sessionId) {
@@ -119,6 +192,88 @@ export const PageConfigAssistant = () => {
 	const currentTitle = activeSessionId ? deriveTitle(messages) : "Assistente";
 	const currentModelLabel = selectedProvider && model ? `${selectedProvider.label} / ${model}` : "Modelo não definido";
 
+	const workspaceResources = useMemo<AssistantWorkspaceResource[]>(() => {
+		const commandResources = commandTemplates.map((command) => ({
+			id: `command-template:${command.id}`,
+			kind: "command" as const,
+			title: command.title,
+			description: command.description,
+			actionLabel: "Usar",
+			prompt: command.prompt,
+		}));
+		const routineResources = ASSISTANT_ROUTINES.map((routine) => ({
+			id: `command:${routine.id}`,
+			kind: "command" as const,
+			title: routine.title,
+			description: routine.hint ?? "Comando rapido do assistente.",
+			actionLabel: "Inserir",
+			prompt: routine.template,
+		}));
+		const squadResources = squads.map((squad) => ({
+			id: `squad:${squad.id}`,
+			kind: "squad" as const,
+			title: squad.name,
+			description: squad.description || "Executar ou consultar este squad.",
+			actionLabel: "Usar",
+			prompt: `Use o squad "${squad.name}" como contexto para esta tarefa: `,
+		}));
+		const knowledgeResources = collections.map((collection) => ({
+			id: `knowledge:${collection.id}`,
+			kind: "knowledge" as const,
+			title: collection.name,
+			description: collection.description || `${collection.documentCount} documentos disponiveis para contexto.`,
+			actionLabel: "Anexar",
+			prompt: `Considere a base de conhecimento "${collection.name}" para responder: `,
+		}));
+		const scriptResources = scripts.map((script) => ({
+			id: `script:${script.id}`,
+			kind: "script" as const,
+			title: script.name,
+			description: script.description || `Ferramenta do tipo ${script.kind}.`,
+			actionLabel: "Usar",
+			prompt: `Use a ferramenta "${script.name}" quando fizer sentido para esta tarefa: `,
+		}));
+		const skillResources = skillTemplates.map((skill) => ({
+			id: `skill:${skill.id}`,
+			kind: "skill" as const,
+			title: skill.name,
+			description: skill.description,
+			actionLabel: "Usar",
+			prompt: `Use esta skill como contexto:\n\n${skill.content}\n\nMinha tarefa: `,
+		}));
+		const savedAssetResources = (myAssetsPage?.data ?? []).map((asset) => ({
+			id: `asset:${asset.id}`,
+			kind: getAssetResourceKind(asset),
+			title: asset.title,
+			description: `${asset.visibility === "PUBLIC" ? "Público" : "Privado"} · ${asset.description}`,
+			actionLabel: "Usar",
+			prompt: getAssetPrompt(asset),
+		}));
+
+		return [
+			...savedAssetResources,
+			...commandResources,
+			...routineResources,
+			...squadResources,
+			...knowledgeResources,
+			...scriptResources,
+			...skillResources,
+			...staticWorkspaceResources,
+		];
+	}, [collections, myAssetsPage?.data, scripts, squads]);
+	const filteredWorkspaceResources = useMemo(() => {
+		const normalizedQuery = resourceQuery.trim().toLowerCase();
+		if (!normalizedQuery) return workspaceResources;
+
+		return workspaceResources.filter((resource) =>
+			`${resource.title} ${resource.description} ${resource.kind}`.toLowerCase().includes(normalizedQuery),
+		);
+	}, [resourceQuery, workspaceResources]);
+	const selectedResources = useMemo(
+		() => workspaceResources.filter((resource) => selectedResourceIds.includes(resource.id)),
+		[selectedResourceIds, workspaceResources],
+	);
+
 	const pickDirectory = async () => {
 		const path = await orchApi()?.selectPath?.();
 		if (path) setWorkingDir(path);
@@ -133,6 +288,31 @@ export const PageConfigAssistant = () => {
 	const applyRoutine = (id: string) => {
 		const routine = ASSISTANT_ROUTINES.find((item) => item.id === id);
 		if (routine) setInput(routine.template);
+	};
+
+	const toggleResource = (id: string) => {
+		setSelectedResourceIds((current) =>
+			current.includes(id) ? current.filter((resourceId) => resourceId !== id) : [...current, id],
+		);
+	};
+
+	const applyWorkspaceResource = (resource: AssistantWorkspaceResource) => {
+		setInput((current) => {
+			if (!current.trim()) return resource.prompt;
+			return `${current.trim()}\n\n${resource.prompt}`;
+		});
+		setSelectedResourceIds((current) => (current.includes(resource.id) ? current : [...current, resource.id]));
+	};
+
+	const handleMessageAction = (action: ConfigAssistantMessageAction) => {
+		if (action.type === "open_resources") {
+			void refetchMyAssets();
+			setResourceSheetOpen(true);
+			return;
+		}
+		if (action.type === "publish_asset") {
+			publishAsset.mutate(action.assetId);
+		}
 	};
 
 	const sendIfPossible = (text: string) => {
@@ -158,8 +338,10 @@ export const PageConfigAssistant = () => {
 			onStop={stopAssistant}
 			onPickDirectory={pickDirectory}
 			onClearDirectory={() => setWorkingDir(null)}
+			onOpenResources={() => setResourceSheetOpen(true)}
 			onModelChange={setModel}
 			onRoutineSelect={applyRoutine}
+			attachedResourcesCount={selectedResources.length}
 		/>
 	);
 
@@ -214,6 +396,7 @@ export const PageConfigAssistant = () => {
 							streamingText={streamingText}
 							endRef={endRef}
 							onOpenHtmlPreview={openHtmlPreview}
+							onMessageAction={handleMessageAction}
 						/>
 					) : (
 						<AssistantEmptyState
@@ -253,6 +436,17 @@ export const PageConfigAssistant = () => {
 				</div>
 			)}
 
+			{!hasPanel && (
+				<AssistantActiveContextPanel
+					selectedResources={selectedResources}
+					selectedProviderLabel={currentModelLabel}
+					workingDir={workingDir}
+					onClearResource={(id) =>
+						setSelectedResourceIds((current) => current.filter((resourceId) => resourceId !== id))
+					}
+				/>
+			)}
+
 			<PreviewModal
 				open={previewOpen}
 				onOpenChange={setPreviewOpen}
@@ -260,6 +454,19 @@ export const PageConfigAssistant = () => {
 				items={previewItems}
 				onApprove={() => sendIfPossible("Aprovado. Pode finalizar.")}
 				onRequestChanges={(feedback) => sendIfPossible(`Ajuste: ${feedback}`)}
+			/>
+			<AssistantResourceSheet
+				open={resourceSheetOpen}
+				onOpenChange={setResourceSheetOpen}
+				resources={filteredWorkspaceResources}
+				query={resourceQuery}
+				selectedResourceIds={selectedResourceIds}
+				onQueryChange={setResourceQuery}
+				onToggleResource={toggleResource}
+				onUseResource={(resource) => {
+					applyWorkspaceResource(resource);
+					setResourceSheetOpen(false);
+				}}
 			/>
 		</div>
 	);

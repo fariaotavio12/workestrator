@@ -18,6 +18,15 @@ import { useMemo, useState } from "react";
 
 const DEFAULT_PAGE_SIZE = 10;
 
+const kindHelper: Record<Script["kind"], string> = {
+	command: "Roda um comando local quando o agent puder executar.",
+	inline: "Executa um trecho de código materializado pelo runner.",
+	file: "Lê um arquivo disponível na máquina do runner.",
+	http: "Chama uma API externa usando uma conexão quando necessário.",
+	mcp: "Conecta um servidor MCP local ou remoto como ferramenta avançada.",
+	connector: "Usa um gateway/conector externo com credencial referenciada.",
+};
+
 const scriptSummary = (script: Script): string => {
 	switch (script.kind) {
 		case "command":
@@ -70,7 +79,16 @@ export const PageScripts = () => {
 			{
 				accessorKey: "kind",
 				header: "Tipo",
-				cell: ({ row }) => <Badge variant="secondary">{SCRIPT_KIND_LABEL[row.original.kind]}</Badge>,
+				cell: ({ row }) => (
+					<div className="flex flex-col gap-1">
+						<Badge variant="secondary" className="w-fit">
+							{SCRIPT_KIND_LABEL[row.original.kind]}
+						</Badge>
+						<Typography variant="caption" className="text-muted-foreground line-clamp-1">
+							{kindHelper[row.original.kind]}
+						</Typography>
+					</div>
+				),
 				meta: {
 					mobileStatus: true,
 					mobileOrder: 2,
@@ -148,28 +166,29 @@ export const PageScripts = () => {
 	return (
 		<div className="flex w-full flex-col gap-6">
 			<PageHeader
-				title="Scripts"
-				description="Biblioteca compartilhada. Qualquer agent pode referenciar um script como ferramenta."
+				eyebrow="Automação"
+				title="Ferramentas"
+				description="Tudo que um agent pode usar para agir fora da conversa: comandos locais, APIs HTTP, servidores MCP e conectores."
 				actions={
 					<Button onClick={() => setForm({})}>
 						<Plus />
-						Novo script
+						Nova ferramenta
 					</Button>
 				}
 			/>
 
 			{isError ? (
 				<div className="px-4">
-					<ErrorState message="Não foi possível carregar os scripts." onRetry={() => refetch()} />
+					<ErrorState message="Não foi possível carregar as ferramentas." onRetry={() => refetch()} />
 				</div>
 			) : !isLoading && scripts.length === 0 ? (
 				<div className="px-4">
 					<EmptyState
 						icon={Terminal}
-						title="Nenhum script"
-						message="Cadastre um script para qualquer agent poder usar como ferramenta."
+						title="Nenhuma ferramenta"
+						message="Cadastre uma ferramenta para agents executarem comandos, chamarem APIs ou usarem conectores."
 						onAction={() => setForm({})}
-						actionLabel="Novo script"
+						actionLabel="Nova ferramenta"
 						actionIcon={<Plus />}
 					/>
 				</div>
@@ -192,9 +211,9 @@ export const PageScripts = () => {
 			<ConfirmDialog
 				open={Boolean(toDelete)}
 				onOpenChange={(next) => !next && setToDelete(null)}
-				title="Excluir script?"
+				title="Excluir ferramenta?"
 				description={
-					toDelete ? `"${toDelete.name}" sera removido. Agents que o usavam perdem so a referencia.` : undefined
+					toDelete ? `"${toDelete.name}" sera removida. Agents que a usavam perdem so a referencia.` : undefined
 				}
 				confirmLabel="Excluir"
 				destructive
@@ -202,7 +221,7 @@ export const PageScripts = () => {
 					if (!toDelete) return;
 					try {
 						await deleteScript.mutateAsync(toDelete.id);
-						notify.success("Script excluido");
+						notify.success("Ferramenta excluida");
 						setToDelete(null);
 					} catch {
 						// useDeleteScript already shows the API error toast.

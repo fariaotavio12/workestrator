@@ -1,4 +1,5 @@
 import { Rotas } from "@/app/routing/variables";
+import { cn } from "@/app/utils/cn";
 import {
 	SidebarGroup,
 	SidebarGroupLabel,
@@ -133,11 +134,21 @@ export const OrchestratorSquadsSidebar = () => {
 						squads.map((squad) => {
 							const url = squadPath(squad.id);
 							const isActive = pathname === url;
+							const status = runtimes[squad.id]?.status ?? "idle";
+							const isLive = ACTIVE_STATUSES.has(status);
+							const needsAttention = ATTENTION_STATUSES.has(status);
 
 							return (
 								<SidebarMenuItem key={squad.id}>
 									<SidebarMenuButton asChild tooltip={squad.name} isActive={isActive}>
 										<Link to={url} aria-current={isActive ? "page" : undefined}>
+											<span
+												aria-hidden
+												className={cn(
+													"size-1.5 shrink-0 rounded-full group-data-[collapsible=icon]:hidden",
+													needsAttention ? "bg-warning" : isLive ? "bg-success" : "bg-border",
+												)}
+											/>
 											<span aria-hidden className="flex size-4 shrink-0 items-center justify-center text-sm">
 												{renderSquadIcon(squad.icon)}
 											</span>

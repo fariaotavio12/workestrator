@@ -31,3 +31,6 @@ storybook-static
 
 # Orquestrador (M9): pasta de trabalho onde agents com canExecute rodam/criam scripts de verdade.
 orchestrator-workspace/
+
+# Skills/agents locais sincronizados via sync.sh — não entram em PR.
+.claude/

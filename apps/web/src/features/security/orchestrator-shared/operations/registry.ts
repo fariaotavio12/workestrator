@@ -27,6 +27,7 @@ const CALLS: Record<OperationName, CallFn> = {
 	remove_seat: (input) => ops.removeSeat(input as Parameters<typeof ops.removeSeat>[0]),
 	set_orchestrator: (input) => ops.setOrchestrator(input as Parameters<typeof ops.setOrchestrator>[0]),
 	attach_tool: (input) => ops.attachTool(input as Parameters<typeof ops.attachTool>[0]),
+	create_skill: (input) => ops.createSkill(input as Parameters<typeof ops.createSkill>[0]),
 	run_squad: (input) => ops.runSquad(input as Parameters<typeof ops.runSquad>[0]),
 	list_runs: (input) => ops.listRuns(input as Parameters<typeof ops.listRuns>[0]),
 	list_providers: () => ops.listProviders(),

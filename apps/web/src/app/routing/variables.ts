@@ -10,6 +10,7 @@ export const Rotas = {
 			prices: "/precos",
 			download: "/download",
 			participate: "/participar",
+			explore: "/explorar",
 			privacyPolicy: "/politica-de-privacidade",
 			knowledgeBase: {
 				helpCenter: "/help-center/introducao",
@@ -45,6 +46,7 @@ export const Rotas = {
 		orchestrator: {
 			squads: "/dashboard/squads",
 			squadDetail: "/dashboard/squads/:id",
+			tools: "/dashboard/ferramentas",
 			scripts: "/dashboard/scripts",
 			models: "/dashboard/modelos",
 			executions: "/dashboard",
@@ -53,10 +55,15 @@ export const Rotas = {
 			knowledgeDetail: "/dashboard/conhecimento/:id",
 			assistant: "/dashboard/assistente",
 			assistantSession: "/dashboard/assistente/:sessionId",
+			commands: "/dashboard/comandos",
+			skills: "/dashboard/skills",
+			communityAssets: "/dashboard/recursos",
+			mcp: "/dashboard/mcp",
 		},
 		legacyOrchestrator: {
 			squads: "/orquestrador/squads",
 			squadDetail: "/orquestrador/squads/:id",
+			tools: "/orquestrador/ferramentas",
 			scripts: "/orquestrador/scripts",
 			models: "/orquestrador/modelos",
 			executions: "/orquestrador/execucoes",
@@ -65,6 +72,10 @@ export const Rotas = {
 			knowledgeDetail: "/orquestrador/conhecimento/:id",
 			assistant: "/orquestrador/assistente",
 			assistantSession: "/orquestrador/assistente/:sessionId",
+			commands: "/orquestrador/comandos",
+			skills: "/orquestrador/skills",
+			communityAssets: "/orquestrador/recursos",
+			mcp: "/orquestrador/mcp",
 		},
 	},
 };

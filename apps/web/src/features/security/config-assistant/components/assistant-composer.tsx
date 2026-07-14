@@ -1,6 +1,7 @@
 import { cn } from "@/app/utils/cn";
-import { ChatComposer, SlashCommandMenu } from "@/components";
+import { Button, ChatComposer, SlashCommandMenu } from "@/components";
 import type { ModelProvider } from "@/features/security/orchestrator-shared/types";
+import { Library } from "lucide-react";
 import type { AssistantRoutine } from "../routines";
 import { DirectoryControl } from "./directory-control";
 import { ModelPicker } from "./model-picker";
@@ -23,8 +24,10 @@ type Props = {
 	onStop: () => void;
 	onPickDirectory: () => void;
 	onClearDirectory: () => void;
+	onOpenResources: () => void;
 	onModelChange: (providerId: string, model: string) => void;
 	onRoutineSelect: (id: string) => void;
+	attachedResourcesCount: number;
 };
 
 export const AssistantComposer = ({
@@ -45,8 +48,10 @@ export const AssistantComposer = ({
 	onStop,
 	onPickDirectory,
 	onClearDirectory,
+	onOpenResources,
 	onModelChange,
 	onRoutineSelect,
+	attachedResourcesCount,
 }: Props) => {
 	const slashOpen = input.startsWith("/") && !input.includes(" ") && !input.includes("\n");
 
@@ -67,12 +72,29 @@ export const AssistantComposer = ({
 						: "Digite sua mensagem... (/ para rotinas)"
 				}
 				leftSlot={
-					<DirectoryControl
-						workingDir={workingDir}
-						canPickDir={canPickDir}
-						onPick={onPickDirectory}
-						onClear={onClearDirectory}
-					/>
+					<div className="flex items-center gap-1">
+						<DirectoryControl
+							workingDir={workingDir}
+							canPickDir={canPickDir}
+							onPick={onPickDirectory}
+							onClear={onClearDirectory}
+						/>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="text-muted-foreground hover:text-foreground h-6 gap-1 rounded-md px-1.5 text-xs"
+							onClick={onOpenResources}
+						>
+							<Library className="size-3.5" />
+							Recursos
+							{attachedResourcesCount > 0 && (
+								<span className="bg-primary text-primary-foreground ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none">
+									{attachedResourcesCount}
+								</span>
+							)}
+						</Button>
+					</div>
 				}
 				rightSlot={<ModelPicker providers={providers} providerId={providerId} model={model} onChange={onModelChange} />}
 			/>
