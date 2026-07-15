@@ -7,9 +7,6 @@ import type { CharacterName } from "@/features/security/orchestrator-shared/type
  */
 const base = () => import.meta.env.BASE_URL;
 
-/** Peça de mobília/decoração da sala (nome do arquivo sem extensão, ex.: "01_workstation-desk-l-empty"). */
-export const officeProp = (file: string): string => `${base()}assets_office_transparente/${file}.png`;
-
 export type PersonPose = "seated" | "front" | "back" | "side";
 
 /** Chave de um personagem (prefixo do arquivo em /public/bonecos_transparentes). */

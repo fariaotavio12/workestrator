@@ -1,0 +1,638 @@
+{
+	"01_workstation-desk-l-empty": {
+		"native": {
+			"w": 140,
+			"h": 127
+		},
+		"trim": {
+			"x": 8,
+			"y": 14,
+			"w": 124,
+			"h": 99
+		}
+	},
+	"02_conference-table-empty": {
+		"native": {
+			"w": 133,
+			"h": 115
+		},
+		"trim": {
+			"x": 3,
+			"y": 11,
+			"w": 126,
+			"h": 92
+		}
+	},
+	"03_manager-desk-empty": {
+		"native": {
+			"w": 136,
+			"h": 123
+		},
+		"trim": {
+			"x": 6,
+			"y": 20,
+			"w": 124,
+			"h": 86
+		}
+	},
+	"04_coffee-table-empty": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 9,
+			"y": 25,
+			"w": 124,
+			"h": 80
+		}
+	},
+	"05_snack-storage-cabinet-empty": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 9,
+			"y": 22,
+			"w": 124,
+			"h": 87
+		}
+	},
+	"06_filing-shelf-empty": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 8,
+			"y": 31,
+			"w": 126,
+			"h": 68
+		}
+	},
+	"07_office-chair-teal": {
+		"native": {
+			"w": 139,
+			"h": 128
+		},
+		"trim": {
+			"x": 32,
+			"y": 8,
+			"w": 74,
+			"h": 114
+		}
+	},
+	"08_computer-monitor-black": {
+		"native": {
+			"w": 134,
+			"h": 123
+		},
+		"trim": {
+			"x": 25,
+			"y": 4,
+			"w": 82,
+			"h": 114
+		}
+	},
+	"09_keyboard-black": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 11,
+			"y": 35,
+			"w": 119,
+			"h": 60
+		}
+	},
+	"10_mouse-black": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 17,
+			"y": 13,
+			"w": 108,
+			"h": 106
+		}
+	},
+	"11_acoustic-divider-teal": {
+		"native": {
+			"w": 139,
+			"h": 127
+		},
+		"trim": {
+			"x": 52,
+			"y": 6,
+			"w": 34,
+			"h": 116
+		}
+	},
+	"12_drawer-pedestal-gray": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 30,
+			"y": 10,
+			"w": 82,
+			"h": 113
+		}
+	},
+	"13_desk-plant-small": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 31,
+			"y": 11,
+			"w": 79,
+			"h": 111
+		}
+	},
+	"14_office-waste-bin": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 33,
+			"y": 11,
+			"w": 76,
+			"h": 110
+		}
+	},
+	"15_conference-chair-teal": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 37,
+			"y": 10,
+			"w": 67,
+			"h": 112
+		}
+	},
+	"16_conference-centerpiece": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 30,
+			"y": 14,
+			"w": 82,
+			"h": 105
+		}
+	},
+	"17_table-control-device": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 30,
+			"y": 21,
+			"w": 81,
+			"h": 89
+		}
+	},
+	"18_manager-chair-teal": {
+		"native": {
+			"w": 127,
+			"h": 124
+		},
+		"trim": {
+			"x": 30,
+			"y": 5,
+			"w": 65,
+			"h": 115
+		}
+	},
+	"19_bookcase-filled-variant": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 27,
+			"y": 9,
+			"w": 88,
+			"h": 114
+		}
+	},
+	"20_manager-monitor-left": {
+		"native": {
+			"w": 130,
+			"h": 120
+		},
+		"trim": {
+			"x": 17,
+			"y": 3,
+			"w": 101,
+			"h": 116
+		}
+	},
+	"21_manager-monitor-right": {
+		"native": {
+			"w": 134,
+			"h": 125
+		},
+		"trim": {
+			"x": 12,
+			"y": 7,
+			"w": 102,
+			"h": 116
+		}
+	},
+	"22_wall-analytics-dashboard": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 9,
+			"y": 32,
+			"w": 124,
+			"h": 67
+		}
+	},
+	"23_sofa-blue": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 10,
+			"y": 22,
+			"w": 126,
+			"h": 87
+		}
+	},
+	"24_lounge-armchair-teal": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 31,
+			"y": 10,
+			"w": 79,
+			"h": 112
+		}
+	},
+	"25_office-magazine": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 19,
+			"y": 12,
+			"w": 102,
+			"h": 107
+		}
+	},
+	"26_water-dispenser": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 49,
+			"y": 9,
+			"w": 43,
+			"h": 114
+		}
+	},
+	"27_multifunction-printer": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 20,
+			"y": 10,
+			"w": 102,
+			"h": 113
+		}
+	},
+	"28_filing-cabinet-filled-variant": {
+		"native": {
+			"w": 141,
+			"h": 129
+		},
+		"trim": {
+			"x": 7,
+			"y": 27,
+			"w": 125,
+			"h": 77
+		}
+	},
+	"29_noticeboard-notes": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 42,
+			"y": 9,
+			"w": 128,
+			"h": 78
+		}
+	},
+	"30_floor-plant-large": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 76,
+			"y": 4,
+			"w": 55,
+			"h": 84
+		}
+	},
+	"31_floor-plant-small": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 77,
+			"y": 9,
+			"w": 52,
+			"h": 77
+		}
+	},
+	"32_recycling-bin-blue": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 80,
+			"y": 9,
+			"w": 47,
+			"h": 78
+		}
+	},
+	"33_microwave-black": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 54,
+			"y": 10,
+			"w": 99,
+			"h": 76
+		}
+	},
+	"34_coffee-machine": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 80,
+			"y": 8,
+			"w": 46,
+			"h": 81
+		}
+	},
+	"35_snack-bowl": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 62,
+			"y": 11,
+			"w": 83,
+			"h": 74
+		}
+	},
+	"36_snack-bag": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 72,
+			"y": 9,
+			"w": 64,
+			"h": 78
+		}
+	},
+	"37_sofa-cushion-orange": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 64,
+			"y": 8,
+			"w": 79,
+			"h": 80
+		}
+	},
+	"38_sofa-cushion-teal": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 65,
+			"y": 8,
+			"w": 78,
+			"h": 80
+		}
+	},
+	"39_office-binder-single": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 90,
+			"y": 9,
+			"w": 28,
+			"h": 78
+		}
+	},
+	"40_storage-box-small": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 67,
+			"y": 9,
+			"w": 74,
+			"h": 77
+		}
+	},
+	"41_bookcase-tall-empty": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 82,
+			"y": 7,
+			"w": 43,
+			"h": 82
+		}
+	},
+	"42_wood-floor-tile": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 69,
+			"y": 7,
+			"w": 69,
+			"h": 82
+		}
+	},
+	"43_meeting-carpet-tile": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 66,
+			"y": 7,
+			"w": 76,
+			"h": 82
+		}
+	},
+	"44_lounge-rug-orange": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 62,
+			"y": 7,
+			"w": 83,
+			"h": 82
+		}
+	},
+	"45_glass-wall-panel": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 80,
+			"y": 7,
+			"w": 48,
+			"h": 82
+		}
+	},
+	"46_glass-meeting-door": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 83,
+			"y": 8,
+			"w": 41,
+			"h": 81
+		}
+	},
+	"47_glass-entrance-double-door": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 56,
+			"y": 8,
+			"w": 95,
+			"h": 80
+		}
+	},
+	"48_wall-sconce-cream": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 85,
+			"y": 7,
+			"w": 36,
+			"h": 82
+		}
+	},
+	"49_framed-city-picture": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 26,
+			"y": 10,
+			"w": 149,
+			"h": 76
+		}
+	},
+	"50_access-control-terminal": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 88,
+			"y": 8,
+			"w": 31,
+			"h": 80
+		}
+	},
+	"51_indoor-planter-box": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 24,
+			"y": 10,
+			"w": 160,
+			"h": 76
+		}
+	},
+	"52_exterior-flower-planter": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 27,
+			"y": 9,
+			"w": 153,
+			"h": 77
+		}
+	},
+	"53_low-side-cabinet": {
+		"native": {
+			"w": 207,
+			"h": 93
+		},
+		"trim": {
+			"x": 36,
+			"y": 10,
+			"w": 136,
+			"h": 76
+		}
+	}
+}
