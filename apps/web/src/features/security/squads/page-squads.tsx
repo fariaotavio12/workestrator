@@ -1,54 +1,158 @@
 import { Rotas } from "@/app/routing/variables";
+import { cn } from "@/app/utils/cn";
 import {
+	Badge,
 	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
 	EmptyState,
 	ErrorState,
+	Input,
 	PageHeader,
-	ResponsiveTableCustom,
+	Typography,
 	notify,
 } from "@/components";
-import type { Row } from "@tanstack/react-table";
-import { Boxes, Copy, Link2, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { ConfirmDialog, SquadFormDialog } from "@/components/orchestrator";
+import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
 import { useProvidersQuery } from "@/features/security/models/api";
+import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
+import type { Trigger } from "@/features/security/orchestrator-shared/types";
 import { useDeleteSquad, useDuplicateSquad, useSquadsQuery } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
 import { ImportShareDialog } from "@/features/security/squads/components/import-share-dialog";
 import { OnboardingChecklist } from "@/features/security/squads/components/onboarding-checklist";
-import { useSquadTableColumns } from "@/features/security/squads/components/squad-table-columns";
+import { Boxes, Clock, Copy, Link2, MoreVertical, Play, Plus, Search, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-const DEFAULT_PAGE_SIZE = 10;
+const ACTIVE_STATUSES = new Set(["running", "paused", "checkpoint", "awaiting_input"]);
+
+const triggerLabel = (trigger: Trigger): string => {
+	if (trigger.type === "manual") return "Manual";
+	if (trigger.type === "schedule") return `${trigger.every}${trigger.enabled ? "" : " (off)"}`;
+	return "Encadeado";
+};
+
+type SquadCardProps = {
+	squad: SquadSummary;
+	isLive: boolean;
+	onOpen: (squad: SquadSummary) => void;
+	onRun: (squad: SquadSummary) => void;
+	onDuplicate: (squad: SquadSummary) => void;
+	onDelete: (squad: SquadSummary) => void;
+};
+
+const SquadCard = ({ squad, isLive, onOpen, onRun, onDuplicate, onDelete }: SquadCardProps) => (
+	<article
+		role="button"
+		tabIndex={0}
+		onClick={() => onOpen(squad)}
+		onKeyDown={(event) => {
+			if (event.key !== "Enter" && event.key !== " ") return;
+			event.preventDefault();
+			onOpen(squad);
+		}}
+		className="bg-card hover:bg-secondary flex cursor-pointer flex-col gap-3 border rounded-lg p-4 transition-colors"
+	>
+		<div className="flex items-start justify-between gap-2">
+			<div className="flex min-w-0 items-center gap-2">
+				<span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", isLive ? "bg-success" : "bg-border")} />
+				<Typography variant="title-sm" className="truncate">
+					{squad.name}
+				</Typography>
+			</div>
+
+			<div className="flex shrink-0 items-center gap-1">
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					className="text-muted-foreground hover:text-foreground h-7 gap-1 px-2"
+					onClick={(event) => {
+						event.stopPropagation();
+						onRun(squad);
+					}}
+				>
+					<Play className="size-3.5" />
+					Executar
+				</Button>
+
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							aria-label={`Mais ações para ${squad.name}`}
+							onClick={(event) => event.stopPropagation()}
+						>
+							<MoreVertical className="size-4" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end">
+						<DropdownMenuItem onClick={() => onDuplicate(squad)}>
+							<Copy className="size-4" />
+							Duplicar
+						</DropdownMenuItem>
+						<DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(squad)}>
+							<Trash2 className="size-4" />
+							Excluir
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
+		</div>
+
+		<Typography variant="body-sm" className="text-muted-foreground line-clamp-2">
+			{squad.description || "Sem descrição."}
+		</Typography>
+
+		<div className="flex flex-wrap items-center gap-2">
+			<Badge variant="outline" className="gap-1 px-2 py-1">
+				<Clock className="size-3" />
+				{triggerLabel(squad.trigger)}
+			</Badge>
+			<div
+				className="bg-background flex size-6 shrink-0 items-center justify-center rounded-md border text-sm"
+				aria-hidden
+			>
+				{renderSquadIcon(squad.icon)}
+			</div>
+		</div>
+	</article>
+);
 
 export const PageSquads = () => {
 	const { data: squads = [], isLoading, isError, refetch } = useSquadsQuery();
 	const { data: providers = [] } = useProvidersQuery();
 	const duplicateSquad = useDuplicateSquad();
 	const deleteSquad = useDeleteSquad();
+	const runtimes = useOrchestratorRuntimeStore((s) => s.runtimes);
+	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
 	const navigate = useNavigate();
-	const columns = useSquadTableColumns();
 
-	const [page, setPage] = useState(0);
-	const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
+	const [query, setQuery] = useState("");
 	const [formOpen, setFormOpen] = useState(false);
 	const [importOpen, setImportOpen] = useState(false);
 	const [toDelete, setToDelete] = useState<SquadSummary | undefined>(undefined);
 
-	const totalPages = Math.max(Math.ceil(squads.length / size), 1);
-	const currentPage = Math.min(page, totalPages - 1);
-	const paginatedSquads = squads.slice(currentPage * size, currentPage * size + size);
-	const pagination = {
-		page: currentPage,
-		size,
-		totalElements: squads.length,
-		totalPages,
-	};
+	const filteredSquads = useMemo(() => {
+		const normalizedQuery = query.trim().toLowerCase();
+		if (!normalizedQuery) return squads;
+		return squads.filter((squad) => `${squad.name} ${squad.description}`.toLowerCase().includes(normalizedQuery));
+	}, [squads, query]);
 
-	const handleSizeChange = (nextSize: number) => {
-		setSize(nextSize);
-		setPage(0);
-	};
+	const { activeSquads, idleSquads } = useMemo(() => {
+		const activeSquads: SquadSummary[] = [];
+		const idleSquads: SquadSummary[] = [];
+		for (const squad of filteredSquads) {
+			const status = runtimes[squad.id]?.status ?? "idle";
+			(ACTIVE_STATUSES.has(status) ? activeSquads : idleSquads).push(squad);
+		}
+		return { activeSquads, idleSquads };
+	}, [filteredSquads, runtimes]);
 
 	const openSquad = (squad: SquadSummary) =>
 		navigate(Rotas.protegidas.orchestrator.squadDetail.replace(":id", squad.id));
@@ -57,39 +161,45 @@ export const PageSquads = () => {
 	const hasSquads = squads.length > 0;
 	const showChecklist = !isLoading && (!hasProviders || !hasSquads);
 
-	const renderActions = (row: Row<SquadSummary>) => (
-		<div className="flex justify-end gap-1">
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Duplicar"
-				onClick={async (e) => {
-					e.stopPropagation();
-					try {
-						await duplicateSquad.mutateAsync(row.original);
-						notify.success("Squad duplicado");
-					} catch {
-						// useDuplicateSquad already shows the API error toast.
-					}
-				}}
-				disabled={duplicateSquad.isPending}
-			>
-				<Copy />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Excluir"
-				className="text-destructive"
-				onClick={(e) => {
-					e.stopPropagation();
-					setToDelete(row.original);
-				}}
-			>
-				<Trash2 />
-			</Button>
-		</div>
-	);
+	const cloneSquad = async (squad: SquadSummary) => {
+		try {
+			const copy = await duplicateSquad.mutateAsync(squad);
+			notify.success("Squad clonado");
+			navigate(Rotas.protegidas.orchestrator.squadDetail.replace(":id", copy.id));
+		} catch {
+			// useDuplicateSquad already shows the API error toast.
+		}
+	};
+
+	const renderGroup = (label: string, items: SquadSummary[], isLive: boolean) => {
+		if (items.length === 0) return null;
+
+		return (
+			<div className="flex flex-col gap-3">
+				<div className="flex items-center gap-2">
+					<Typography variant="title-sm" as="h2">
+						{label}
+					</Typography>
+					<Badge variant="secondary" className="px-2 py-0.5 text-xs">
+						{items.length}
+					</Badge>
+				</div>
+				<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+					{items.map((squad) => (
+						<SquadCard
+							key={squad.id}
+							squad={squad}
+							isLive={isLive}
+							onOpen={openSquad}
+							onRun={(s) => openRunDialog(s.id)}
+							onDuplicate={cloneSquad}
+							onDelete={setToDelete}
+						/>
+					))}
+				</div>
+			</div>
+		);
+	};
 
 	return (
 		<div className="flex w-full flex-col gap-6">
@@ -103,7 +213,7 @@ export const PageSquads = () => {
 							<Link2 />
 							Importar por link
 						</Button>
-						<Button onClick={() => setFormOpen(true)}>
+						<Button variant="outline" onClick={() => setFormOpen(true)}>
 							<Plus />
 							Novo squad
 						</Button>
@@ -148,21 +258,32 @@ export const PageSquads = () => {
 					actionIcon={<Plus />}
 				/>
 			) : (
-				<section className="flex flex-col gap-3 px-4">
-					<ResponsiveTableCustom
-						columns={columns}
-						data={paginatedSquads}
-						isPending={isLoading}
-						pagination={pagination}
-						onPageChange={setPage}
-						onSizeChange={handleSizeChange}
-						onRowClick={openSquad}
-						renderActions={renderActions}
+				<section className="flex flex-col gap-6 px-4">
+					<Input
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+						placeholder="Buscar squads"
+						inputSize="sm"
+						iconLeft={<Search className="size-4" />}
+						wrapperClassName="md:w-80"
 					/>
+
+					{filteredSquads.length === 0 ? (
+						<EmptyState icon={Search} title="Nenhum squad encontrado" message={`Nada bate com "${query}".`} />
+					) : (
+						<>
+							{renderGroup("Ativos", activeSquads, true)}
+							{renderGroup("Ociosos", idleSquads, false)}
+						</>
+					)}
 				</section>
 			)}
 
-			<SquadFormDialog open={formOpen} onOpenChange={setFormOpen} />
+			<SquadFormDialog
+				open={formOpen}
+				onOpenChange={setFormOpen}
+				onSaved={(squad) => navigate(Rotas.protegidas.orchestrator.squadDetail.replace(":id", squad.id))}
+			/>
 			<ImportShareDialog open={importOpen} onOpenChange={setImportOpen} />
 
 			<ConfirmDialog
