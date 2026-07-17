@@ -11,7 +11,7 @@
     {
       "name": "storybook",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "storybook"],
+      "runtimeArgs": ["--prefix", "apps/web", "run", "storybook"],
       "port": 6006,
       "autoPort": true
     }
