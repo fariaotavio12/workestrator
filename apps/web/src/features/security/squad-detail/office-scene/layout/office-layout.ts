@@ -20,8 +20,8 @@ export type FloorZone = { rect: CellRect; texture: FloorTexture };
 /** Trecho de parede sólida, alinhado a um eixo (extremos inclusivos, em células). */
 export type WallRun = { from: Cell; to: Cell };
 
-/** Trecho de parede de vidro — renderizado repetindo o painel de vidro ao longo do eixo. */
-export type GlassRun = { from: Cell; to: Cell };
+/** Trecho de parede de vidro. `frame` escolhe o caixilho: escuro (reunião) ou cream (fachada). */
+export type GlassRun = { from: Cell; to: Cell; frame?: "dark" | "cream" };
 
 export type Door = { cell: Cell; kind: "glass-single" | "glass-double" };
 
@@ -33,6 +33,11 @@ export type FurnitureInstance = {
 	/** Célula âncora — a baseline (bottom-center) da peça cai no centro-x/base da célula. */
 	cell: Cell;
 	flip?: boolean;
+	/**
+	 * Rotação em graus (sprites são frontais: 90 = frente p/ esquerda, -90 = frente p/ direita).
+	 * Peça girada ancora pelo centro (baseline de lado não faz sentido).
+	 */
+	angle?: number;
 	/** Ajuste fino em frações de célula (composições encostadas, ex.: almofadas no sofá). */
 	offset?: { x: number; y: number };
 };

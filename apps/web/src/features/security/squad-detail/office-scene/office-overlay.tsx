@@ -26,7 +26,7 @@ const statusLabel = (status: AgentStatus, role?: string): string => {
 	return role ?? "Ocioso";
 };
 
-/** Rótulo flutuante (nome + status) posicionado sob uma estação. */
+/** Rótulo flutuante (nome + status). Centrado pelo container que o empilha acima da cabeça. */
 const NameLabel = ({
 	name,
 	sub,
@@ -38,7 +38,7 @@ const NameLabel = ({
 	accentColor: string;
 	spinning?: boolean;
 }) => (
-	<span className="pointer-events-none flex -translate-x-1/2 flex-col items-center rounded-md bg-black/35 px-2 py-0.5 backdrop-blur-[1px]">
+	<span className="pointer-events-none flex flex-col items-center rounded-md bg-black/35 px-2 py-0.5 backdrop-blur-[1px]">
 		<span className="flex items-center gap-1">
 			<span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} aria-hidden />
 			<Typography variant="caption" as="span" className="max-w-32 truncate font-medium text-white">
@@ -93,25 +93,20 @@ export const OfficeOverlay = ({
 					height: proj.coordinator.h,
 				}}
 			/>
-			<span
-				className="absolute"
+			<div
+				className="absolute flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1"
 				style={{ left: proj.bubbleAnchors.coordinator?.x ?? 0, top: (proj.bubbleAnchors.coordinator?.y ?? 0) - 6 }}
 			>
 				{coordinatorThinking && (
-					<span className="bg-primary text-primary-foreground pointer-events-none flex -translate-x-1/2 -translate-y-full items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap">
+					<span className="bg-primary text-primary-foreground pointer-events-none flex items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap">
 						<Loader2 className="size-3 animate-spin" />
 						<Typography variant="caption" as="span">
 							decidindo…
 						</Typography>
 					</span>
 				)}
-			</span>
-			<span
-				className="absolute"
-				style={{ left: proj.coordinator.x + proj.coordinator.w / 2, top: proj.coordinator.y + proj.coordinator.h }}
-			>
 				<NameLabel name="Coordenador" sub={coordinatorModel} accentColor="var(--primary)" />
-			</span>
+			</div>
 
 			{/* Baias. */}
 			{Object.entries(proj.desks).map(([seatId, rect]) => {
@@ -139,29 +134,31 @@ export const OfficeOverlay = ({
 							)}
 						</button>
 
-						{agent && (
-							<span className="absolute" style={{ left: rect.x + rect.w / 2, top: rect.y + rect.h }}>
-								<NameLabel
-									name={agent.name}
-									sub={statusLabel(status, agent.role)}
-									accentColor={agent.accentColor}
-									spinning={status === "working"}
-								/>
-							</span>
-						)}
-
-						{actor?.bubble && anchor && (
+						{/* Nome e balão empilhados acima da cabeça: o balão sobe junto e nunca cobre o rótulo. */}
+						{anchor && (agent || actor?.bubble) && (
 							<div
-								className="pointer-events-auto absolute w-60 -translate-x-1/2 -translate-y-full"
+								className="absolute flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1"
 								style={{ left: anchor.x, top: anchor.y - 6 }}
 							>
-								<SpeechBubble
-									bubble={actor.bubble}
-									inline
-									onAnswer={onAnswerQuestion}
-									onApproveCheckpoint={onApproveCheckpoint}
-									onRejectCheckpoint={onRejectCheckpoint}
-								/>
+								{actor?.bubble && (
+									<div className="pointer-events-auto w-60">
+										<SpeechBubble
+											bubble={actor.bubble}
+											inline
+											onAnswer={onAnswerQuestion}
+											onApproveCheckpoint={onApproveCheckpoint}
+											onRejectCheckpoint={onRejectCheckpoint}
+										/>
+									</div>
+								)}
+								{agent && (
+									<NameLabel
+										name={agent.name}
+										sub={statusLabel(status, agent.role)}
+										accentColor={agent.accentColor}
+										spinning={status === "working"}
+									/>
+								)}
 							</div>
 						)}
 					</div>

@@ -1,0 +1,625 @@
+{
+	"version": 1,
+	"grid": {
+		"cols": 24,
+		"rows": 15
+	},
+	"floors": [
+		{
+			"rect": {
+				"x": 0,
+				"y": 0,
+				"w": 24,
+				"h": 15
+			},
+			"texture": "wood"
+		},
+		{
+			"rect": {
+				"x": 15,
+				"y": 0,
+				"w": 9,
+				"h": 6
+			},
+			"texture": "meeting-carpet"
+		}
+	],
+	"walls": [
+		{
+			"from": {
+				"x": 0,
+				"y": 0
+			},
+			"to": {
+				"x": 23,
+				"y": 0
+			}
+		},
+		{
+			"from": {
+				"x": 0,
+				"y": 0
+			},
+			"to": {
+				"x": 0,
+				"y": 14
+			}
+		},
+		{
+			"from": {
+				"x": 23,
+				"y": 0
+			},
+			"to": {
+				"x": 23,
+				"y": 14
+			}
+		},
+		{
+			"from": {
+				"x": 7,
+				"y": 1
+			},
+			"to": {
+				"x": 7,
+				"y": 5
+			}
+		},
+		{
+			"from": {
+				"x": 0,
+				"y": 5
+			},
+			"to": {
+				"x": 5,
+				"y": 5
+			}
+		}
+	],
+	"glass": [
+		{
+			"from": {
+				"x": 15,
+				"y": 0
+			},
+			"to": {
+				"x": 15,
+				"y": 4
+			}
+		},
+		{
+			"from": {
+				"x": 15,
+				"y": 6
+			},
+			"to": {
+				"x": 23,
+				"y": 6
+			}
+		},
+		{
+			"from": {
+				"x": 0,
+				"y": 14
+			},
+			"to": {
+				"x": 9,
+				"y": 14
+			},
+			"frame": "cream"
+		},
+		{
+			"from": {
+				"x": 12,
+				"y": 14
+			},
+			"to": {
+				"x": 23,
+				"y": 14
+			},
+			"frame": "cream"
+		}
+	],
+	"doors": [
+		{
+			"cell": {
+				"x": 6,
+				"y": 5
+			},
+			"kind": "glass-single"
+		},
+		{
+			"cell": {
+				"x": 10,
+				"y": 14
+			},
+			"kind": "glass-double"
+		}
+	],
+	"furniture": [
+		{
+			"id": "49_framed-city-picture#0",
+			"propId": "49_framed-city-picture",
+			"cell": {
+				"x": 0,
+				"y": 2
+			},
+			"offset": {
+				"x": -0.140625,
+				"y": -0.15625
+			},
+			"angle": -90
+		},
+		{
+			"id": "22_wall-analytics-dashboard#1",
+			"propId": "22_wall-analytics-dashboard",
+			"cell": {
+				"x": 5,
+				"y": 0
+			},
+			"offset": {
+				"x": 0,
+				"y": 0.046875
+			}
+		},
+		{
+			"id": "19_bookcase-filled-variant#2",
+			"propId": "19_bookcase-filled-variant",
+			"cell": {
+				"x": 1,
+				"y": 1
+			}
+		},
+		{
+			"id": "53_low-side-cabinet#3",
+			"propId": "53_low-side-cabinet",
+			"cell": {
+				"x": 6,
+				"y": 2
+			},
+			"offset": {
+				"x": 0.15625,
+				"y": -0.296875
+			},
+			"angle": 90
+		},
+		{
+			"id": "22_wall-analytics-dashboard#4",
+			"propId": "22_wall-analytics-dashboard",
+			"cell": {
+				"x": 19,
+				"y": 0
+			},
+			"offset": {
+				"x": -0.203125,
+				"y": 0.046875
+			}
+		},
+		{
+			"id": "02_conference-table-empty#5",
+			"propId": "02_conference-table-empty",
+			"cell": {
+				"x": 18,
+				"y": 3
+			}
+		},
+		{
+			"id": "02_conference-table-empty#6",
+			"propId": "02_conference-table-empty",
+			"cell": {
+				"x": 20,
+				"y": 3
+			}
+		},
+		{
+			"id": "15_conference-chair-teal#7",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 17,
+				"y": 2
+			}
+		},
+		{
+			"id": "15_conference-chair-teal#8",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 19,
+				"y": 2
+			}
+		},
+		{
+			"id": "15_conference-chair-teal#9",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 21,
+				"y": 2
+			}
+		},
+		{
+			"id": "15_conference-chair-teal#10",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 17,
+				"y": 4
+			},
+			"flip": true
+		},
+		{
+			"id": "15_conference-chair-teal#11",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 19,
+				"y": 4
+			},
+			"flip": true
+		},
+		{
+			"id": "15_conference-chair-teal#12",
+			"propId": "15_conference-chair-teal",
+			"cell": {
+				"x": 21,
+				"y": 4
+			},
+			"flip": true
+		},
+		{
+			"id": "07_office-chair-teal#13",
+			"propId": "07_office-chair-teal",
+			"cell": {
+				"x": 16,
+				"y": 3
+			},
+			"offset": {
+				"x": 0,
+				"y": -0.40625
+			}
+		},
+		{
+			"id": "07_office-chair-teal#14",
+			"propId": "07_office-chair-teal",
+			"cell": {
+				"x": 22,
+				"y": 3
+			},
+			"offset": {
+				"x": 0,
+				"y": -0.40625
+			},
+			"flip": true
+		},
+		{
+			"id": "29_noticeboard-notes#15",
+			"propId": "29_noticeboard-notes",
+			"cell": {
+				"x": 23,
+				"y": 7
+			},
+			"offset": {
+				"x": -0.109375,
+				"y": 0
+			},
+			"angle": -90
+		},
+		{
+			"id": "50_access-control-terminal#16",
+			"propId": "50_access-control-terminal",
+			"cell": {
+				"x": 12,
+				"y": 12
+			},
+			"offset": {
+				"x": 0.15625,
+				"y": 0
+			}
+		},
+		{
+			"id": "53_low-side-cabinet#17",
+			"propId": "53_low-side-cabinet",
+			"cell": {
+				"x": 23,
+				"y": 9
+			},
+			"offset": {
+				"x": -0.03125,
+				"y": 0
+			},
+			"angle": 90
+		},
+		{
+			"id": "32_recycling-bin-blue#18",
+			"propId": "32_recycling-bin-blue",
+			"cell": {
+				"x": 11,
+				"y": 1
+			},
+			"offset": {
+				"x": -0.015625,
+				"y": 0
+			}
+		},
+		{
+			"id": "44_lounge-rug-orange#19",
+			"propId": "44_lounge-rug-orange",
+			"cell": {
+				"x": 19,
+				"y": 11
+			}
+		},
+		{
+			"id": "23_sofa-blue#20",
+			"propId": "23_sofa-blue",
+			"cell": {
+				"x": 19,
+				"y": 9
+			}
+		},
+		{
+			"id": "24_lounge-armchair-teal#21",
+			"propId": "24_lounge-armchair-teal",
+			"cell": {
+				"x": 16,
+				"y": 9
+			},
+			"offset": {
+				"x": 0,
+				"y": 0.09375
+			},
+			"angle": -90
+		},
+		{
+			"id": "24_lounge-armchair-teal#22",
+			"propId": "24_lounge-armchair-teal",
+			"cell": {
+				"x": 16,
+				"y": 11
+			},
+			"offset": {
+				"x": 0,
+				"y": -0.359375
+			},
+			"angle": -90
+		},
+		{
+			"id": "04_coffee-table-empty#23",
+			"propId": "04_coffee-table-empty",
+			"cell": {
+				"x": 19,
+				"y": 11
+			}
+		},
+		{
+			"id": "13_desk-plant-small#24",
+			"propId": "13_desk-plant-small",
+			"cell": {
+				"x": 19,
+				"y": 11
+			},
+			"offset": {
+				"x": 0,
+				"y": -0.296875
+			}
+		},
+		{
+			"id": "30_floor-plant-large#25",
+			"propId": "30_floor-plant-large",
+			"cell": {
+				"x": 14,
+				"y": 4
+			},
+			"offset": {
+				"x": 0.03125,
+				"y": 0
+			}
+		},
+		{
+			"id": "06_filing-shelf-empty#26",
+			"propId": "06_filing-shelf-empty",
+			"cell": {
+				"x": 0,
+				"y": 9
+			},
+			"offset": {
+				"x": 0.28125,
+				"y": 0
+			},
+			"angle": -90
+		},
+		{
+			"id": "27_multifunction-printer#27",
+			"propId": "27_multifunction-printer",
+			"cell": {
+				"x": 3,
+				"y": 13
+			}
+		},
+		{
+			"id": "51_indoor-planter-box#28",
+			"propId": "51_indoor-planter-box",
+			"cell": {
+				"x": 9,
+				"y": 14
+			},
+			"offset": {
+				"x": -0.03125,
+				"y": 0
+			}
+		},
+		{
+			"id": "52_exterior-flower-planter#29",
+			"propId": "52_exterior-flower-planter",
+			"cell": {
+				"x": 12,
+				"y": 14
+			}
+		},
+		{
+			"id": "26_water-dispenser#30",
+			"propId": "26_water-dispenser",
+			"cell": {
+				"x": 10,
+				"y": 1
+			}
+		},
+		{
+			"id": "34_coffee-machine#31",
+			"propId": "34_coffee-machine",
+			"cell": {
+				"x": 12,
+				"y": 1
+			}
+		}
+	],
+	"deskAnchors": [
+		{
+			"id": "desk-12",
+			"slot": 12,
+			"cell": {
+				"x": 10,
+				"y": 3
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-13",
+			"slot": 13,
+			"cell": {
+				"x": 12,
+				"y": 3
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-14",
+			"slot": 14,
+			"cell": {
+				"x": 10,
+				"y": 4
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-15",
+			"slot": 15,
+			"cell": {
+				"x": 12,
+				"y": 4
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-0",
+			"slot": 0,
+			"cell": {
+				"x": 3,
+				"y": 7
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-1",
+			"slot": 1,
+			"cell": {
+				"x": 5,
+				"y": 7
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-4",
+			"slot": 4,
+			"cell": {
+				"x": 3,
+				"y": 9
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-5",
+			"slot": 5,
+			"cell": {
+				"x": 5,
+				"y": 9
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-2",
+			"slot": 2,
+			"cell": {
+				"x": 8,
+				"y": 7
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-3",
+			"slot": 3,
+			"cell": {
+				"x": 10,
+				"y": 7
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-6",
+			"slot": 6,
+			"cell": {
+				"x": 8,
+				"y": 9
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-7",
+			"slot": 7,
+			"cell": {
+				"x": 10,
+				"y": 9
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-10",
+			"slot": 10,
+			"cell": {
+				"x": 8,
+				"y": 11
+			},
+			"facing": "right"
+		},
+		{
+			"id": "desk-11",
+			"slot": 11,
+			"cell": {
+				"x": 10,
+				"y": 11
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-9",
+			"slot": 9,
+			"cell": {
+				"x": 5,
+				"y": 11
+			},
+			"facing": "left"
+		},
+		{
+			"id": "desk-8",
+			"slot": 8,
+			"cell": {
+				"x": 3,
+				"y": 11
+			},
+			"facing": "right"
+		}
+	],
+	"coordinator": {
+		"cell": {
+			"x": 3,
+			"y": 3
+		},
+		"facing": "right"
+	}
+}

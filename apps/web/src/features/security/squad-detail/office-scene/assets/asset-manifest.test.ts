@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CHARACTER_SHEETS, FALLBACK_POSES, PERSON_KEYS, staticPoseUrl } from "./character-manifest";
 import { PROP_MANIFEST } from "./prop-manifest";
+import { WALL_ASSETS } from "./wall-manifest";
 
 const publicDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../public");
 const propsDir = resolve(publicDir, "assets_office_transparente");
@@ -31,6 +32,26 @@ describe("prop manifest ↔ arquivos", () => {
 			.map((f) => f.replace(/\.png$/, ""));
 		for (const id of onDisk) expect(PROP_MANIFEST[id], `prop no disco fora do manifesto: ${id}`).toBeDefined();
 		expect(Object.keys(PROP_MANIFEST).length).toBe(onDisk.length);
+	});
+});
+
+describe("paredes ↔ arquivos", () => {
+	const wallsDir = resolve(publicDir, "office_walls");
+
+	it("toda parede do manifesto tem PNG com as dimensões declaradas", () => {
+		for (const spec of Object.values(WALL_ASSETS)) {
+			const file = resolve(wallsDir, `${spec.id}.png`);
+			expect(existsSync(file), `faltando parede: ${spec.id}.png — rode generate-office-walls.mjs`).toBe(true);
+			expect(pngSize(file), `dims divergentes: ${spec.id}`).toEqual({ w: spec.w, h: spec.h });
+		}
+	});
+
+	it("todo PNG de parede no disco está no manifesto (sem drift)", () => {
+		const onDisk = readdirSync(wallsDir)
+			.filter((f) => f.endsWith(".png"))
+			.map((f) => f.replace(/\.png$/, ""));
+		for (const id of onDisk) expect(WALL_ASSETS[id], `parede no disco fora do manifesto: ${id}`).toBeDefined();
+		expect(Object.keys(WALL_ASSETS).length).toBe(onDisk.length);
 	});
 });
 

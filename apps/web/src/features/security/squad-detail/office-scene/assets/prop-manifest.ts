@@ -9,7 +9,8 @@ import metrics from "./prop-metrics.generated.json";
  * Adicionar/ajustar uma peça: rode o script de medição e, se precisar, adicione um override em OVERRIDES.
  */
 
-const base = () => import.meta.env.BASE_URL;
+// `?? "/"` cobre os scripts de autoria, que importam este módulo fora do Vite (sem import.meta.env).
+const base = () => import.meta.env?.BASE_URL ?? "/";
 
 export type PropCategory =
 	| "desk"

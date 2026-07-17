@@ -8,6 +8,7 @@ export const DEPTH = {
 	floorBase: -10000,
 	floorZone: -9900,
 	rug: -9000,
+	wallSide: -8800,
 } as const;
 
 /** Depth por baseline Y — usado por móveis soltos, paredes e personagens. */

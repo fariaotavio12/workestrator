@@ -4,12 +4,22 @@ import {
 	CELL,
 	cellBaseline,
 	worldSize,
-	type Cell,
 	type Door,
 	type GlassRun,
 	type OfficeLayout,
 	type WallRun,
 } from "../layout/office-layout";
+import { getProp, propDisplayHeight } from "../assets/prop-manifest";
+import {
+	WALL_CAP_H,
+	WALL_CAP_ID,
+	WALL_FACE_H,
+	WALL_PILLAR_ID,
+	WALL_SIDE_W,
+	wallBodyId,
+	wallTexKey,
+	type WallKind,
+} from "../assets/wall-manifest";
 import { fitCamera } from "./camera-fit";
 import { CoordinatorModule } from "./coordinator-module";
 import { DEPTH } from "./depth";
@@ -17,7 +27,6 @@ import { readPalette, type OfficePalette } from "./palette";
 import { addProp, propTexKey, TRIM_FRAME } from "./render";
 import { WorkstationModule } from "./workstation-module";
 
-const WALL_THICK = 22;
 const FLOOR_TILE_SCALE = 0.8;
 
 const FLOOR_PROP: Record<string, string> = {
@@ -79,40 +88,46 @@ export class OfficeScene extends Phaser.Scene {
 		});
 	}
 
-	private wallSpan(run: WallRun | GlassRun): { x: number; y: number; w: number; h: number } {
-		const horizontal = run.from.y === run.to.y;
-		if (horizontal) {
-			const x0 = Math.min(run.from.x, run.to.x) * CELL;
-			const x1 = (Math.max(run.from.x, run.to.x) + 1) * CELL;
-			return { x: x0, y: run.from.y * CELL, w: x1 - x0, h: WALL_THICK };
-		}
-		const y0 = Math.min(run.from.y, run.to.y) * CELL;
-		const y1 = (Math.max(run.from.y, run.to.y) + 1) * CELL;
-		return { x: run.from.x * CELL, y: y0, w: WALL_THICK, h: y1 - y0 };
-	}
-
 	private buildWalls(): void {
-		for (const run of this.layout.walls) {
-			const s = this.wallSpan(run);
-			const g = this.add.graphics();
-			g.fillStyle(this.palette.wallFace, 1);
-			g.fillRect(s.x, s.y, s.w, s.h);
-			g.fillStyle(this.palette.wallCap, 1);
-			g.fillRect(s.x, s.y, s.w, Math.min(6, s.h));
-			g.setDepth(s.y + s.h - 1);
-		}
+		for (const run of this.layout.walls) this.placeWall(run, "wall");
 	}
 
 	private buildGlass(): void {
 		for (const run of this.layout.glass) {
-			const horizontal = run.from.y === run.to.y;
-			const from = horizontal ? Math.min(run.from.x, run.to.x) : Math.min(run.from.y, run.to.y);
-			const to = horizontal ? Math.max(run.from.x, run.to.x) : Math.max(run.from.y, run.to.y);
-			for (let i = from; i <= to; i++) {
-				const cell: Cell = horizontal ? { x: i, y: run.from.y } : { x: run.from.x, y: i };
-				const base = cellBaseline(cell);
-				addProp(this, "45_glass-wall-panel", base.x, base.y, { displayW: CELL, depth: base.y });
-			}
+			this.placeWall(run, run.frame === "cream" ? "glass_cream" : "glass_dark");
+		}
+	}
+
+	private placeWall(run: WallRun | GlassRun, kind: WallKind): void {
+		const horizontal = run.from.y === run.to.y;
+		const c0 = horizontal ? Math.min(run.from.x, run.to.x) : Math.min(run.from.y, run.to.y);
+		const c1 = horizontal ? Math.max(run.from.x, run.to.x) : Math.max(run.from.y, run.to.y);
+		const bodyKey = wallTexKey(wallBodyId(kind, horizontal));
+		if (!this.textures.exists(bodyKey)) return;
+		const span = (c1 - c0 + 1) * CELL;
+
+		if (horizontal) {
+			// Na fileira 0 a parede desce do topo do mundo; nas outras, apoia no fim da própria fileira.
+			const bottom = run.from.y === 0 ? WALL_FACE_H : (run.from.y + 1) * CELL;
+			const top = bottom - WALL_FACE_H;
+			const x = c0 * CELL;
+			const depth = bottom - 1;
+			this.add.tileSprite(x, top, span, WALL_FACE_H, bodyKey).setOrigin(0, 0).setDepth(depth);
+			this.add.image(x, top, wallTexKey(WALL_PILLAR_ID)).setOrigin(0, 0).setDepth(depth);
+			this.add.image(x + span, top, wallTexKey(WALL_PILLAR_ID)).setOrigin(1, 0).setDepth(depth);
+			return;
+		}
+
+		// Na última coluna a parede encosta na borda direita do mundo (não no início da célula) e
+		// espelha, para a face interna (sombreada) olhar o salão.
+		const rightEdge = run.from.x === this.layout.grid.cols - 1;
+		const x = rightEdge ? (run.from.x + 1) * CELL - WALL_SIDE_W : run.from.x * CELL;
+		const y = c0 * CELL;
+		const body = this.add.tileSprite(x, y, WALL_SIDE_W, span, bodyKey).setOrigin(0, 0);
+		body.setDepth(DEPTH.wallSide);
+		if (rightEdge) body.setFlipX(true);
+		for (const cap of [y, y + span - WALL_CAP_H]) {
+			this.add.image(x, cap, wallTexKey(WALL_CAP_ID)).setOrigin(0, 0).setDepth(DEPTH.wallSide + 1);
 		}
 	}
 
@@ -123,7 +138,12 @@ export class OfficeScene extends Phaser.Scene {
 		};
 		for (const door of this.layout.doors) {
 			const base = cellBaseline(door.cell);
-			addProp(this, propFor[door.kind], base.x, base.y, { displayW: CELL, depth: base.y });
+			// Porta dupla preenche um vão de 2 células (célula da porta + a seguinte à direita).
+			const dbl = door.kind === "glass-double";
+			addProp(this, propFor[door.kind], base.x + (dbl ? CELL / 2 : 0), base.y, {
+				displayW: dbl ? CELL * 2 : CELL,
+				depth: base.y,
+			});
 		}
 	}
 
@@ -134,13 +154,19 @@ export class OfficeScene extends Phaser.Scene {
 			const base = cellBaseline(item.cell);
 			const x = base.x + (item.offset?.x ?? 0) * CELL;
 			const y = base.y + (item.offset?.y ?? 0) * CELL;
-			addProp(this, item.propId, x, y, { flip: item.flip, depth: this.propDepth(item.propId, y) });
+			addProp(this, item.propId, x, y, { flip: item.flip, angle: item.angle, depth: this.propDepth(item.propId, y) });
 		}
 	}
 
-	/** Peças de parede ficam atrás dos atores; o resto ordena pela baseline Y. */
+	/**
+	 * Tapetes (categoria floor) colam no piso — nunca sobre móveis. Peças penduradas desenham sobre a
+	 * face da parede (depth logo abaixo do pixel mais baixo da arte). O resto ordena pela baseline Y.
+	 */
 	private propDepth(propId: string, y: number): number {
-		return propId.match(/^(22|29|48|49|50)_/) ? -200 : y;
+		const spec = getProp(propId);
+		if (spec.category === "floor") return DEPTH.rug + (spec.depthOffset ?? 0);
+		if (!spec.wallMounted) return y;
+		return Math.ceil((y + propDisplayHeight(spec) / 2) / CELL) * CELL - 0.5;
 	}
 
 	private buildCoordinator(): void {

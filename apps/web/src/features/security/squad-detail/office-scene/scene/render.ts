@@ -9,7 +9,7 @@ export const propTexKey = (id: string): string => `prop:${id}`;
 /** Nome do frame trimado registrado no BootScene (conteúdo sem a margem/artefato dos PNGs). */
 export const TRIM_FRAME = "trim";
 
-type PropOpts = { flip?: boolean; depth?: number; displayW?: number; alpha?: number };
+type PropOpts = { flip?: boolean; depth?: number; displayW?: number; alpha?: number; angle?: number };
 
 /** Adiciona uma peça (frame trimado) na cena com origem baseline e depth por Y. */
 export const addProp = (
@@ -25,6 +25,11 @@ export const addProp = (
 	const displayW = opts.displayW ?? spec.displayW;
 	img.setDisplaySize(displayW, (displayW * spec.trim.h) / spec.trim.w);
 	if (opts.flip) img.setFlipX(true);
+	if (opts.angle) {
+		// Peça girada ancora pelo centro — a origem baseline giraria o corpo para fora da célula.
+		img.setOrigin(0.5, 0.5);
+		img.setAngle(opts.angle);
+	}
 	if (opts.alpha !== undefined) img.setAlpha(opts.alpha);
 	img.setDepth(opts.depth ?? worldY + (spec.depthOffset ?? 0));
 	return img;
@@ -53,14 +58,14 @@ export const addCharacter = (
 		const { cx, feetY, hFrac } = visual.spec.content;
 		sprite.setOrigin(cx, feetY);
 		sprite.setScale(displayH / (hFrac * visual.spec.frameH));
-		if (visual.flipX !== flip) sprite.setFlipX(true);
+		if ((visual.flipX ?? false) !== flip) sprite.setFlipX(true);
 		sprite.setDepth(worldY);
 		return sprite;
 	}
 	const key = scene.textures.exists(visual.textureKey) ? visual.textureKey : undefined;
 	const img = scene.add.image(worldX, worldY, key ?? "__MISSING__");
 	img.setOrigin(0.5, 0.98);
-	if (visual.flipX !== flip) img.setFlipX(true);
+	if ((visual.flipX ?? false) !== flip) img.setFlipX(true);
 	img.setScale(displayH / (img.height || displayH));
 	img.setDepth(worldY);
 	return img;

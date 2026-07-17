@@ -10,6 +10,7 @@ import {
 	type OfficeAnim,
 } from "../assets/character-manifest";
 import { PROP_MANIFEST } from "../assets/prop-manifest";
+import { WALL_ASSETS, wallTexKey } from "../assets/wall-manifest";
 import { propTexKey, TRIM_FRAME } from "./render";
 
 /** Animações carregadas por enquanto — só idle sentado (agentes parados). Walk entra no futuro. */
@@ -32,6 +33,10 @@ export class BootScene extends Phaser.Scene {
 
 		for (const spec of Object.values(PROP_MANIFEST)) {
 			this.load.image(propTexKey(spec.id), spec.url);
+		}
+		// Paredes prontas (PNG exato, sem trim).
+		for (const spec of Object.values(WALL_ASSETS)) {
+			this.load.image(wallTexKey(spec.id), spec.url);
 		}
 		// Poses estáticas (fallback) de todos os personagens — arquivos pequenos.
 		for (const key of PERSON_KEYS) {
