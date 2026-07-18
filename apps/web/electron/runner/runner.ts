@@ -139,7 +139,12 @@ export const buildExecutorPlan = (
 		args: [
 			"-p",
 			"--system-prompt",
-			systemPrompt,
+			// No Windows, `claude` roda via claude.cmd → cmd.exe /c "<comando>" (cross-spawn). Um `\n` bruto
+			// dentro de um argumento CORTA a linha de comando ali mesmo — tudo depois (inclusive
+			// `--output-format stream-json`) nunca chega no processo real, ele cai no formato texto puro, e
+			// o parser de stream-json (só entende JSON) descarta a resposta inteira como "sem saída". O
+			// systemPrompt quase sempre tem quebra de linha (é multi-parágrafo) — nunca passa bruto num arg.
+			systemPrompt.replace(/\r?\n+/g, " "),
 			"--tools",
 			canExecute ? "Bash,Read,Write,Edit,Glob,Grep" : "",
 			"--no-session-persistence",
