@@ -13,6 +13,7 @@ type Props = {
 	providerId: string;
 	model: string;
 	character: CharacterName;
+	usedCharacters?: ReadonlySet<CharacterName>;
 	accentColor: string;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
@@ -28,6 +29,7 @@ export const AgentProfileTab = ({
 	providerId,
 	model,
 	character,
+	usedCharacters,
 	accentColor,
 	requiresCheckpoint,
 	requiresCheckpointAfter,
@@ -93,9 +95,13 @@ export const AgentProfileTab = ({
 		<section className="flex flex-col gap-4">
 			<SectionHeading icon={<Palette className="size-4" />}>Aparência</SectionHeading>
 
-			<FieldWrapper label="Personagem" description="O bonequinho que representa o agent no escritório.">
+			<FieldWrapper
+				label="Personagem"
+				description="O bonequinho que representa o agent no escritório. Os marcados já pertencem a outro agent do squad."
+			>
 				<CharacterPicker
 					value={character}
+					usedNames={usedCharacters}
 					onChange={(nameValue) => setValue("character", nameValue, { shouldValidate: true })}
 				/>
 			</FieldWrapper>

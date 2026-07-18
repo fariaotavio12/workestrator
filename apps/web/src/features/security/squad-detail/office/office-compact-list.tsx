@@ -2,7 +2,7 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/app/utils/cn";
 import { Typography } from "@/components/typography";
 import type { Squad } from "@/features/security/orchestrator-shared/types";
-import { personForCharacter, personSrc, type PersonKey } from "./office-assets";
+import { personForCharacter, personSrc, type PersonKey } from "@/features/security/orchestrator-shared/data/characters";
 import { SpeechBubble } from "./speech-bubble";
 import { useOfficeChoreography } from "./use-office-choreography";
 import type { CoordinatorView, OfficeSeatView } from "./office-types";
@@ -106,6 +106,9 @@ export const OfficeCompactList = ({
 								</Typography>
 								<Typography variant="caption" className="text-muted-foreground truncate">
 									{actor.agent.role}
+								</Typography>
+								<Typography variant="caption" className="text-muted-foreground/70 truncate font-mono">
+									{actor.agent.model}
 								</Typography>
 							</div>
 						</button>

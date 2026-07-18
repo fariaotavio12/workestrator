@@ -1,8 +1,7 @@
 import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/app/utils/cn";
 import { Typography } from "@/components/typography";
-import { poseForStatus } from "@/features/security/orchestrator-shared/data/characters";
-import { COORDINATOR_CHARACTER } from "@/features/security/orchestrator-shared/data/constants";
+import { COORDINATOR_PERSON } from "@/features/security/orchestrator-shared/data/characters";
 import type { AgentStatus, Squad } from "@/features/security/orchestrator-shared/types";
 import { AgentAvatar } from "../agent-avatar";
 
@@ -45,20 +44,26 @@ export const RunActivityMap = ({ squad, className }: Props) => {
 };
 
 /**
- * Nó do coordenador — destacado enquanto ele decide o próximo passo. Mesmo avatar (`COORDINATOR_CHARACTER`)
- * e padrão visual usados no card do coordenador no escritório do squad (`office-canvas.tsx`), não um ícone
- * genérico — o coordenador é ilustrado como um personagem, igual aos agents.
+ * Nó do coordenador — destacado enquanto ele decide o próximo passo. Mesmo sprite (`COORDINATOR_PERSON`,
+ * o gerente navy) usado na baia do coordenador no escritório do squad (`coordinator-module.ts`) e na lista
+ * compacta (`office-compact-list.tsx`), não um ícone genérico — o coordenador é ilustrado como um
+ * personagem, igual aos agents.
  */
 const CoordinatorNode = ({ active }: { active: boolean }) => (
 	<div className="flex gap-2.5">
 		<div className="flex flex-col items-center">
 			<span className="relative shrink-0">
+				{active && (
+					<span
+						className="bg-primary absolute inset-0 animate-ping rounded-lg opacity-50"
+						aria-hidden="true"
+					/>
+				)}
 				<AgentAvatar
-					character={COORDINATOR_CHARACTER}
-					accentColor={active ? "var(--primary)" : "var(--border)"}
-					pose={active ? "talk" : "blink"}
-					size={28}
-					className={cn("rounded-lg", !active && "opacity-60")}
+					personKey={COORDINATOR_PERSON}
+					accentColor="var(--primary)"
+					size={32}
+					className={cn("rounded-lg", !active && "opacity-80")}
 				/>
 			</span>
 			<span className={cn("min-h-3.5 w-px flex-1", active ? "bg-primary/40" : "bg-border")} />
@@ -86,7 +91,7 @@ const STATE_HINT: Record<AgentStatus, string> = {
 	idle: "",
 };
 
-/** Nó de um agente no mapa — avatar (pose por estado), nome e micro-status. */
+/** Nó de um agente no mapa — avatar (halo pulsante quando trabalhando), nome e micro-status. */
 const AgentNode = ({
 	name,
 	role,
@@ -105,18 +110,23 @@ const AgentNode = ({
 	const working = state === "working";
 	const done = state === "done";
 	const dim = state === "idle";
-	const pose = poseForStatus(state);
 
 	return (
 		<div className="flex gap-2.5">
 			<div className="flex flex-col items-center">
 				<span className="relative shrink-0">
+					{working && (
+						<span
+							className="absolute inset-0 animate-ping rounded-xl opacity-50"
+							style={{ backgroundColor: accentColor }}
+							aria-hidden="true"
+						/>
+					)}
 					<AgentAvatar
 						character={character}
-						accentColor={working ? accentColor : "var(--border)"}
-						pose={pose}
-						size={28}
-						className={cn(dim && "opacity-60")}
+						accentColor={accentColor}
+						size={32}
+						className={cn(dim && "opacity-80")}
 					/>
 					{done && (
 						<span className="bg-success text-success-foreground absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full">

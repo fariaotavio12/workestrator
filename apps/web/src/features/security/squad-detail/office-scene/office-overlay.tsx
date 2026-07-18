@@ -26,15 +26,17 @@ const statusLabel = (status: AgentStatus, role?: string): string => {
 	return role ?? "Ocioso";
 };
 
-/** Rótulo flutuante (nome + status). Centrado pelo container que o empilha acima da cabeça. */
+/** Rótulo flutuante (nome + status + modelo). Centrado pelo container que o empilha acima da cabeça. */
 const NameLabel = ({
 	name,
 	sub,
+	model,
 	accentColor,
 	spinning,
 }: {
 	name: string;
 	sub: string;
+	model?: string;
 	accentColor: string;
 	spinning?: boolean;
 }) => (
@@ -47,10 +49,15 @@ const NameLabel = ({
 		</span>
 		<span className="flex items-center gap-1 text-white/75">
 			{spinning && <Loader2 className="size-2.5 shrink-0 animate-spin" />}
-			<Typography variant="caption" as="span" className="truncate">
+			<Typography variant="caption" as="span" className="max-w-32 truncate">
 				{sub}
 			</Typography>
 		</span>
+		{model && (
+			<Typography variant="caption" as="span" className="max-w-32 truncate text-white/55">
+				{model}
+			</Typography>
+		)}
 	</span>
 );
 
@@ -155,6 +162,7 @@ export const OfficeOverlay = ({
 									<NameLabel
 										name={agent.name}
 										sub={statusLabel(status, agent.role)}
+										model={agent.model}
 										accentColor={agent.accentColor}
 										spinning={status === "working"}
 									/>

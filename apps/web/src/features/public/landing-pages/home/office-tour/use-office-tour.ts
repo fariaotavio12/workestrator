@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useReducedMotion } from "framer-motion";
-import { avatarSrc, buildWorld, stations, type AvatarPose } from "./office-tour-data";
+import { buildWorld, stations } from "./office-tour-data";
 
 const PIXEL_SCALE = 3;
 const SOUND_STORAGE_KEY = "wk_office_tour_sound";
@@ -84,8 +84,6 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 	const [activeIndex, setActiveIndex] = useState(0);
 	const [walking, setWalking] = useState(false);
 	const [direction, setDirection] = useState<1 | -1>(1);
-	const [tick, setTick] = useState(0);
-	const [waveUntil, setWaveUntil] = useState(0);
 	const [chestOpen, setChestOpen] = useState(false);
 	const [ctaVisible, setCtaVisible] = useState(false);
 	const [scrolled, setScrolled] = useState(false);
@@ -142,7 +140,6 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		if (nearestIndex !== activeIndex) {
 			const station = stations[nearestIndex];
 			setActiveIndex(nearestIndex);
-			setWaveUntil(performance.now() + 1200);
 			setAnnouncement(`Estação ${station.num} — ${station.label}. ${station.quote} ${station.subtitle}`);
 			if (nearestIndex === world.lastIndex) {
 				if (!chestOpen) playSfx("fanfare");
@@ -195,12 +192,6 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		window.addEventListener("scroll", step, { passive: true });
 		return () => window.removeEventListener("scroll", step);
 	}, [viewport.ready, step]);
-
-	useEffect(() => {
-		if (reducedMotion) return;
-		const interval = setInterval(() => setTick((t) => t + 1), 210);
-		return () => clearInterval(interval);
-	}, [reducedMotion]);
 
 	useEffect(() => () => clearTimeout(walkTimeoutRef.current), []);
 
@@ -256,22 +247,6 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		});
 	}, [resumeAudio]);
 
-	const poseFor = useCallback(
-		(stationIndex: number): AvatarPose => {
-			if (reducedMotion) return "talk";
-			const isActive = activeIndex === stationIndex && (stationIndex > 0 || scrolled);
-			if (isActive) return performance.now() < waveUntil ? "wave" : tick % 3 === 0 ? "blink" : "talk";
-			return (tick + stationIndex * 5) % 19 === 0 ? "blink" : "talk";
-		},
-		[reducedMotion, activeIndex, scrolled, waveUntil, tick],
-	);
-
-	const playerPose = useCallback((): AvatarPose => {
-		if (walking) return tick % 2 ? "blink" : "talk";
-		if (activeIndex === 0 && performance.now() < waveUntil + 2500) return tick % 3 === 0 ? "blink" : "talk";
-		return tick % 14 === 0 ? "blink" : "talk";
-	}, [walking, activeIndex, waveUntil, tick]);
-
 	return {
 		reducedMotion,
 		world,
@@ -279,7 +254,6 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		activeIndex,
 		walking,
 		direction,
-		tick,
 		scrolled,
 		chestOpen,
 		ctaVisible,
@@ -288,8 +262,5 @@ export const useOfficeTour = ({ midRef, bgRef, fgRef }: OfficeTourLayerRefs) => 
 		goTo,
 		skipToEnd,
 		toggleSound,
-		poseFor,
-		playerPose,
-		avatarSrc,
 	};
 };

@@ -1,4 +1,4 @@
-import type { PersonKey, PersonPose } from "../../office/office-assets";
+import type { PersonKey, PersonPose } from "@/features/security/orchestrator-shared/data/characters";
 
 /**
  * Manifesto de personagens para a cena Phaser. Cada sheet é 1280×1280 = grade 5×5 de 25 frames de

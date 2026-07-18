@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COORDINATOR_PERSON } from "../../office/office-assets";
+import { COORDINATOR_PERSON } from "@/features/security/orchestrator-shared/data/characters";
 import type { Facing } from "../layout/office-layout";
 import type { OfficePalette } from "./palette";
 import { addCharacter, addGlow, type CharacterObject } from "./render";

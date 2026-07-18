@@ -10,6 +10,7 @@ import { ThinkingBlock } from "@/components/thinking-block/thinking-block";
 import { Typography } from "@/components/typography";
 import type { Artifact, CharacterName } from "@/features/security/orchestrator-shared/types";
 import { AgentAvatar } from "../agent-avatar";
+import { formatAgentArtifactContent } from "./question-artifact";
 
 /** Decide como renderizar o corpo de um turno: terminal (stdout), diff (patch) ou markdown. */
 const looksLikeDiff = (text: string): boolean =>
@@ -51,8 +52,9 @@ export const AgentTurn = ({
 	onPreviewHtml,
 	className,
 }: AgentTurnProps) => {
-	const bodyKind = content ? detectArtifactKind(content, artifactKind) : "markdown";
-	const html = content && onPreviewHtml ? extractHtml(content) : null;
+	const displayContent = content ? formatAgentArtifactContent(content) : undefined;
+	const bodyKind = displayContent ? detectArtifactKind(displayContent, artifactKind) : "markdown";
+	const html = displayContent && onPreviewHtml ? extractHtml(displayContent) : null;
 
 	return (
 		<div className={cn("group flex gap-3", className)}>
@@ -88,14 +90,14 @@ export const AgentTurn = ({
 					</ThinkingBlock>
 				)}
 
-				{content && (
+				{displayContent && (
 					<div className="mt-1.5">
 						{bodyKind === "terminal" ? (
-							<Terminal content={content} autoScroll={false} />
+							<Terminal content={displayContent} autoScroll={false} />
 						) : bodyKind === "diff" ? (
-							<DiffViewer patch={content} />
+							<DiffViewer patch={displayContent} />
 						) : (
-							<Markdown content={content} />
+							<Markdown content={displayContent} />
 						)}
 						{streaming && <span className="bg-foreground ml-0.5 inline-block h-4 w-1.5 animate-pulse align-middle" />}
 					</div>
@@ -109,9 +111,9 @@ export const AgentTurn = ({
 				)}
 			</div>
 
-			{content && !streaming && tone === "agent" && (
+			{displayContent && !streaming && tone === "agent" && (
 				<div className="opacity-0 transition-opacity group-hover:opacity-100">
-					<ClipBoard texto={content} variant="ghost" size="icon" className="size-6" />
+					<ClipBoard texto={displayContent} variant="ghost" size="icon" className="size-6" />
 				</div>
 			)}
 		</div>

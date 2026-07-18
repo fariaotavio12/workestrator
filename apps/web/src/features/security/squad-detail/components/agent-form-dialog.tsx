@@ -51,7 +51,7 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 		setValue,
 		formState: { errors },
 	} = form;
-	const { providerId, model, character, accentColor, systemPrompt, selectedProvider } = values;
+	const { providerId, model, character, usedCharacters, accentColor, systemPrompt, selectedProvider } = values;
 	const {
 		scriptIds,
 		knowledgeCollectionIds,
@@ -180,6 +180,7 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 									providerId={providerId}
 									model={model}
 									character={character}
+									usedCharacters={usedCharacters}
 									accentColor={accentColor}
 									requiresCheckpoint={requiresCheckpoint}
 									requiresCheckpointAfter={requiresCheckpointAfter}

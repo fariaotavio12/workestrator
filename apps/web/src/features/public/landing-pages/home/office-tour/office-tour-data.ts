@@ -1,24 +1,28 @@
-export type StationAccent = "primary" | "violet" | "rose" | "blue" | "orange" | "warning" | "success" | "gold";
+import { personSrc, type PersonKey } from "@/features/security/orchestrator-shared/data/characters";
 
-export type AvatarName = "Male1" | "Male2" | "Male4" | "Female1" | "Female3" | "Female5" | "Female6";
+export type StationAccent = "primary" | "violet" | "rose" | "blue" | "orange" | "warning" | "success" | "gold";
 
 export type Station = {
 	num: string;
 	label: string;
 	accent: StationAccent;
-	avatar: AvatarName;
+	avatar: PersonKey;
 	/** Estação sem NPC fixo — é onde o jogador (orquestrador) fica. */
 	isPlayerStation: boolean;
 	quote: string;
 	subtitle: string;
 };
 
+/**
+ * Um `PersonKey` por estação, sem repetir nenhum dos 7 sprites físicos do escritório — inclusive o do
+ * "gerente" (normalmente reservado ao coordenador nos squads), já que aqui ele é o próprio jogador.
+ */
 export const stations: Station[] = [
 	{
 		num: "01",
 		label: "ORQUESTRADOR",
 		accent: "primary",
-		avatar: "Male1",
+		avatar: "01_manager-navy",
 		isPlayerStation: true,
 		quote: "Eu decido, a cada passo, quem age. Bora conhecer o time.",
 		subtitle: "Sem pipeline fixo — a cada passo, o orquestrador escolhe quem trabalha.",
@@ -27,7 +31,7 @@ export const stations: Station[] = [
 		num: "02",
 		label: "SQUADS",
 		accent: "violet",
-		avatar: "Female1",
+		avatar: "02_orange-yellow",
 		isPlayerStation: false,
 		quote: "Um escritório por squad: cada agente senta numa cadeira e trabalha junto.",
 		subtitle: "Monte quantos squads quiser, cada um com seu time e seu contexto.",
@@ -36,7 +40,7 @@ export const stations: Station[] = [
 		num: "03",
 		label: "AGENTS",
 		accent: "rose",
-		avatar: "Male4",
+		avatar: "03_dark-purple",
 		isPlayerStation: false,
 		quote: "Nome, papel, prompt, personagem e regras — tudo configurável.",
 		subtitle: "Cada agente é explícito. Nada de caixa-preta.",
@@ -45,7 +49,7 @@ export const stations: Station[] = [
 		num: "04",
 		label: "MODELOS",
 		accent: "blue",
-		avatar: "Female3",
+		avatar: "04_brown-green",
 		isPlayerStation: false,
 		quote: "Conecte qualquer provider: Claude, GPT, Gemini ou modelo local.",
 		subtitle: "Misture modelos no mesmo squad — um por agente.",
@@ -54,7 +58,7 @@ export const stations: Station[] = [
 		num: "05",
 		label: "SCRIPTS",
 		accent: "orange",
-		avatar: "Male2",
+		avatar: "05_black-charcoal",
 		isPlayerStation: false,
 		quote: "Uma biblioteca de ferramentas que qualquer agente pode usar.",
 		subtitle: "Escreva uma vez; o time inteiro reaproveita.",
@@ -63,7 +67,7 @@ export const stations: Station[] = [
 		num: "06",
 		label: "CHECKPOINTS",
 		accent: "warning",
-		avatar: "Female5",
+		avatar: "06_blond-blue",
 		isPlayerStation: false,
 		quote: "Alguns passos pausam e esperam a sua aprovação.",
 		subtitle: "Nada roda sem você.",
@@ -72,7 +76,7 @@ export const stations: Station[] = [
 		num: "07",
 		label: "EXECUÇÕES",
 		accent: "success",
-		avatar: "Female6",
+		avatar: "07_brown-red",
 		isPlayerStation: false,
 		quote: "Acompanhe cada passo: quem agiu, o que fez, o que custou.",
 		subtitle: "Tudo client-side, direto no seu navegador.",
@@ -81,37 +85,20 @@ export const stations: Station[] = [
 		num: "08",
 		label: "FIM DA VISITA",
 		accent: "gold",
-		avatar: "Male1",
+		avatar: "01_manager-navy",
 		isPlayerStation: true,
 		quote: "Chegamos ao baú. Daqui pra frente, o escritório é seu.",
 		subtitle: "Monte o primeiro squad e deixe o orquestrador trabalhar.",
 	},
 ];
 
-/** Personagens que usam duas folhas de aceno alternadas (_1wave/_2wave) em vez de uma única (_wave). */
-const TWO_FRAME_WAVE: AvatarName[] = ["Male1", "Male2", "Female1"];
+export { personSrc };
 
-export type AvatarPose = "talk" | "blink" | "wave";
-
-export const avatarSrc = (name: AvatarName, pose: AvatarPose, tick: number): string => {
-	if (pose === "wave") {
-		return TWO_FRAME_WAVE.includes(name)
-			? `/assets/avatars/${name}_${tick % 2 ? "2" : "1"}wave.png`
-			: `/assets/avatars/${name}_wave.png`;
-	}
-	return `/assets/avatars/${name}_${pose}.png`;
-};
-
-/** Largura/altura "raw" (px, escala 1x) de cada folha de avatar — usada pra escalar mantendo proporção. */
-export const AVATAR_SIZE: Record<AvatarName, [number, number]> = {
-	Male1: [48, 56],
-	Male2: [48, 54],
-	Male4: [52, 54],
-	Female1: [48, 54],
-	Female3: [52, 56],
-	Female5: [52, 54],
-	Female6: [56, 52],
-};
+/**
+ * Largura "raw" (px, escala 1x) do sprite do escritório — todos os 7 têm a mesma proporção (~40×82),
+ * então uma constante única basta (a altura acompanha sozinha via o aspect ratio nativo do PNG).
+ */
+export const PERSON_WIDTH = 42;
 
 type FurnitureName =
 	| "desk_wood"
@@ -211,11 +198,11 @@ export const buildWorld = (vw: number, pixelScale: number) => {
 		});
 
 	const npcs: Sprite[] = [];
-	const addNpc = (name: AvatarName, stationIndex: number, dx: number, bottom: string, z: number, flip: -1 | 1 = 1) =>
+	const addNpc = (name: PersonKey, stationIndex: number, dx: number, bottom: string, z: number, flip: -1 | 1 = 1) =>
 		npcs.push({
-			src: `/assets/avatars/${name}_talk.png`,
+			src: personSrc(name, "front"),
 			left: xs[stationIndex] + d(dx),
-			width: AVATAR_SIZE[name][0] * SC * 0.92,
+			width: PERSON_WIDTH * SC * 0.92,
 			bottom,
 			z,
 			flip,
@@ -233,11 +220,11 @@ export const buildWorld = (vw: number, pixelScale: number) => {
 	// 02 — squads: dois postos ocupados
 	addFurniture("fancy_rug", 1, 10, rug, 1);
 	addFurniture("chair", 1, -218, floor, 2);
-	addNpc("Female1", 1, -158, seated, 3);
+	addNpc("04_brown-green", 1, -158, seated, 3);
 	addFurniture("desk_wood", 1, -168, floor, 4);
 	addFurniture("desktop_set_violet", 1, -168, deskTop, 5);
 	addFurniture("chair", 1, 238, floor, 2, -1);
-	addNpc("Male4", 1, 198, seated, 3, -1);
+	addNpc("06_blond-blue", 1, 198, seated, 3, -1);
 	addFurniture("desk_wood", 1, 188, floor, 4);
 	addFurniture("desktop_set_green", 1, 188, deskTop, 5);
 	addFurniture("plant1", 1, 330, floor, 2);

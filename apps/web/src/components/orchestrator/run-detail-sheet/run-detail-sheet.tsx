@@ -17,7 +17,7 @@ import type { RunRecord, Squad } from "@/features/security/orchestrator-shared/t
 import { Download, Eye, FileCode, FileText, Image as ImageIcon, Play, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
-import { AgentTurn } from "../run-transcript";
+import { AgentTurn, formatAgentArtifactContent } from "../run-transcript";
 import { ScriptFormDialog } from "../script-form-dialog";
 import { BUSY_STATUSES, formatFileSize, formatRunDuration, runStatusLabel, runStatusVariant } from "./run-meta";
 
@@ -75,7 +75,10 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 			`Início: ${new Date(run.startedAt).toLocaleString()}`,
 			run.endedAt ? `Fim: ${new Date(run.endedAt).toLocaleString()}` : null,
 			files.length > 0 ? `Arquivos gerados: ${files.map((f) => f.path).join(", ")}` : null,
-			...run.steps.map((s, i) => `## Passo ${i + 1}\n\n${s.artifact ? s.artifact.content : "Sem artefato registrado."}`),
+			...run.steps.map(
+				(s, i) =>
+					`## Passo ${i + 1}\n\n${s.artifact ? formatAgentArtifactContent(s.artifact.content) : "Sem artefato registrado."}`,
+			),
 		].filter((line): line is string => line !== null);
 
 		const blob = new Blob([parts.join("\n\n")], { type: "text/markdown;charset=utf-8" });

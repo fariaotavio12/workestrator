@@ -2,7 +2,7 @@ import { notify } from "@/components";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { genderOf } from "@/features/security/orchestrator-shared/data/characters";
+import { genderOf, PICKABLE_CHARACTERS } from "@/features/security/orchestrator-shared/data/characters";
 import { ACCENT_COLORS } from "@/features/security/orchestrator-shared/data/constants";
 import { PROMPT_TEMPLATES } from "@/features/security/orchestrator-shared/data/prompt-templates";
 import { AgentCallError, callAgentStep } from "@/features/security/orchestrator-shared/runtime/model-client";
@@ -10,7 +10,13 @@ import type { Agent, CharacterName, Script } from "@/features/security/orchestra
 import { useCollectionsQuery } from "@/features/security/knowledge/api";
 import { useProvidersQuery } from "@/features/security/models/api";
 import { useCreateScript, useScriptsQuery } from "@/features/security/scripts/api";
-import { agentDraftToPayload, mapAgentDto, useAddAgent, useUpdateAgent } from "@/features/security/squad-detail/api";
+import {
+	agentDraftToPayload,
+	mapAgentDto,
+	useAddAgent,
+	useSquadQuery,
+	useUpdateAgent,
+} from "@/features/security/squad-detail/api";
 import type { AgentResponseDto } from "@/features/security/squad-detail/api";
 import {
 	buildFinalSystemPrompt,
@@ -37,9 +43,20 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	const { data: providers = [] } = useProvidersQuery();
 	const { data: scripts = [] } = useScriptsQuery();
 	const { data: collections = [] } = useCollectionsQuery();
+	const { data: squad } = useSquadQuery(squadId);
 	const createAgent = useAddAgent(squadId);
 	const updateAgent = useUpdateAgent(squadId);
 	const createScript = useCreateScript();
+
+	// Personagem/cor já usados por OUTROS agents do squad — evita que agents recém-criados nasçam
+	// visualmente clonados (mesmo bonequinho, mesma cor) quando ninguém troca o padrão manualmente.
+	const otherAgents = (squad?.agents ?? []).filter((a) => a.id !== agent?.id);
+	const usedCharacters = new Set(otherAgents.map((a) => a.character));
+	const usedAccentColors = new Set(otherAgents.map((a) => a.accentColor));
+	const nextUnusedCharacter = (): CharacterName =>
+		PICKABLE_CHARACTERS.find((c) => !usedCharacters.has(c.name))?.name ?? "Male1";
+	const nextUnusedAccentColor = (): string =>
+		ACCENT_COLORS.find((color) => !usedAccentColors.has(color)) ?? ACCENT_COLORS[0];
 
 	const firstProvider = providers[0];
 	const form = useForm<AgentFormValues>({
@@ -61,8 +78,8 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 					providerId: firstProvider?.id ?? "",
 					model: firstProvider?.models[0]?.value ?? "",
 					systemPrompt: "",
-					character: "Male1",
-					accentColor: ACCENT_COLORS[0],
+					character: nextUnusedCharacter(),
+					accentColor: nextUnusedAccentColor(),
 				},
 	});
 
@@ -310,7 +327,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		createScript,
 		form,
 		submit,
-		values: { providerId, model, character, accentColor, systemPrompt, selectedProvider },
+		values: { providerId, model, character, accentColor, systemPrompt, selectedProvider, usedCharacters },
 		state: {
 			scriptIds,
 			knowledgeCollectionIds,
