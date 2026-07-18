@@ -342,6 +342,16 @@ select:-webkit-autofill:focus {
 		transform: scale(1);
 	}
 }
+/** Balanço sutil de "vivo" pra sprites parados (retrato estático sem frames de piscar/acenar). */
+@keyframes wkidle {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-2px);
+	}
+}
 
 table {
 	position: relative;
