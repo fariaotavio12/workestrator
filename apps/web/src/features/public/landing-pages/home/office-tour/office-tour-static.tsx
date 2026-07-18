@@ -1,6 +1,6 @@
 import { Typography } from "@/components/typography";
 import { EndOfVisitCard } from "./end-of-visit-card";
-import { stations } from "./office-tour-data";
+import { personSrc, stations } from "./office-tour-data";
 
 /** Fallback acessível: sem scroll horizontal nem parallax, pra `prefers-reduced-motion` e leitores de tela. */
 export const OfficeTourStatic = () => (
@@ -42,7 +42,7 @@ export const OfficeTourStatic = () => (
 						</Typography>
 						<div className="flex items-end gap-4">
 							<img
-								src={`/assets/avatars/${station.avatar}_talk.png`}
+								src={personSrc(station.avatar, "front")}
 								alt={`Agente da estação ${station.label}`}
 								className="w-[68px] shrink-0"
 								style={{ imageRendering: "pixelated" }}

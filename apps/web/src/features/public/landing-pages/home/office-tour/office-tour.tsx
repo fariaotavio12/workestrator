@@ -4,7 +4,7 @@ import { Typography } from "@/components/typography";
 import { Volume2, VolumeX, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, type CSSProperties } from "react";
 import { EndOfVisitCard } from "./end-of-visit-card";
-import { AVATAR_SIZE, stations, type Sprite } from "./office-tour-data";
+import { PERSON_WIDTH, personSrc, stations, type Sprite } from "./office-tour-data";
 import { OfficeTourStatic } from "./office-tour-static";
 import { useOfficeTour } from "./use-office-tour";
 
@@ -43,9 +43,8 @@ export const OfficeTour = () => {
 
 	const { world, viewport, activeIndex, walking, direction, chestOpen, ctaVisible, sound } = tour;
 	const pageHeight = world.scrollable + viewport.vh;
-	const playerPose = tour.playerPose();
-	const playerSrc = tour.avatarSrc("Male1", playerPose, tour.tick);
-	const playerWidth = AVATAR_SIZE.Male1[0] * world.scale;
+	const playerSrc = personSrc(stations[0].avatar, "front");
+	const playerWidth = PERSON_WIDTH * world.scale;
 	const ctaLift = Math.round(world.chestWidth * 0.9 + 26);
 
 	return (
@@ -134,16 +133,19 @@ export const OfficeTour = () => {
 									</div>
 								)}
 								{!isPlayerStation && (
-									<img
-										src={tour.avatarSrc(station.avatar, tour.poseFor(i), tour.tick)}
-										alt=""
-										aria-hidden="true"
-										style={{
-											width: AVATAR_SIZE[station.avatar][0] * world.scale,
-											imageRendering: "pixelated",
-											transform: `scaleX(${i === world.lastIndex ? -1 : 1})`,
-										}}
-									/>
+									<div style={{ animation: isActive ? "wkpop .5s ease" : "wkidle 2.4s ease-in-out infinite" }}>
+										<img
+											src={personSrc(station.avatar, "front")}
+											alt=""
+											aria-hidden="true"
+											style={{
+												width: PERSON_WIDTH * world.scale,
+												imageRendering: "pixelated",
+												transform: `scaleX(${i === world.lastIndex ? -1 : 1})`,
+												display: "block",
+											}}
+										/>
+									</div>
 								)}
 								{isPlayerStation && <div style={{ height: Math.round(50 * world.scale) }} />}
 							</div>
