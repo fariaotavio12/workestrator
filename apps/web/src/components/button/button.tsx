@@ -21,7 +21,7 @@ const buttonVariants = cva(
 					"justify-start border-transparent text-left shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
 			},
 			size: {
-				default: "h-11 px-6 [&_svg:not([class*='size-'])]:size-4",
+				default: "h-10 px-6 [&_svg:not([class*='size-'])]:size-4",
 				sm: "h-9 px-4 text-xs [&_svg:not([class*='size-'])]:size-4",
 				lg: "h-12 px-7 text-sm",
 				// icon: "h-8 w-8",

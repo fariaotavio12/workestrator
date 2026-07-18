@@ -1,0 +1,326 @@
+{
+	"slot": 256,
+	"cols": 8,
+	"w": 2048,
+	"h": 1792,
+	"slots": {
+		"01_workstation-desk-l-empty": {
+			"x": 66,
+			"y": 78,
+			"w": 124,
+			"h": 99
+		},
+		"02_conference-table-empty": {
+			"x": 321,
+			"y": 82,
+			"w": 126,
+			"h": 92
+		},
+		"03_manager-desk-empty": {
+			"x": 578,
+			"y": 85,
+			"w": 124,
+			"h": 86
+		},
+		"04_coffee-table-empty": {
+			"x": 834,
+			"y": 88,
+			"w": 124,
+			"h": 80
+		},
+		"05_snack-storage-cabinet-empty": {
+			"x": 1090,
+			"y": 84,
+			"w": 124,
+			"h": 87
+		},
+		"06_filing-shelf-empty": {
+			"x": 1345,
+			"y": 94,
+			"w": 126,
+			"h": 68
+		},
+		"07_office-chair-teal": {
+			"x": 1627,
+			"y": 71,
+			"w": 74,
+			"h": 114
+		},
+		"08_computer-monitor-black": {
+			"x": 1879,
+			"y": 71,
+			"w": 82,
+			"h": 114
+		},
+		"09_keyboard-black": {
+			"x": 68,
+			"y": 354,
+			"w": 119,
+			"h": 60
+		},
+		"10_mouse-black": {
+			"x": 330,
+			"y": 331,
+			"w": 108,
+			"h": 106
+		},
+		"11_acoustic-divider-teal": {
+			"x": 623,
+			"y": 326,
+			"w": 34,
+			"h": 116
+		},
+		"12_drawer-pedestal-gray": {
+			"x": 855,
+			"y": 327,
+			"w": 82,
+			"h": 113
+		},
+		"13_desk-plant-small": {
+			"x": 1112,
+			"y": 328,
+			"w": 79,
+			"h": 111
+		},
+		"14_office-waste-bin": {
+			"x": 1370,
+			"y": 329,
+			"w": 76,
+			"h": 110
+		},
+		"15_conference-chair-teal": {
+			"x": 1630,
+			"y": 328,
+			"w": 67,
+			"h": 112
+		},
+		"16_conference-centerpiece": {
+			"x": 1879,
+			"y": 331,
+			"w": 82,
+			"h": 105
+		},
+		"17_table-control-device": {
+			"x": 87,
+			"y": 595,
+			"w": 81,
+			"h": 89
+		},
+		"18_manager-chair-teal": {
+			"x": 351,
+			"y": 582,
+			"w": 65,
+			"h": 115
+		},
+		"19_bookcase-filled-variant": {
+			"x": 596,
+			"y": 583,
+			"w": 88,
+			"h": 114
+		},
+		"20_manager-monitor-left": {
+			"x": 845,
+			"y": 582,
+			"w": 101,
+			"h": 116
+		},
+		"21_manager-monitor-right": {
+			"x": 1101,
+			"y": 582,
+			"w": 102,
+			"h": 116
+		},
+		"22_wall-analytics-dashboard": {
+			"x": 1346,
+			"y": 606,
+			"w": 124,
+			"h": 67
+		},
+		"23_sofa-blue": {
+			"x": 1601,
+			"y": 596,
+			"w": 126,
+			"h": 87
+		},
+		"24_lounge-armchair-teal": {
+			"x": 1880,
+			"y": 584,
+			"w": 79,
+			"h": 112
+		},
+		"25_office-magazine": {
+			"x": 77,
+			"y": 842,
+			"w": 102,
+			"h": 107
+		},
+		"26_water-dispenser": {
+			"x": 362,
+			"y": 839,
+			"w": 43,
+			"h": 114
+		},
+		"27_multifunction-printer": {
+			"x": 589,
+			"y": 839,
+			"w": 102,
+			"h": 113
+		},
+		"28_filing-cabinet-filled-variant": {
+			"x": 833,
+			"y": 857,
+			"w": 125,
+			"h": 77
+		},
+		"29_noticeboard-notes": {
+			"x": 1088,
+			"y": 857,
+			"w": 128,
+			"h": 78
+		},
+		"30_floor-plant-large": {
+			"x": 1380,
+			"y": 854,
+			"w": 55,
+			"h": 84
+		},
+		"31_floor-plant-small": {
+			"x": 1638,
+			"y": 857,
+			"w": 52,
+			"h": 77
+		},
+		"32_recycling-bin-blue": {
+			"x": 1896,
+			"y": 857,
+			"w": 47,
+			"h": 78
+		},
+		"33_microwave-black": {
+			"x": 78,
+			"y": 1114,
+			"w": 99,
+			"h": 76
+		},
+		"34_coffee-machine": {
+			"x": 361,
+			"y": 1111,
+			"w": 46,
+			"h": 81
+		},
+		"35_snack-bowl": {
+			"x": 598,
+			"y": 1115,
+			"w": 83,
+			"h": 74
+		},
+		"36_snack-bag": {
+			"x": 864,
+			"y": 1113,
+			"w": 64,
+			"h": 78
+		},
+		"37_sofa-cushion-orange": {
+			"x": 1112,
+			"y": 1112,
+			"w": 79,
+			"h": 80
+		},
+		"38_sofa-cushion-teal": {
+			"x": 1369,
+			"y": 1112,
+			"w": 78,
+			"h": 80
+		},
+		"39_office-binder-single": {
+			"x": 1650,
+			"y": 1113,
+			"w": 28,
+			"h": 78
+		},
+		"40_storage-box-small": {
+			"x": 1883,
+			"y": 1113,
+			"w": 74,
+			"h": 77
+		},
+		"41_bookcase-tall-empty": {
+			"x": 106,
+			"y": 1367,
+			"w": 43,
+			"h": 82
+		},
+		"42_wood-floor-tile": {
+			"x": 349,
+			"y": 1367,
+			"w": 69,
+			"h": 82
+		},
+		"43_meeting-carpet-tile": {
+			"x": 602,
+			"y": 1367,
+			"w": 76,
+			"h": 82
+		},
+		"44_lounge-rug-orange": {
+			"x": 854,
+			"y": 1367,
+			"w": 83,
+			"h": 82
+		},
+		"45_glass-wall-panel": {
+			"x": 1128,
+			"y": 1367,
+			"w": 48,
+			"h": 82
+		},
+		"46_glass-meeting-door": {
+			"x": 1387,
+			"y": 1367,
+			"w": 41,
+			"h": 81
+		},
+		"47_glass-entrance-double-door": {
+			"x": 1616,
+			"y": 1368,
+			"w": 95,
+			"h": 80
+		},
+		"48_wall-sconce-cream": {
+			"x": 1902,
+			"y": 1367,
+			"w": 36,
+			"h": 82
+		},
+		"49_framed-city-picture": {
+			"x": 53,
+			"y": 1626,
+			"w": 149,
+			"h": 76
+		},
+		"50_access-control-terminal": {
+			"x": 368,
+			"y": 1624,
+			"w": 31,
+			"h": 80
+		},
+		"51_indoor-planter-box": {
+			"x": 560,
+			"y": 1626,
+			"w": 160,
+			"h": 76
+		},
+		"52_exterior-flower-planter": {
+			"x": 819,
+			"y": 1625,
+			"w": 153,
+			"h": 77
+		},
+		"53_low-side-cabinet": {
+			"x": 1084,
+			"y": 1626,
+			"w": 136,
+			"h": 76
+		}
+	}
+}

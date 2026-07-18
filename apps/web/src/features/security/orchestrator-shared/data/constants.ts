@@ -2,7 +2,7 @@
 import type { CharacterName, ScriptKind } from "../types";
 
 /** Máximo de cadeiras por squad — cabe bem no escritório 2D. */
-export const MAX_SEATS = 12;
+export const MAX_SEATS = 16;
 
 /** Personagem fixo que ilustra o coordenador — mesmo avatar no escritório e no mapa do run. */
 export const COORDINATOR_CHARACTER: CharacterName = "Male1";

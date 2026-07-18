@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - dev
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 concurrency:

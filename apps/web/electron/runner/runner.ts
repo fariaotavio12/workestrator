@@ -139,7 +139,12 @@ export const buildExecutorPlan = (
 		args: [
 			"-p",
 			"--system-prompt",
-			systemPrompt,
+			// No Windows, `claude` roda via claude.cmd → cmd.exe /c "<comando>" (cross-spawn). Um `\n` bruto
+			// dentro de um argumento CORTA a linha de comando ali mesmo — tudo depois (inclusive
+			// `--output-format stream-json`) nunca chega no processo real, ele cai no formato texto puro, e
+			// o parser de stream-json (só entende JSON) descarta a resposta inteira como "sem saída". O
+			// systemPrompt quase sempre tem quebra de linha (é multi-parágrafo) — nunca passa bruto num arg.
+			systemPrompt.replace(/\r?\n+/g, " "),
 			"--tools",
 			canExecute ? "Bash,Read,Write,Edit,Glob,Grep" : "",
 			"--no-session-persistence",
@@ -1008,8 +1013,14 @@ const readJsonBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
 		req.on("error", reject);
 	});
 
-/** Escreve um evento Server-Sent Events — o navegador consome via `runtime/model-client.ts`. */
+/**
+ * Escreve um evento Server-Sent Events — o navegador consome via `runtime/model-client.ts`. No-op se a
+ * resposta já foi encerrada (ex.: cliente desconectou, ou outro handler já finalizou a request) — sem
+ * essa checagem, `res.write()` lança `ERR_STREAM_WRITE_AFTER_END` síncrono, que dentro de um callback de
+ * evento (child process, etc.) vira uma uncaught exception e derruba o processo principal inteiro.
+ */
 const writeSseEvent = (res: ServerResponse, event: string, data: unknown): void => {
+	if (res.writableEnded) return;
 	res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 };
 
@@ -1491,6 +1502,9 @@ export const handleRunStep = async (
 	// Execução real (rodar testes, build, render de imagem via Playwright, etc.) pode demorar bem mais
 	// que uma resposta de texto simples — daí o timeout maior no modo execução.
 	const timeoutMs = canExecute ? 600_000 : 90_000;
+	// Quando o spawn falha (ex.: binário fora do PATH), o Node emite `error` E `close` para o mesmo
+	// child — sem essa trava, os dois handlers abaixo tentam responder a mesma request.
+	let settled = false;
 	// `code === null` no `close` só distingue "morto por sinal" de "saiu sozinho" — não diz *por que*
 	// foi morto. Este flag separa o kill do timeout (mensagem acionável) de um cancelamento/crash.
 	let timedOut = false;
@@ -1520,6 +1534,8 @@ export const handleRunStep = async (
 	child.stderr?.on("data", (chunk) => (stderr += chunk.toString()));
 
 	child.on("close", (code) => {
+		if (settled) return;
+		settled = true;
 		clearTimeout(timeout);
 
 		// stream-json: descarrega a última linha bufferizada (o evento `result` costuma ser a última).
@@ -1569,6 +1585,8 @@ export const handleRunStep = async (
 	});
 
 	child.on("error", (err) => {
+		if (settled) return;
+		settled = true;
 		clearTimeout(timeout);
 		writeSseEvent(res, "error", {
 			code: "unknown",
