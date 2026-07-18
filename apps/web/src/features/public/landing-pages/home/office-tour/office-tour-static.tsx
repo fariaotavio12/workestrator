@@ -16,34 +16,48 @@ export const OfficeTourStatic = () => (
 			</Typography>
 		</div>
 
-		{stations.map((station) => (
-			<section key={station.num} aria-label={`${station.num} — ${station.label}`} className="flex flex-col gap-3">
-				<div className="flex items-center gap-2">
-					<span
-						className="block size-2.5 rounded-full"
-						style={{ backgroundColor: `var(--${station.accent})` }}
-						aria-hidden="true"
-					/>
-					<Typography variant="section-label" className="text-muted-foreground">
-						{station.num} — {station.label}
-					</Typography>
-				</div>
-				<div className="flex items-end gap-4">
-					<img
-						src={`/assets/avatars/${station.avatar}_talk.png`}
-						alt={`Agente da estação ${station.label}`}
-						className="w-[76px] shrink-0"
-						style={{ imageRendering: "pixelated" }}
-					/>
-					<div className="bg-card border-border rounded-2xl border p-4 shadow-sm">
-						<Typography variant="title-sm">{station.quote}</Typography>
-						<Typography variant="body-sm" className="text-muted-foreground mt-1.5">
-							{station.subtitle}
-						</Typography>
+		<ol className="relative flex flex-col gap-8">
+			{stations.map((station, i) => (
+				<li
+					key={station.num}
+					aria-label={`${station.num} — ${station.label}`}
+					className="relative flex gap-4 pl-1 sm:gap-5"
+				>
+					<div className="relative flex flex-col items-center">
+						<span
+							className="border-border bg-card z-[1] flex size-9 shrink-0 items-center justify-center rounded-full border font-mono text-sm font-semibold shadow-sm"
+							style={{ color: `var(--${station.accent})` }}
+							aria-hidden="true"
+						>
+							{station.num}
+						</span>
+						{i < stations.length - 1 && (
+							<span className="bg-border absolute top-9 bottom-[-2rem] w-px" aria-hidden="true" />
+						)}
 					</div>
-				</div>
-			</section>
-		))}
+
+					<div className="flex flex-1 flex-col gap-3 pb-1">
+						<Typography variant="section-label" className="text-muted-foreground">
+							{station.label}
+						</Typography>
+						<div className="flex items-end gap-4">
+							<img
+								src={`/assets/avatars/${station.avatar}_talk.png`}
+								alt={`Agente da estação ${station.label}`}
+								className="w-[68px] shrink-0"
+								style={{ imageRendering: "pixelated" }}
+							/>
+							<div className="bg-card border-border flex-1 rounded-2xl border p-4 shadow-sm">
+								<Typography variant="title-sm">{station.quote}</Typography>
+								<Typography variant="body-sm" className="text-muted-foreground mt-1.5">
+									{station.subtitle}
+								</Typography>
+							</div>
+						</div>
+					</div>
+				</li>
+			))}
+		</ol>
 
 		<div className="bg-card border-border rounded-3xl border p-7">
 			<EndOfVisitCard />

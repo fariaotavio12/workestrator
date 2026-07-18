@@ -1,6 +1,5 @@
-import { useAuth } from "@/app/providers/authProvider";
-import { Rotas } from "@/app/routing/variables";
-import { CustomLink } from "@/components/link";
+import { Button } from "@/components/button";
+import { NavBarLanding } from "@/components/navbar/navbarLanding";
 import { Typography } from "@/components/typography";
 import { Volume2, VolumeX, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, type CSSProperties } from "react";
@@ -39,7 +38,6 @@ export const OfficeTour = () => {
 	const bgRef = useRef<HTMLDivElement>(null);
 	const fgRef = useRef<HTMLDivElement>(null);
 	const tour = useOfficeTour({ midRef, bgRef, fgRef });
-	const { user } = useAuth();
 
 	if (tour.reducedMotion || !tour.world) return <OfficeTourStatic />;
 
@@ -262,44 +260,45 @@ export const OfficeTour = () => {
 					<SpriteLayer sprites={world.foreground} style={{ filter: "brightness(.94)" }} />
 				</div>
 
-				<div className="absolute inset-x-0 top-0 z-40 flex items-center justify-end gap-2 px-4 py-3.5">
-					<button
-						type="button"
-						onClick={tour.toggleSound}
-						aria-label={sound ? "Desligar efeitos sonoros" : "Ligar efeitos sonoros"}
-						className="bg-card/85 border-border hover:bg-muted rounded-lg border px-3.5 py-2.5 font-mono text-[11px] font-semibold tracking-wider backdrop-blur-sm"
-					>
-						{sound ? <Volume2 className="inline size-3.5" /> : <VolumeX className="inline size-3.5" />}{" "}
-						{sound ? "SOM ON" : "SOM OFF"}
-					</button>
-					<CustomLink
-						to={user ? Rotas.protegidas.dashboards.home : Rotas.desprotegidas.auth.login}
-						variant="ghost"
-						size="sm"
-						className="bg-card/85 border-border hover:bg-muted backdrop-blur-sm"
-					>
-						{user ? "Dashboard" : "Entrar"}
-					</CustomLink>
-				</div>
+				<NavBarLanding
+					overlay
+					rightSlot={
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={tour.toggleSound}
+							aria-label={sound ? "Desligar efeitos sonoros" : "Ligar efeitos sonoros"}
+							className="bg-card/85 hover:bg-muted gap-1.5 font-mono text-[11px] tracking-wider backdrop-blur-sm"
+						>
+							{sound ? <Volume2 className="inline size-3.5" /> : <VolumeX className="inline size-3.5" />}
+							{sound ? "SOM ON" : "SOM OFF"}
+						</Button>
+					}
+				/>
 
-				<button
+				<Button
 					type="button"
+					variant="outline"
+					size="icon"
 					onClick={() => tour.goTo(activeIndex - 1)}
 					aria-label="Estação anterior"
 					disabled={activeIndex === 0}
-					className="bg-card/85 border-border hover:bg-muted absolute top-1/2 left-2.5 z-40 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg border disabled:opacity-45"
+					className="bg-card/85 hover:bg-muted absolute top-1/2 left-2.5 z-40 size-11 -translate-y-1/2 backdrop-blur-sm disabled:opacity-45"
 				>
 					<ChevronLeft className="size-5" />
-				</button>
-				<button
+				</Button>
+				<Button
 					type="button"
+					variant="outline"
+					size="icon"
 					onClick={() => tour.goTo(activeIndex + 1)}
 					aria-label="Próxima estação"
 					disabled={activeIndex === world.lastIndex}
-					className="bg-card/85 border-border hover:bg-muted absolute top-1/2 right-2.5 z-40 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg border disabled:opacity-45"
+					className="bg-card/85 hover:bg-muted absolute top-1/2 right-2.5 z-40 size-11 -translate-y-1/2 backdrop-blur-sm disabled:opacity-45"
 				>
 					<ChevronRight className="size-5" />
-				</button>
+				</Button>
 
 				<div className="bg-card/85 border-border absolute bottom-3.5 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-3xl border px-3.5 py-2.5 backdrop-blur-sm">
 					<Typography variant="caption" className="text-muted-foreground font-mono">
