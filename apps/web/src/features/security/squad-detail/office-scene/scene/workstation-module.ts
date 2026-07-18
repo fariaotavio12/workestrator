@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { AgentStatus } from "@/features/security/orchestrator-shared/types";
-import type { PersonKey } from "../../office/office-assets";
+import type { PersonKey } from "@/features/security/orchestrator-shared/data/characters";
 import type { Facing } from "../layout/office-layout";
 import type { OfficePalette } from "./palette";
 import { addCharacter, addGlow, addProp, type CharacterObject } from "./render";

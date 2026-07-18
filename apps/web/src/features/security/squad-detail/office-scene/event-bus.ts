@@ -1,5 +1,5 @@
 import type { AgentStatus } from "@/features/security/orchestrator-shared/types";
-import type { PersonKey } from "../office/office-assets";
+import type { PersonKey } from "@/features/security/orchestrator-shared/data/characters";
 import type { Cell, Facing } from "./layout/office-layout";
 
 /** Emissor tipado mínimo — ponte React↔Phaser. Não depende de Phaser (o lado React importa daqui). */

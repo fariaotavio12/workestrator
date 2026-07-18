@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { Squad } from "@/features/security/orchestrator-shared/types";
-import { personForCharacter } from "../office/office-assets";
+import { personForCharacter } from "@/features/security/orchestrator-shared/data/characters";
 import type { OfficeSeatView } from "../office/office-types";
 import { useOfficeChoreography, type ActorScene } from "../office/use-office-choreography";
 import type { OfficeBus, SeatVisual } from "./event-bus";

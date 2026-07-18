@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { PersonKey } from "../../office/office-assets";
+import type { PersonKey } from "@/features/security/orchestrator-shared/data/characters";
 import { resolveCharacterVisual, type OfficeAnim } from "../assets/character-manifest";
 import { getProp } from "../assets/prop-manifest";
 
