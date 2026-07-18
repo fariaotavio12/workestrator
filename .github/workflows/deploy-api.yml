@@ -117,6 +117,7 @@ jobs:
             APP_AUTH_GOOGLE_SUCCESS_REDIRECT=https://dev.workestrator.zappyon.com/auth/google/success
             APP_AUTH_PASSWORD_RESET_BASE_URL=https://dev.workestrator.zappyon.com/recuperar-senha
             APP_AUTH_ALLOWED_REDIRECT_HOSTS=dev.workestrator.zappyon.com,localhost,127.0.0.1
+            APP_CORS_ALLOWED_ORIGIN_PATTERNS=https://dev.workestrator.zappyon.com,http://localhost:5173,http://127.0.0.1:5173
             MAIL_HOST=smtp.hostinger.com
             MAIL_PORT=587
             MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
