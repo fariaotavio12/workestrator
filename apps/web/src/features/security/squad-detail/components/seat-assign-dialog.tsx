@@ -1,4 +1,3 @@
-import { cn } from "@/app/utils/cn";
 import { AppSheet, Badge, Button, EmptyState, Typography, notify } from "@/components";
 import { Armchair, Bot, Pencil, Plus, Replace, Trash2, UserMinus } from "lucide-react";
 import { useState } from "react";
@@ -29,7 +28,8 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 	const [toDelete, setToDelete] = useState<Agent | null>(null);
 
 	const currentAgent = currentAgentId ? agents.find((agent) => agent.id === currentAgentId) : undefined;
-	const availableAgents = agents;
+	/** Exclui o agente já sentado aqui — ele fica no card de resumo acima, repeti-lo na lista é redundante. */
+	const pickableAgents = currentAgent ? agents.filter((agent) => agent.id !== currentAgent.id) : agents;
 
 	const pick = async (agentId: string | null) => {
 		if (!seatId) return;
@@ -72,30 +72,19 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 	};
 
 	const renderAgentOption = (agent: Agent) => {
-		const isCurrentAgent = agent.id === currentAgent?.id;
 		const actionLabel = currentAgent ? "Substituir" : "Sentar";
 
 		return (
 			<div
 				key={agent.id}
-				className={cn(
-					"flex flex-col gap-3 rounded-lg border p-2 transition-colors sm:flex-row sm:items-center",
-					isCurrentAgent ? "border-primary/30 bg-primary/5" : "hover:border-ring",
-				)}
+				className="hover:border-ring flex flex-col gap-3 rounded-lg border p-2 transition-colors sm:flex-row sm:items-center"
 			>
 				<div className="flex min-w-0 flex-1 items-center gap-3 self-stretch">
 					<AgentAvatar character={agent.character} accentColor={agent.accentColor} size={44} />
 					<div className="flex min-w-0 flex-1 flex-col">
-						<div className="flex min-w-0 items-center gap-2">
-							<Typography variant="title-sm" className="truncate">
-								{agent.name}
-							</Typography>
-							{isCurrentAgent && (
-								<Badge variant="secondary" className="shrink-0">
-									Sentado
-								</Badge>
-							)}
-						</div>
+						<Typography variant="title-sm" className="truncate">
+							{agent.name}
+						</Typography>
 						<Typography variant="caption" className="text-muted-foreground truncate">
 							{agent.role} - {modelLabel(providers, agent.modelRef.providerId, agent.modelRef.model)}
 						</Typography>
@@ -106,11 +95,11 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 						type="button"
 						variant="outline"
 						size="sm"
-						disabled={isCurrentAgent || assignSeat.isPending}
+						disabled={assignSeat.isPending}
 						onClick={() => pick(agent.id)}
 					>
 						<Replace />
-						{isCurrentAgent ? "Atual" : actionLabel}
+						{actionLabel}
 					</Button>
 					<Button
 						type="button"
@@ -235,11 +224,9 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 
 				<div className="flex items-center justify-between gap-3">
 					<div className="flex min-w-0 flex-col">
-						<Typography variant="title-sm">{currentAgent ? "Agents do squad" : "Agents disponiveis"}</Typography>
+						<Typography variant="title-sm">{currentAgent ? "Substituir por" : "Agents disponiveis"}</Typography>
 						<Typography variant="caption" className="text-muted-foreground">
-							{currentAgent
-								? "O agent atual fica marcado. Escolha outro para substituir."
-								: "Selecione um agent para sentar."}
+							{currentAgent ? "Escolha outro agent do squad para sentar aqui no lugar." : "Selecione um agent para sentar."}
 						</Typography>
 					</div>
 					<Button type="button" size="sm" onClick={() => setAgentForm({})}>
@@ -248,7 +235,7 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 					</Button>
 				</div>
 
-				{availableAgents.length === 0 ? (
+				{agents.length === 0 ? (
 					<EmptyState
 						icon={Bot}
 						title="Nenhum agent"
@@ -257,8 +244,14 @@ export const SeatAssignDialog = ({ open, onOpenChange, squadId, seatId, currentA
 						actionLabel="Novo agent"
 						actionIcon={<Plus />}
 					/>
+				) : pickableAgents.length === 0 ? (
+					<div className="border-t pt-3">
+						<Typography variant="body-sm" className="text-muted-foreground">
+							Esse é o único agent do squad. Crie outro acima para poder substituir o desta cadeira.
+						</Typography>
+					</div>
 				) : (
-					<div className="flex flex-col gap-2 border-t pt-3">{availableAgents.map(renderAgentOption)}</div>
+					<div className="flex flex-col gap-2 border-t pt-3">{pickableAgents.map(renderAgentOption)}</div>
 				)}
 			</AppSheet>
 
