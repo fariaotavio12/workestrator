@@ -36,18 +36,18 @@ export const LayoutAuth = () => {
 						<div className="flex max-w-md flex-1 flex-col justify-center">
 							<div className="border-primary/20 bg-primary/10 text-primary mb-6 flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium">
 								<ShieldCheck size={12} />
-								Base web pronta para adaptar
+								Console seguro para agentes de IA
 							</div>
 
 							<h2 className="text-foreground mb-4 text-3xl leading-snug font-semibold">
-								Construa seu produto.
+								Coordene seus squads.
 								<br />
-								Mantenha uma base organizada.
+								Acompanhe cada execução.
 							</h2>
 
 							<p className="text-muted-foreground text-sm leading-relaxed">
-								Template React com autenticação, rotas, providers, layout administrativo e estrutura por features para
-								iniciar novos sistemas sem acoplar regras de um domínio específico.
+								Entre no Workestrator para criar agentes, montar equipes, conectar ferramentas e acompanhar runs com
+								visibilidade sobre decisões, arquivos e resultados.
 							</p>
 
 							<div className="mt-8 grid grid-cols-3 gap-3">
