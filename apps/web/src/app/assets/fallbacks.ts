@@ -21,7 +21,7 @@ const dashboardSvg = `
   <rect x="690" y="254" width="120" height="22" rx="11" fill="#64748b"/>
   <rect x="980" y="254" width="120" height="22" rx="11" fill="#64748b"/>
   <path d="M406 612C476 520 548 554 612 492C676 430 756 456 838 338" fill="none" stroke="#7ed444" stroke-width="14" stroke-linecap="round"/>
-  <text x="400" y="160" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24" font-weight="700">App Template Dashboard</text>
+  <text x="400" y="160" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24" font-weight="700">Workestrator Dashboard</text>
 </svg>`;
 
 const dashboardLightSvg = `
@@ -45,7 +45,7 @@ const dashboardLightSvg = `
   <rect x="690" y="254" width="120" height="22" rx="11" fill="#94a3b8"/>
   <rect x="980" y="254" width="120" height="22" rx="11" fill="#94a3b8"/>
   <path d="M406 612C476 520 548 554 612 492C676 430 756 456 838 338" fill="none" stroke="#65a30d" stroke-width="14" stroke-linecap="round"/>
-  <text x="400" y="160" fill="#0f172a" font-family="Arial, sans-serif" font-size="24" font-weight="700">App Template Dashboard</text>
+  <text x="400" y="160" fill="#0f172a" font-family="Arial, sans-serif" font-size="24" font-weight="700">Workestrator Dashboard</text>
 </svg>`;
 
 export const dashboardFallback = encodeSvg(dashboardSvg);
