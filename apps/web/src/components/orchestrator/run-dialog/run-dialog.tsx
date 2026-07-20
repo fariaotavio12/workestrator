@@ -14,6 +14,7 @@ import {
 	previewAvailable,
 	registerPreviewRoot,
 	runnerAvailable,
+	runStepEndpointAvailable,
 } from "@/features/security/orchestrator-shared/runtime/model-client";
 import { MonitorDown, Play, Save } from "lucide-react";
 import { useState } from "react";
@@ -29,7 +30,11 @@ import {
 	startRun,
 	stopRun,
 } from "@/features/security/orchestrator-shared/runtime/orchestrator-runtime";
-import { getSquadReadiness, readinessMessage } from "@/features/security/orchestrator-shared/runtime/squad-readiness";
+import {
+	getSquadReadiness,
+	isApiOnlySquad,
+	readinessMessage,
+} from "@/features/security/orchestrator-shared/runtime/squad-readiness";
 import type { Squad } from "@/features/security/orchestrator-shared/types";
 import { useProvidersQuery } from "@/features/security/models/api";
 import { useRunsQuery } from "@/features/security/executions/api";
@@ -63,7 +68,10 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 
 	const updateSquad = useUpdateSquad(squad.id);
 	const briefingDirty = input.trim() !== (squad.savedBriefing ?? "").trim();
-	const canRunOnThisDevice = runnerAvailable();
+	// Desktop roda tudo; fora dele, só squad 100% de API e com endpoint de execução disponível
+	// (`vite dev`). Mesma regra do `requireRunner` no runtime — aqui só decide o que a UI mostra.
+	const apiOnlySquad = isApiOnlySquad(squad, providers);
+	const canRunOnThisDevice = runnerAvailable() || (runStepEndpointAvailable() && apiOnlySquad);
 
 	const saveBriefing = async () => {
 		try {
@@ -119,12 +127,18 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 			return;
 		}
 		if (!canRunOnThisDevice) {
-			notify.warning("Execução disponível no app desktop", "Baixe o Workestrator desktop para rodar squads e scripts locais.", {
-				label: "Baixar desktop",
-				onClick: () => {
-					window.location.assign("/download");
+			notify.warning(
+				"Execução disponível no app desktop",
+				apiOnlySquad
+					? "Este squad roda por API, mas esta versão web não tem executor. Baixe o Workestrator desktop."
+					: "Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop.",
+				{
+					label: "Baixar desktop",
+					onClick: () => {
+						window.location.assign("/download");
+					},
 				},
-			});
+			);
 			return;
 		}
 		// Cinto de segurança: revalida a prontidão aqui (ex.: provider deletado com o dialog aberto).
@@ -199,8 +213,9 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 						<div className="flex min-h-0 flex-1 flex-col gap-3">
 							{!canRunOnThisDevice && (
 								<div className="border-warning/30 bg-warning/10 text-foreground rounded-lg border px-4 py-3 text-sm">
-									A execução do runner roda apenas no app desktop. Na web você pode configurar e consultar o
-									orquestrador; para executar squads, baixe o instalador.
+									{apiOnlySquad
+										? "Este squad roda por API, mas esta versão web não tem executor. Baixe o instalador para executá-lo."
+										: "Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na máquina — só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador."}
 								</div>
 							)}
 							<FieldWrapper

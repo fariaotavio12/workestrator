@@ -1,4 +1,4 @@
-import type { ModelProvider, Squad } from "../types";
+import type { ModelProvider, ProviderKind, Squad } from "../types";
 
 export type SquadReadinessIssue =
 	| { kind: "no-provider" }
@@ -59,6 +59,45 @@ export const getSquadReadiness = (squad: Squad, providers: ModelProvider[]): Squ
 
 export const isSquadReady = (squad: Squad, providers: ModelProvider[]): boolean =>
 	getSquadReadiness(squad, providers).length === 0;
+
+/**
+ * Providers que executam por CLI local (`claude`, `codex`, `gpt`): dependem do binário instalado e
+ * autenticado na máquina, então só rodam onde há um runner com acesso a processo — o app desktop.
+ */
+const CLI_PROVIDER_KINDS = new Set<ProviderKind>(["claude-cli", "codex-cli", "gpt-cli"]);
+
+/** Só o que a decisão precisa — aceita tanto `Squad` quanto o `SquadDetail` do cache, sem cast. */
+type SquadForExecution = Pick<Squad, "orchestrator" | "seats" | "agents">;
+
+/**
+ * `true` quando o coordenador e todos os agents sentados usam provider de API (HTTP puro), sem
+ * nenhuma CLI local no caminho. Esses squads são executáveis fora do Electron, porque toda a
+ * execução vira request HTTP — é o que permite rodar direto no navegador (ver `requireRunner`).
+ *
+ * Cadeiras vazias e agents não sentados são ignorados de propósito: não entram na execução, então um
+ * agent de CLI guardado no squad mas fora de cadeira não deve bloquear o run.
+ *
+ * Provider inexistente conta como não-API: aí o run falharia de qualquer jeito, e `getSquadReadiness`
+ * é quem dá a mensagem específica disso.
+ */
+export const isApiOnlySquad = (squad: SquadForExecution, providers: ModelProvider[]): boolean => {
+	const kindOf = (providerId: string): ProviderKind | undefined =>
+		providers.find((provider) => provider.id === providerId)?.kind;
+
+	const isApiKind = (providerId: string): boolean => {
+		const kind = kindOf(providerId);
+		return kind !== undefined && !CLI_PROVIDER_KINDS.has(kind);
+	};
+
+	if (!isApiKind(squad.orchestrator.modelRef.providerId)) return false;
+
+	const seatedAgentIds = new Set(squad.seats.filter((seat) => seat.agentId).map((seat) => seat.agentId));
+	if (seatedAgentIds.size === 0) return false;
+
+	return squad.agents
+		.filter((agent) => seatedAgentIds.has(agent.id))
+		.every((agent) => isApiKind(agent.modelRef.providerId));
+};
 
 export const readinessMessage = (issue: SquadReadinessIssue): string => {
 	switch (issue.kind) {
