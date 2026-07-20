@@ -1,8 +1,11 @@
+import type { ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedTool } from "./openai-tools";
 import {
 	buildMcpConfig,
 	buildMcpServerEntry,
 	buildExecutorPlan,
+	callOpenAiCompat,
 	classifyCliFailure,
 	type ResolvedSecret,
 	type ScriptPayload,
@@ -332,5 +335,177 @@ describe("classifyCliFailure", () => {
 
 	it("falls back to the raw detail for unknown failures", () => {
 		expect(classifyCliFailure("claude", "segfault at 0x0").message).toBe("segfault at 0x0");
+	});
+});
+
+// --- Loop de tool calling (providers OpenAI-compat: Ollama, vLLM, LM Studio...) ---
+
+/** Captura os eventos SSE escritos pelo runner, sem precisar de um socket real. */
+const fakeResponse = () => {
+	const events: { event: string; data: Record<string, unknown> }[] = [];
+	const res = {
+		writableEnded: false,
+		write: (chunk: string) => {
+			const event = chunk.match(/^event: (.+)$/m)?.[1] ?? "";
+			const data = chunk.match(/^data: (.+)$/m)?.[1] ?? "{}";
+			events.push({ event, data: JSON.parse(data) });
+			return true;
+		},
+		end: () => {
+			res.writableEnded = true;
+		},
+	};
+	return { res: res as unknown as ServerResponse, events };
+};
+
+/** Uma resposta `/chat/completions` em streaming, montada a partir dos deltas informados. */
+const sseResponse = (deltas: Record<string, unknown>[]): Response => {
+	const body = `${deltas.map((delta) => `data: ${JSON.stringify({ choices: [{ delta }] })}`).join("\n\n")}\n\ndata: [DONE]\n\n`;
+	return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+};
+
+/** Deltas que pedem uma tool call, fatiando `arguments` como um servidor real faz. */
+const toolCallDeltas = (name: string, args: string): Record<string, unknown>[] => [
+	{ tool_calls: [{ index: 0, id: "call_1", function: { name, arguments: "" } }] },
+	{ tool_calls: [{ index: 0, function: { arguments: args.slice(0, 5) } }] },
+	{ tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] },
+];
+
+const searchTool = (execute: ResolvedTool["execute"]): ResolvedTool => ({
+	definition: {
+		type: "function",
+		function: { name: "buscar", description: "Busca na web", parameters: { type: "object", properties: {} } },
+	},
+	execute,
+});
+
+/** `resolveModel` faz um `GET /models` antes da primeira chamada — responde vazio e segue. */
+const mockChatCalls = (responses: Response[]) => {
+	let call = 0;
+	return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+		if (String(input).includes("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+		return responses[call++] ?? new Response("no more responses", { status: 500 });
+	});
+};
+
+describe("callOpenAiCompat tool loop", () => {
+	const input = { baseUrl: "http://localhost:11434/v1", model: "qwen3", systemPrompt: "sys", prompt: "busque" };
+	const resolveSecret: SecretResolver = async () => undefined;
+
+	// Sem restaurar, `vi.spyOn(globalThis, "fetch")` devolve o mesmo spy no teste seguinte e as
+	// chamadas de um teste vazam nas asserções do outro.
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("executes the requested tool and feeds the result back for the final answer", async () => {
+		mockChatCalls([
+			sseResponse(toolCallDeltas("buscar", '{"variables":{"query":"concursos TI"}}')),
+			sseResponse([{ content: "Achei 2 editais." }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "resultado da busca" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ variables: { query: "concursos TI" } });
+		expect(events.find((e) => e.event === "tool_use")?.data).toMatchObject({ name: "buscar" });
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true, detail: "resultado da busca" });
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "Achei 2 editais." });
+	});
+
+	it("sends the tool definitions in the request body", async () => {
+		const fetchMock = mockChatCalls([sseResponse([{ content: "pronto" }])]);
+		const { res } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(vi.fn())] }, resolveSecret, res);
+
+		const chatCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/chat/completions"));
+		const body = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as { tools?: unknown[] };
+		expect(body.tools).toHaveLength(1);
+	});
+
+	it("omits tools entirely when the agent has none attached", async () => {
+		const fetchMock = mockChatCalls([sseResponse([{ content: "pronto" }])]);
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat(input, resolveSecret, res);
+
+		const chatCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/chat/completions"));
+		const body = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as { tools?: unknown[] };
+		expect(body.tools).toBeUndefined();
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "pronto" });
+	});
+
+	it("tells the model which tools exist when it hallucinates a name, instead of aborting", async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("web_search", "{}")), sseResponse([{ content: "ok" }])]);
+		const execute = vi.fn();
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(execute)] }, resolveSecret, res);
+
+		expect(execute).not.toHaveBeenCalled();
+		const toolResult = events.find((e) => e.event === "tool_result")?.data as { ok: boolean; detail: string };
+		expect(toolResult.ok).toBe(false);
+		expect(toolResult.detail).toContain("buscar");
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "ok" });
+	});
+
+	it("surfaces malformed tool arguments as a tool error the model can recover from", async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("buscar", "{not json")), sseResponse([{ content: "ok" }])]);
+		const execute = vi.fn();
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(execute)] }, resolveSecret, res);
+
+		expect(execute).not.toHaveBeenCalled();
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: false });
+	});
+
+	it("stops with an actionable error when the model never stops calling tools", async () => {
+		mockChatCalls(Array.from({ length: 12 }, () => sseResponse(toolCallDeltas("buscar", "{}"))));
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat(
+			{ ...input, tools: [searchTool(vi.fn().mockResolvedValue({ ok: true, text: "r" }))] },
+			resolveSecret,
+			res,
+		);
+
+		const error = events.find((e) => e.event === "error")?.data as { message: string };
+		expect(error.message).toContain("não fechou uma resposta");
+		expect(events.find((e) => e.event === "done")).toBeUndefined();
+	});
+
+	it("explains that the model lacks function calling when the endpoint rejects tools", async () => {
+		mockChatCalls([new Response("model does not support tools", { status: 400 })]);
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(vi.fn())] }, resolveSecret, res);
+
+		const error = events.find((e) => e.event === "error")?.data as { message: string };
+		expect(error.message).toContain("não aceita ferramentas");
+		expect(error.message).toContain("qwen3");
+	});
+
+	it("reads a non-streaming tool call, since some servers drop streaming when tools are present", async () => {
+		mockChatCalls([
+			new Response(
+				JSON.stringify({
+					choices: [
+						{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "buscar", arguments: "{}" } }] } },
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+			sseResponse([{ content: "final" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "r" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [searchTool(execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledOnce();
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "final" });
 	});
 });

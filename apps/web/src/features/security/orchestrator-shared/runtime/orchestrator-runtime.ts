@@ -20,6 +20,7 @@ import type {
 	Agent,
 	AgentStatus,
 	LiveActivityItem,
+	ProviderKind,
 	Runtime,
 	RunEvent,
 	RunRecord,
@@ -35,9 +36,11 @@ import {
 	callAgentStep,
 	resetWorkspace,
 	runnerAvailable,
+	runStepEndpointAvailable,
 	snapshotRun,
 	type ScriptPayload,
 } from "./model-client";
+import { isApiOnlySquad } from "./squad-readiness";
 import { notifyOs } from "./os-notify";
 import { parseCoordinatorDecision, UNPARSEABLE_DECISION_REASON } from "./orchestrator-decision";
 import { cancelAdvance, runAbortable } from "./runner-controllers";
@@ -60,16 +63,39 @@ const openRunDialog = (squadId: string): void => useRunDialogStore.getState().op
 
 let desktopRequiredNotified = false;
 
-const requireRunner = (): boolean => {
+/**
+ * Decide se este ambiente pode executar ESTE squad.
+ *
+ * O app desktop roda qualquer squad (tem runner local com acesso a processo). Fora dele, o run ainda
+ * é possível quando as duas condições valem: existe quem atenda `/api/run-step`
+ * (`runStepEndpointAvailable`) e o squad é 100% de providers de API (`isApiOnlySquad`) — aí toda a
+ * execução é request HTTP e nada depende de binário instalado na máquina.
+ *
+ * Squad com provider de CLI (claude/codex/gpt) continua exigindo o desktop, mesmo que o endpoint
+ * responda: o binário precisa existir e estar autenticado do lado de quem executa.
+ */
+const requireRunner = (squadId: string): boolean => {
 	if (runnerAvailable()) return true;
+
+	const squad = getSquadConfig(squadId);
+	const providers = tanStackQueryClient.getQueryData<ModelProvider[]>(providersKeys.list()) ?? [];
+	const apiOnly = squad !== undefined && isApiOnlySquad(squad, providers);
+	if (runStepEndpointAvailable() && apiOnly) return true;
+
 	if (!desktopRequiredNotified) {
 		desktopRequiredNotified = true;
-		notify.warning("Execução disponível no app desktop", "Baixe o Workestrator desktop para rodar squads e scripts locais.", {
-			label: "Baixar desktop",
-			onClick: () => {
-				window.location.assign("/download");
+		notify.warning(
+			"Execução disponível no app desktop",
+			apiOnly
+				? "Este squad roda por API, mas esta versão web não tem executor. Baixe o Workestrator desktop."
+				: "Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador.",
+			{
+				label: "Baixar desktop",
+				onClick: () => {
+					window.location.assign("/download");
+				},
 			},
-		});
+		);
 	}
 	return false;
 };
@@ -330,7 +356,14 @@ const finishRun = (squadId: string, status: "done" | "aborted"): void => {
 const buildAgentPrompt = (
 	agentName: string,
 	agentRole: string,
-	context: { briefing: string; previousOutput?: string; qaHistory?: QaPair[]; scripts?: Script[]; retrieval?: string },
+	context: {
+		briefing: string;
+		previousOutput?: string;
+		qaHistory?: QaPair[];
+		scripts?: Script[];
+		retrieval?: string;
+		providerKind?: ProviderKind;
+	},
 ): string => {
 	const source = context.previousOutput
 		? `Isto é o que o passo anterior produziu:\n"""\n${context.previousOutput}\n"""`
@@ -343,10 +376,13 @@ const buildAgentPrompt = (
 					.map((qa) => `P: ${qa.question}\nR: ${qa.answer}`)
 					.join("\n\n")}`
 			: "";
-	// Só command/inline/file rodam de verdade hoje (Bash/Read/Write/Edit na pasta de trabalho). Os
-	// kinds de integração (http/mcp/connector) ainda dependem da resolução do runner (Etapa 3 do
-	// plano) — omitidos aqui pra não anunciar ao agent uma capacidade que ele ainda não tem.
-	const executableScripts = (context.scripts ?? []).filter(
+	// command/inline/file rodam via Bash/Read/Write/Edit da CLI local. Providers HTTP (openai,
+	// openai-compat/Ollama) não têm esse canal — lá o runner só expõe ferramentas de rede como
+	// function tools (ver `resolveOpenAiTools`). Anunciar execução local pra eles instrui o agent a
+	// usar uma capacidade que o transporte não entrega: ele gasta o turno tentando e não fecha o
+	// passo, e o coordenador redispacha em loop.
+	const supportsLocalExecution = context.providerKind !== "openai" && context.providerKind !== "openai-compat";
+	const executableScripts = (supportsLocalExecution ? (context.scripts ?? []) : []).filter(
 		(s): s is Script & { kind: "command" | "inline" | "file" } =>
 			s.kind === "command" || s.kind === "inline" || s.kind === "file",
 	);
@@ -647,6 +683,7 @@ const runOrchestratedAgentStep = (
 						qaHistory,
 						scripts: agent.canExecute ? scripts : undefined,
 						retrieval,
+						providerKind: provider.kind,
 					}),
 					model: agent.modelRef.model,
 					providerKind: provider.kind,
@@ -905,7 +942,7 @@ const advanceOrchestrated = (squadId: string): void => {
 // --- API pública: funções módulo-level (não hooks), chamadas direto de handlers de UI ---
 
 export const startRun = (squadId: string, input: string, origin: RunOrigin = "manual"): void => {
-	if (!requireRunner()) return;
+	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
 	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
@@ -1118,7 +1155,7 @@ const seedRunFromHistory = (
  * chamada, então isso já resolve sozinho).
  */
 export const continueRun = (squadId: string, run: RunRecord): void => {
-	if (!requireRunner()) return;
+	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
 	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
@@ -1175,7 +1212,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
  * pergunta ao coordenador o próximo passo, refaz especificamente o último agent que rodou.
  */
 export const retryLastStep = (squadId: string, run: RunRecord): void => {
-	if (!requireRunner()) return;
+	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
 	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
