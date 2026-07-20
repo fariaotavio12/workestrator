@@ -67,24 +67,17 @@ services:
     restart: unless-stopped
 
   web:
-    # Usa o estagio "build" (node) do dockerfile -> nao vai ate o estagio nginx.
-    # O build ja gera /app/dist; servimos ele com o proprio servidor do Vite
-    # (vite preview), sem nginx e sem nenhum arquivo de config extra.
     build:
       context: ./apps/web
       dockerfile: dockerfile
       target: build
       args:
         VITE_MODE: ${VITE_MODE:-dev}
-        # URL que o NAVEGADOR vai usar pra falar com a API - NAO pode ser "localhost"
-        # quando o front e acessado de outra maquina. Defina VITE_API_URL nas
-        # variaveis de ambiente da stack no Portainer (nao vai no apps/web/.env,
-        # que e gitignored e nao existe no clone que o Portainer faz do repo).
         VITE_API_URL: ${VITE_API_URL:-http://localhost:${API_PORT:-8080}}
     container_name: workestrator-web
     depends_on:
       - api
-    command: ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "${WEB_PORT:-5173}"]
+    command: ["npx", "vite", "--host", "0.0.0.0", "--port", "${WEB_PORT:-5173}", "--mode", "${VITE_MODE:-dev}"]
     ports:
       - "${WEB_PORT:-5173}:${WEB_PORT:-5173}"
     restart: unless-stopped
