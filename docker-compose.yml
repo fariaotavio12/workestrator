@@ -5,17 +5,20 @@
 #
 # NAO precisa de nenhum arquivo .env: todos os valores tem um default de DEV
 # embutido abaixo (sintaxe ${VAR:-valor}). Basta subir e usar:
-#   - Web:     http://localhost:5173
-#   - API:     http://localhost:8080  (Swagger em /swagger-ui.html)
-#   - Postgres: localhost:5432        (workestrator / workestrator)
+#   - Web:      http://localhost:${WEB_PORT:-5173}
+#   - API:      http://localhost:${API_PORT:-8080}  (Swagger em /swagger-ui.html)
+#   - Postgres: localhost:${DB_PORT:-5432}           (workestrator / workestrator)
 #
-# Override opcional: crie um .env na raiz (ja gitignored) ou exporte no shell.
+# Portas: API_PORT, WEB_PORT e DB_PORT sao a fonte unica de cada porta - controlam
+# a porta publicada E a que o servico escuta por dentro (e os dependentes: DB_URL
+# da API e o CORS acompanham automaticamente). Override via .env na raiz ou shell.
 #
 # ATENCAO (dev only):
 #   - SECRETS_MASTER_KEY abaixo e uma chave de DEV. NAO use em producao.
-#   - VITE_API_URL do web e embutido em build-time apontando pra localhost:8080,
-#     entao o front so funciona acessado do PROPRIO host (mesma maquina). Para
-#     servir a outro host, rebuilde apontando o VITE_API_URL para o IP correto.
+#   - VITE_API_URL do web e embutido em build-time (apps/web/.env) apontando pra
+#     localhost:8080. Se mudar API_PORT, ajuste tambem o VITE_API_URL e rebuilde,
+#     senao o front continua chamando a 8080. O front so funciona acessado do
+#     PROPRIO host (mesma maquina).
 # ==========================================================================
 
 services:
@@ -26,12 +29,14 @@ services:
       POSTGRES_DB: ${DB_NAME:-workestrator}
       POSTGRES_USER: ${DB_USERNAME:-workestrator}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-workestrator}
+      # o server do Postgres honra PGPORT como porta de escuta
+      PGPORT: ${DB_PORT:-5432}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-5432}:${DB_PORT:-5432}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-workestrator} -d ${DB_NAME:-workestrator}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-workestrator} -d ${DB_NAME:-workestrator} -p ${DB_PORT:-5432}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -47,16 +52,18 @@ services:
         condition: service_healthy
     environment:
       # host = nome do servico "postgres" na rede do compose
-      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-workestrator}
+      DB_URL: jdbc:postgresql://postgres:${DB_PORT:-5432}/${DB_NAME:-workestrator}
       DB_USERNAME: ${DB_USERNAME:-workestrator}
       DB_PASSWORD: ${DB_PASSWORD:-workestrator}
+      # relaxed binding do Spring -> server.port
+      SERVER_PORT: ${API_PORT:-8080}
       # Base64 de 32 bytes (dev). Gere a sua com: openssl rand -base64 32
       SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY:-1o4y9meyEZZ57/SMzxbyu1VlBfIwTFBJAzyjYsRfL8E=}
-      APP_CORS_ALLOWED_ORIGIN_PATTERNS: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:5173,http://127.0.0.1:5173}
+      APP_CORS_ALLOWED_ORIGIN_PATTERNS: http://localhost:${WEB_PORT:-5173},http://127.0.0.1:${WEB_PORT:-5173}
       # relaxed binding do Spring -> app.mail.enabled=false (sem SMTP no local)
       APP_MAIL_ENABLED: ${APP_MAIL_ENABLED:-false}
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
     restart: unless-stopped
 
   web:
@@ -72,9 +79,9 @@ services:
     container_name: workestrator-web
     depends_on:
       - api
-    command: ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "80"]
+    command: ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "${WEB_PORT:-5173}"]
     ports:
-      - "${WEB_PORT:-5173}:80"
+      - "${WEB_PORT:-5173}:${WEB_PORT:-5173}"
     restart: unless-stopped
 
 volumes:
