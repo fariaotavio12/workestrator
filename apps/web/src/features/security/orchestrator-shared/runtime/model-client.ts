@@ -248,6 +248,20 @@ export const previewAvailable = (): boolean => Boolean(window.__ORCH_API__?.base
 /** Execucoes reais dependem do runner local do Electron; na web a area privada e configuracao/consulta. */
 export const runnerAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
 
+/**
+ * `true` quando existe alguém pra atender `POST /api/run-step`: o servidor local do processo main do
+ * Electron, ou o middleware do `vite dev` (registrado em `vite.config.ts`, delegando pros mesmos
+ * handlers de `electron/runner/runner.ts`).
+ *
+ * `import.meta.env.DEV` é a checagem exata — não uma aproximação: aquele middleware é registrado em
+ * `configureServer`, que só roda em `vite dev`. No build publicado (e no `vite preview`) a rota não
+ * existe e um POST ali devolveria o `index.html`, então o gate precisa fechar antes de tentar.
+ *
+ * Só isso não basta pra liberar um run: o squad também precisa ser API-only (`isApiOnlySquad`), já
+ * que provider de CLI depende de binário local. Ver `requireRunner` em `orchestrator-runtime.ts`.
+ */
+export const runStepEndpointAvailable = (): boolean => runnerAvailable() || import.meta.env.DEV;
+
 const orchHeaders = (): HeadersInit => {
 	const token = window.__ORCH_API__?.token;
 	return { "Content-Type": "application/json", ...(token ? { "X-Orchestrator-Token": token } : {}) };

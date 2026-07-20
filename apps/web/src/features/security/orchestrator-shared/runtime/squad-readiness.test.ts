@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, ModelProvider, Seat, Squad } from "../types";
-import { getSquadReadiness, isSquadReady, readinessMessage } from "./squad-readiness";
+import { getSquadReadiness, isApiOnlySquad, isSquadReady, readinessMessage } from "./squad-readiness";
 
 const provider = (id: string, overrides: Partial<ModelProvider> = {}): ModelProvider => ({
 	id,
@@ -149,5 +149,61 @@ describe("readinessMessage", () => {
 		expect(readinessMessage({ kind: "agent-model-missing", agentId: "a1", agentName: "Ana", model: "model-x" })).toContain(
 			"model-x",
 		);
+	});
+});
+
+describe("isApiOnlySquad", () => {
+	const apiProvider = provider("provider-1", { kind: "openai-compat" });
+	const cliProvider = provider("provider-cli", { kind: "claude-cli" });
+
+	const withSeated = (...agents: Agent[]): Squad =>
+		squad({ agents, seats: agents.map((a, i) => seat(`s${i}`, a.id)) });
+
+	it("aceita um squad em que coordenador e agents sentados são todos de API", () => {
+		const s = withSeated(agent({ id: "a1", name: "Ana" }));
+		expect(isApiOnlySquad(s, [apiProvider])).toBe(true);
+	});
+
+	it("recusa quando um agent sentado usa provider de CLI local", () => {
+		const s = withSeated(
+			agent({ id: "a1", name: "Ana" }),
+			agent({ id: "a2", name: "Beto", modelRef: { providerId: "provider-cli", model: "model-1" } }),
+		);
+		expect(isApiOnlySquad(s, [apiProvider, cliProvider])).toBe(false);
+	});
+
+	it("recusa quando o coordenador usa provider de CLI, mesmo com todos os agents em API", () => {
+		const s = {
+			...withSeated(agent({ id: "a1", name: "Ana" })),
+			orchestrator: { systemPrompt: "coordena", modelRef: { providerId: "provider-cli", model: "model-1" }, maxSteps: 20 },
+		};
+		expect(isApiOnlySquad(s, [apiProvider, cliProvider])).toBe(false);
+	});
+
+	it("ignora agent de CLI que não está sentado — ele não entra na execução", () => {
+		const seated = agent({ id: "a1", name: "Ana" });
+		const benched = agent({ id: "a2", name: "Beto", modelRef: { providerId: "provider-cli", model: "model-1" } });
+		const s = squad({ agents: [seated, benched], seats: [seat("s1", "a1")] });
+		expect(isApiOnlySquad(s, [apiProvider, cliProvider])).toBe(true);
+	});
+
+	it("recusa um squad sem nenhuma cadeira ocupada", () => {
+		expect(isApiOnlySquad(squad({ agents: [agent({ id: "a1", name: "Ana" })], seats: [] }), [apiProvider])).toBe(false);
+	});
+
+	it("recusa quando o provider referenciado não existe mais", () => {
+		expect(isApiOnlySquad(withSeated(agent({ id: "a1", name: "Ana" })), [])).toBe(false);
+	});
+
+	it("aceita os demais kinds de API (openai e anthropic-api)", () => {
+		const s = withSeated(agent({ id: "a1", name: "Ana" }));
+		expect(isApiOnlySquad(s, [provider("provider-1", { kind: "openai" })])).toBe(true);
+		expect(isApiOnlySquad(s, [provider("provider-1", { kind: "anthropic-api" })])).toBe(true);
+	});
+
+	it("recusa os demais kinds de CLI (codex e gpt)", () => {
+		const s = withSeated(agent({ id: "a1", name: "Ana" }));
+		expect(isApiOnlySquad(s, [provider("provider-1", { kind: "codex-cli" })])).toBe(false);
+		expect(isApiOnlySquad(s, [provider("provider-1", { kind: "gpt-cli" })])).toBe(false);
 	});
 });

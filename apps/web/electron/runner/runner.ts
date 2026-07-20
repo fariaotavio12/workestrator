@@ -1,4 +1,13 @@
 import crossSpawn from "cross-spawn";
+import {
+	buildHttpTool,
+	connectMcpTools,
+	safeToolName,
+	type HttpToolDef,
+	type McpConnection,
+	type OpenAiToolDefinition,
+	type ResolvedTool,
+} from "./openai-tools";
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -483,14 +492,33 @@ const CURRENT_DIR = typeof __dirname !== "undefined" ? __dirname : path.dirname(
 const HTTP_TOOL_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "http-tool.mjs");
 const YOUTUBE_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "youtube.mjs");
 
-type HttpToolDef = {
-	name: string;
-	description?: string;
-	method: string;
-	urlTemplate: string;
-	headers?: Record<string, string>;
-	bodySchema?: string;
-	responseMap?: string;
+/**
+ * Resolve um script `kind: "http"` na definição declarativa da tool, com a auth já aplicada em
+ * headers/URL. Compartilhado pelos dois consumidores: o `.mcp.json` da Claude CLI (que passa o def
+ * pro `http-tool.mjs`) e o loop de tool calling dos providers OpenAI-compat (que executa direto).
+ */
+export const buildHttpToolDef = async (
+	script: ScriptPayload,
+	resolveSecret: SecretResolver,
+): Promise<HttpToolDef | undefined> => {
+	if (!script.urlTemplate) return undefined;
+	let headers = await resolveMapPlaceholders(script.headers, resolveSecret);
+	let urlTemplate = script.urlTemplate;
+	if (script.authRef && !Object.keys(headers).some((h) => h.toLowerCase() === "authorization")) {
+		const resolved = await resolveSecret(script.authRef);
+		if (resolved) {
+			({ headers, url: urlTemplate } = await applyAuthToHttpTarget(resolved, { headers, url: urlTemplate }));
+		}
+	}
+	return {
+		name: safeFileName(script.name),
+		description: script.description,
+		method: script.method ?? "GET",
+		urlTemplate,
+		headers,
+		bodySchema: script.bodySchema,
+		responseMap: script.responseMap,
+	};
 };
 
 /** Monta a entrada `.mcp.json` de um script `mcp`/`http`/`connector` — `undefined` se faltar campo obrigatório. */
@@ -519,24 +547,8 @@ export const buildMcpServerEntry = async (
 	}
 
 	if (script.kind === "http") {
-		if (!script.urlTemplate) return undefined;
-		let headers = await resolveMapPlaceholders(script.headers, resolveSecret);
-		let urlTemplate = script.urlTemplate;
-		if (script.authRef && !Object.keys(headers).some((h) => h.toLowerCase() === "authorization")) {
-			const resolved = await resolveSecret(script.authRef);
-			if (resolved) {
-				({ headers, url: urlTemplate } = await applyAuthToHttpTarget(resolved, { headers, url: urlTemplate }));
-			}
-		}
-		const def: HttpToolDef = {
-			name: safeFileName(script.name),
-			description: script.description,
-			method: script.method ?? "GET",
-			urlTemplate,
-			headers,
-			bodySchema: script.bodySchema,
-			responseMap: script.responseMap,
-		};
+		const def = await buildHttpToolDef(script, resolveSecret);
+		if (!def) return undefined;
 		return {
 			command: process.execPath,
 			args: [HTTP_TOOL_SERVER_PATH],
@@ -916,56 +928,79 @@ const classifyHttpFailure = (status: number, detail: string): { code: ClaudeFail
 };
 
 /**
- * Chama um endpoint compatível com a API de chat completions da OpenAI (vLLM, LM Studio, groq, a
- * própria OpenAI, etc.) — sem tools/execução real, só texto; `canExecute` não se aplica aqui.
+ * Teto de rodadas modelo→tool→modelo numa única invocação de agent. Existe como guarda anti-loop:
+ * um modelo pequeno consegue ficar repetindo a mesma tool call indefinidamente, e sem teto isso
+ * gira até o timeout sem nunca produzir artefato. Estourar o teto vira erro explicado, não silêncio.
  */
-const callOpenAiCompat = async (
-	input: { baseUrl: string; apiKeyRef?: string; model: string; systemPrompt: string; prompt: string },
-	resolveSecret: SecretResolver,
-	res: ServerResponse,
-): Promise<void> => {
-	const auth = await resolveProviderAuth(input.apiKeyRef, resolveSecret);
-	const normalizedBaseUrl = input.baseUrl.replace(/\/+$/, "");
-	const model = await resolveModel(normalizedBaseUrl, auth, input.model);
-	const url = withProviderAuth(`${normalizedBaseUrl}/chat/completions`, auth);
+const MAX_TOOL_ITERATIONS = 8;
 
-	let response: Response;
-	try {
-		response = await fetch(url, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...auth.headers,
-			},
-			body: JSON.stringify({
-				model,
-				stream: true,
-				messages: [
-					...(input.systemPrompt ? [{ role: "system", content: input.systemPrompt }] : []),
-					{ role: "user", content: input.prompt },
-				],
-			}),
-		});
-	} catch (err) {
-		writeSseEvent(res, "error", {
-			code: "unknown",
-			message: `Não foi possível conectar em ${url} (${err instanceof Error ? err.message : "erro desconhecido"}).`,
-		});
-		res.end();
-		return;
-	}
+type OpenAiToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 
-	if (!response.ok || !response.body) {
-		const detail = await response.text().catch(() => "");
-		writeSseEvent(res, "error", classifyHttpFailure(response.status, detail));
-		res.end();
-		return;
+type ChatMessage =
+	| { role: "system" | "user"; content: string }
+	| { role: "assistant"; content: string | null; tool_calls?: OpenAiToolCall[] }
+	| { role: "tool"; tool_call_id: string; content: string };
+
+/**
+ * Uma rodada do modelo: texto da resposta, o raciocínio (modelos "thinking") e as tool calls pedidas
+ * (vazio = resposta final). `reasoning` NÃO é resposta — serve pra dar visibilidade e pra explicar o
+ * caso em que o modelo só pensou e nunca concluiu.
+ */
+type ChatTurn = { text: string; reasoning: string; toolCalls: OpenAiToolCall[] };
+
+/**
+ * Modelos "thinking" (qwen3, deepseek-r1, gpt-oss...) mandam a cadeia de raciocínio num campo
+ * separado, com `content` vazio até concluírem. O nome do campo não é padronizado: o Ollama usa
+ * `reasoning`, DeepSeek/vLLM/OpenRouter usam `reasoning_content`. Ler os dois cobre os dois mundos.
+ */
+type ReasoningDelta = { reasoning?: string; reasoning_content?: string };
+
+const readReasoning = (source: ReasoningDelta | undefined): string =>
+	source?.reasoning ?? source?.reasoning_content ?? "";
+
+/**
+ * O raciocínio chega token a token (~200 eventos numa pergunta trivial). Emitir um evento SSE por
+ * token inunda o painel de atividade, que cria um item por evento — então acumula e só descarrega em
+ * blocos, que é também o formato em que a Claude CLI entrega `thinking`.
+ */
+const THINKING_FLUSH_CHARS = 240;
+
+/**
+ * Consome a resposta do `/chat/completions`. Aceita as duas formas: SSE (`stream: true`, o caminho
+ * normal — texto sai ao vivo via `chunk`) e JSON único, porque nem todo servidor OpenAI-compat
+ * mantém o streaming quando há `tools` no corpo (alguns respondem objeto puro nesse caso).
+ *
+ * As tool calls chegam fatiadas no stream (`arguments` vem em pedaços, correlacionados por `index`),
+ * então são remontadas por índice antes de virar chamada de verdade.
+ */
+const readChatResponse = async (response: Response, res: ServerResponse): Promise<ChatTurn> => {
+	const isStream = (response.headers.get("content-type") ?? "").includes("text/event-stream");
+
+	if (!isStream || !response.body) {
+		const body = (await response.json().catch(() => ({}))) as {
+			choices?: { message?: ({ content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta) }[];
+		};
+		const message = body.choices?.[0]?.message;
+		const text = message?.content ?? "";
+		const reasoning = readReasoning(message);
+		if (text) writeSseEvent(res, "chunk", { text });
+		if (reasoning) writeSseEvent(res, "thinking", { text: reasoning });
+		return { text, reasoning, toolCalls: message?.tool_calls ?? [] };
 	}
 
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
-	let output = "";
+	let text = "";
+	let reasoning = "";
+	let thinkingBuffer = "";
+	const pending = new Map<number, { id: string; name: string; arguments: string }>();
+
+	const flushThinking = (force: boolean): void => {
+		if (!thinkingBuffer || (!force && thinkingBuffer.length < THINKING_FLUSH_CHARS)) return;
+		writeSseEvent(res, "thinking", { text: thinkingBuffer });
+		thinkingBuffer = "";
+	};
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -979,11 +1014,32 @@ const callOpenAiCompat = async (
 			const data = trimmed.slice(5).trim();
 			if (data === "[DONE]") continue;
 			try {
-				const parsed = JSON.parse(data);
-				const delta: string = parsed.choices?.[0]?.delta?.content ?? "";
-				if (delta) {
-					output += delta;
-					writeSseEvent(res, "chunk", { text: delta });
+				const parsed = JSON.parse(data) as {
+					choices?: {
+						delta?: {
+							content?: string;
+							tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+						} & ReasoningDelta;
+					}[];
+				};
+				const delta = parsed.choices?.[0]?.delta;
+				if (delta?.content) {
+					text += delta.content;
+					writeSseEvent(res, "chunk", { text: delta.content });
+				}
+				const reasoningDelta = readReasoning(delta);
+				if (reasoningDelta) {
+					reasoning += reasoningDelta;
+					thinkingBuffer += reasoningDelta;
+					flushThinking(false);
+				}
+				for (const call of delta?.tool_calls ?? []) {
+					const index = call.index ?? 0;
+					const entry = pending.get(index) ?? { id: "", name: "", arguments: "" };
+					if (call.id) entry.id = call.id;
+					if (call.function?.name) entry.name = call.function.name;
+					if (call.function?.arguments) entry.arguments += call.function.arguments;
+					pending.set(index, entry);
 				}
 			} catch {
 				// Linha incompleta (ainda não fechou o JSON) — ignora, o resto chega no próximo chunk.
@@ -991,12 +1047,217 @@ const callOpenAiCompat = async (
 		}
 	}
 
+	flushThinking(true);
+
+	const toolCalls = [...pending.entries()]
+		.sort(([a], [b]) => a - b)
+		.filter(([, entry]) => entry.name)
+		.map(([index, entry]) => ({
+			id: entry.id || `call_${index}`,
+			type: "function" as const,
+			function: { name: entry.name, arguments: entry.arguments || "{}" },
+		}));
+
+	return { text, reasoning, toolCalls };
+};
+
+/**
+ * Chama um endpoint compatível com a API de chat completions da OpenAI (Ollama, vLLM, LM Studio,
+ * groq, a própria OpenAI...) rodando o loop de function calling quando o agent tem ferramentas de
+ * rede anexadas.
+ *
+ * Só ferramentas de rede entram (`http`/`mcp`/`connector`) — ver `resolveOpenAiTools`. Sem tools
+ * resolvidas o comportamento é o de antes: uma chamada, texto puro.
+ */
+export const callOpenAiCompat = async (
+	input: {
+		baseUrl: string;
+		apiKeyRef?: string;
+		model: string;
+		systemPrompt: string;
+		prompt: string;
+		tools?: ResolvedTool[];
+	},
+	resolveSecret: SecretResolver,
+	res: ServerResponse,
+): Promise<void> => {
+	const auth = await resolveProviderAuth(input.apiKeyRef, resolveSecret);
+	const normalizedBaseUrl = input.baseUrl.replace(/\/+$/, "");
+	const model = await resolveModel(normalizedBaseUrl, auth, input.model);
+	const url = withProviderAuth(`${normalizedBaseUrl}/chat/completions`, auth);
+
+	const tools = input.tools ?? [];
+	const byName = new Map(tools.map((tool) => [tool.definition.function.name, tool]));
+	const toolDefinitions: OpenAiToolDefinition[] = tools.map((tool) => tool.definition);
+
+	const messages: ChatMessage[] = [
+		...(input.systemPrompt ? [{ role: "system" as const, content: input.systemPrompt }] : []),
+		{ role: "user" as const, content: input.prompt },
+	];
+
+	let output = "";
+	let lastReasoning = "";
+
+	for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...auth.headers },
+				body: JSON.stringify({
+					model,
+					stream: true,
+					messages,
+					...(toolDefinitions.length > 0 ? { tools: toolDefinitions, tool_choice: "auto" } : {}),
+				}),
+			});
+		} catch (err) {
+			writeSseEvent(res, "error", {
+				code: "unknown",
+				message: `Não foi possível conectar em ${url} (${err instanceof Error ? err.message : "erro desconhecido"}).`,
+			});
+			res.end();
+			return;
+		}
+
+		if (!response.ok) {
+			const detail = await response.text().catch(() => "");
+			// Modelo que não suporta function calling devolve 400 citando "tools"/"function". Sem esta
+			// mensagem o usuário só vê um 400 cru e não tem como saber que a causa é o modelo escolhido.
+			if (response.status === 400 && toolDefinitions.length > 0 && /tool|function/i.test(detail)) {
+				writeSseEvent(res, "error", {
+					code: "unknown",
+					message:
+						`O modelo "${model}" não aceita ferramentas (function calling), mas este agent tem ferramentas anexadas. ` +
+						`Troque para um modelo com suporte a tools (ex.: qwen3, llama3.1, mistral-nemo) ou remova as ferramentas do agent. Detalhe: ${detail}`,
+				});
+				res.end();
+				return;
+			}
+			writeSseEvent(res, "error", classifyHttpFailure(response.status, detail));
+			res.end();
+			return;
+		}
+
+		const turn = await readChatResponse(response, res);
+		if (turn.reasoning) lastReasoning = turn.reasoning;
+
+		if (turn.toolCalls.length === 0) {
+			output = turn.text;
+			break;
+		}
+
+		messages.push({ role: "assistant", content: turn.text || null, tool_calls: turn.toolCalls });
+
+		for (const call of turn.toolCalls) {
+			const tool = byName.get(call.function.name);
+			writeSseEvent(res, "tool_use", {
+				id: call.id,
+				name: call.function.name,
+				label: call.function.name,
+				detail: call.function.arguments,
+			});
+
+			if (!tool) {
+				// Nome alucinado: devolver o erro como resultado (em vez de abortar) deixa o modelo se
+				// corrigir na rodada seguinte, com a lista do que existe de verdade.
+				const available = [...byName.keys()].join(", ") || "(nenhuma)";
+				const text = `Ferramenta "${call.function.name}" não existe. Disponíveis: ${available}.`;
+				messages.push({ role: "tool", tool_call_id: call.id, content: text });
+				writeSseEvent(res, "tool_result", { id: call.id, ok: false, label: call.function.name, detail: text });
+				continue;
+			}
+
+			let args: Record<string, unknown> = {};
+			try {
+				args = call.function.arguments ? (JSON.parse(call.function.arguments) as Record<string, unknown>) : {};
+			} catch {
+				const text = `Argumentos inválidos (não são JSON): ${call.function.arguments}`;
+				messages.push({ role: "tool", tool_call_id: call.id, content: text });
+				writeSseEvent(res, "tool_result", { id: call.id, ok: false, label: call.function.name, detail: text });
+				continue;
+			}
+
+			const result = await tool.execute(args);
+			messages.push({ role: "tool", tool_call_id: call.id, content: result.text });
+			writeSseEvent(res, "tool_result", {
+				id: call.id,
+				ok: result.ok,
+				label: call.function.name,
+				detail: result.text,
+			});
+		}
+	}
+
 	if (!output.trim()) {
-		writeSseEvent(res, "error", { code: "unknown", message: "O endpoint não retornou nenhum texto." });
+		const ranTools = messages.some((message) => message.role === "tool");
+		// Modelo "thinking" que gastou o turno raciocinando e fechou com `content` vazio é o caso mais
+		// comum aqui (qwen3, deepseek-r1...) — e a mensagem antiga ("não retornou nenhum texto") não
+		// dizia nada disso. Devolve o fim do raciocínio junto: é a única pista do que ele estava fazendo.
+		const thoughtOnly = !ranTools && lastReasoning.trim().length > 0;
+		writeSseEvent(res, "error", {
+			code: "unknown",
+			message: ranTools
+				? `O agent usou as ferramentas mas não fechou uma resposta em ${MAX_TOOL_ITERATIONS} rodadas. Reduza o escopo do passo ou peça um formato de saída mais direto no prompt.`
+				: thoughtOnly
+					? `O modelo "${model}" raciocinou mas não produziu resposta final (só "reasoning", com o conteúdo vazio). ` +
+						`Isso costuma acontecer quando o prompt é ambíguo sobre o formato de saída, ou quando o raciocínio consome o limite de contexto. ` +
+						`Peça um formato de saída explícito no prompt do agent, ou use um modelo sem "thinking". Fim do raciocínio: "…${lastReasoning.trim().slice(-400)}"`
+					: "O endpoint não retornou nenhum texto.",
+		});
 	} else {
 		writeSseEvent(res, "done", { output: output.trim(), usedFallbackModel: false });
 	}
 	res.end();
+};
+
+/**
+ * Converte os scripts anexados ao agent em function tools para o loop OpenAI-compat.
+ *
+ * Só ferramentas de rede: `http` (fetch declarativo) e `mcp`/`connector` (cliente MCP de verdade,
+ * stdio ou HTTP). Os kinds `command`/`inline`/`file` executam processo arbitrário na máquina e
+ * ficam fora — no caminho da Claude CLI quem concede isso é o próprio CLI, com as guardas dele.
+ *
+ * Nunca lança: um server MCP que não sobe vira aviso no log e as demais tools seguem disponíveis —
+ * derrubar o passo inteiro por causa de uma integração quebrada seria pior que rodar sem ela.
+ */
+const resolveOpenAiTools = async (
+	scripts: ScriptPayload[],
+	resolveSecret: SecretResolver,
+): Promise<{ tools: ResolvedTool[]; close: () => Promise<void> }> => {
+	const tools: ResolvedTool[] = [];
+	const connections: McpConnection[] = [];
+	const taken = new Set<string>();
+
+	for (const script of scripts) {
+		try {
+			if (script.kind === "http") {
+				const def = await buildHttpToolDef(script, resolveSecret);
+				// `def.name` já é o `safeFileName` do script — o mesmo nome que o `http-tool.mjs` registra
+				// no caminho da Claude CLI. Reusar aqui mantém a ferramenta com um nome só, independente do
+				// provider (hífen é válido na gramática de function name da OpenAI).
+				if (def) tools.push(buildHttpTool(def, safeToolName(def.name, taken)));
+				continue;
+			}
+			if (script.kind === "mcp" || script.kind === "connector") {
+				const entry = await buildMcpServerEntry(script, resolveSecret);
+				if (!entry) continue;
+				const serverName = safeFileName(script.name) || script.id;
+				const connection = await connectMcpTools(serverName, entry, script.toolAllowlist, taken);
+				connections.push(connection);
+				tools.push(...connection.tools);
+			}
+		} catch (err) {
+			console.error(`[tools] Falha ao montar a ferramenta "${script.name}":`, err instanceof Error ? err.message : err);
+		}
+	}
+
+	return {
+		tools,
+		close: async () => {
+			await Promise.all(connections.map((connection) => connection.close()));
+		},
+	};
 };
 
 const readJsonBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
@@ -1366,7 +1627,21 @@ export const handleRunStep = async (
 			res.end();
 			return;
 		}
-		await callOpenAiCompat({ baseUrl: resolvedBaseUrl, apiKeyRef, model, systemPrompt, prompt }, resolveSecret, res);
+		// As ferramentas de rede do agent viram function tools de verdade aqui — sem isso o modelo
+		// recebia um prompt anunciando integrações que nunca chegavam no payload.
+		const resolved = canExecute
+			? await resolveOpenAiTools(scripts, resolveSecret)
+			: { tools: [], close: async () => {} };
+		try {
+			await callOpenAiCompat(
+				{ baseUrl: resolvedBaseUrl, apiKeyRef, model, systemPrompt, prompt, tools: resolved.tools },
+				resolveSecret,
+				res,
+			);
+		} finally {
+			// Servers MCP stdio são processos filhos — sem o close eles vazam a cada passo do run.
+			await resolved.close();
+		}
 		return;
 	}
 
