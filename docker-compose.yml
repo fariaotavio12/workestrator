@@ -76,6 +76,11 @@ services:
       target: build
       args:
         VITE_MODE: ${VITE_MODE:-dev}
+        # URL que o NAVEGADOR vai usar pra falar com a API - NAO pode ser "localhost"
+        # quando o front e acessado de outra maquina. Defina VITE_API_URL nas
+        # variaveis de ambiente da stack no Portainer (nao vai no apps/web/.env,
+        # que e gitignored e nao existe no clone que o Portainer faz do repo).
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:${API_PORT:-8080}}
     container_name: workestrator-web
     depends_on:
       - api
