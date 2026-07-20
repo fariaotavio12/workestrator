@@ -8,6 +8,8 @@ RUN npm ci
 COPY . .
 
 ARG VITE_MODE=dev
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build:${VITE_MODE}
 
 FROM nginx:alpine
