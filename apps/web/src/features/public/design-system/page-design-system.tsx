@@ -720,8 +720,8 @@ export const PageDesignSystem = () => {
 								Visual tokens, components and usage patterns
 							</Typography>
 							<Typography variant="body-md" className="text-muted-foreground max-w-xl">
-								Paleta inspirada no Cal.com. Inter para todo o texto — display e corpo. Primary preto, canvas branco,
-								cards cinza claro.
+								Tokens do Workestrator para interfaces de orquestração: superfícies neutras, acentos de execução,
+								estados operacionais e tipografia Inter em todo o produto.
 							</Typography>
 						</div>
 						<div className="flex shrink-0 items-center gap-2 pt-1">
@@ -1488,8 +1488,8 @@ export const PageDesignSystem = () => {
 									<Badge variant="secondary">72%</Badge>
 								</div>
 								<div className="flex items-center gap-3 rounded-md border p-3">
-									<code className="text-muted-foreground flex-1 font-mono text-sm">npm install @template/ui</code>
-									<ClipBoard texto="npm install @template/ui" aria-label="Copiar comando" />
+									<code className="text-muted-foreground flex-1 font-mono text-sm">import {"{ Button }"} from "@/components/ui/button"</code>
+									<ClipBoard texto={'import { Button } from "@/components/ui/button"'} aria-label="Copiar import" />
 								</div>
 							</div>
 						</UsageCard>
