@@ -4,6 +4,7 @@ import {
 	buildHttpTool,
 	extractPath,
 	extractPlaceholders,
+	parseTextToolCalls,
 	safeToolName,
 	truncateToolResult,
 	type HttpToolDef,
@@ -56,6 +57,56 @@ describe("extractPath", () => {
 
 	it("returns the whole value when no path is configured", () => {
 		expect(extractPath({ a: 1 }, undefined)).toEqual({ a: 1 });
+	});
+
+	it("supports JSONPath-lite root and array indices (e.g. $[0].authHeader)", () => {
+		expect(extractPath([{ authHeader: "Bearer x" }], "$[0].authHeader")).toBe("Bearer x");
+		expect(extractPath({ data: { items: [{ id: 1 }, { id: 2 }] } }, "data.items[1].id")).toBe(2);
+	});
+
+	it("resolves to undefined when the mapped field is absent", () => {
+		expect(extractPath([{ authHeader: "x" }], "$[0].missing")).toBeUndefined();
+	});
+});
+
+describe("parseTextToolCalls", () => {
+	const known = new Set(["gerar-autentica-o", "buscar"]);
+
+	it("recovers the Gemma-style `call:<name>{args}` written as plain text", () => {
+		expect(parseTextToolCalls("call:gerar-autentica-o{}", known)).toEqual([
+			{ name: "gerar-autentica-o", arguments: "{}" },
+		]);
+	});
+
+	it("keeps the arguments object when the text call carries one", () => {
+		expect(parseTextToolCalls('call:buscar{"variables":{"query":"editais"}}', known)).toEqual([
+			{ name: "buscar", arguments: '{"variables":{"query":"editais"}}' },
+		]);
+	});
+
+	it("recovers the Hermes/Qwen <tool_call> dialect", () => {
+		const text = '<tool_call>{"name":"buscar","arguments":{"variables":{"query":"x"}}}</tool_call>';
+		expect(parseTextToolCalls(text, known)).toEqual([{ name: "buscar", arguments: '{"variables":{"query":"x"}}' }]);
+	});
+
+	it("recovers the Mistral [TOOL_CALLS] dialect", () => {
+		const text = '[TOOL_CALLS][{"name":"buscar","arguments":{"variables":{"query":"x"}}}]';
+		expect(parseTextToolCalls(text, known)).toEqual([{ name: "buscar", arguments: '{"variables":{"query":"x"}}' }]);
+	});
+
+	it("recovers a bare JSON object naming a known tool", () => {
+		expect(parseTextToolCalls('{"name":"buscar","parameters":{"variables":{"query":"x"}}}', known)).toEqual([
+			{ name: "buscar", arguments: '{"variables":{"query":"x"}}' },
+		]);
+	});
+
+	it("ignores prose that mentions call/function but names no registered tool", () => {
+		expect(parseTextToolCalls("I will call the function to solve this task.", known)).toEqual([]);
+		expect(parseTextToolCalls("call:inexistente{}", known)).toEqual([]);
+	});
+
+	it("returns nothing when there are no registered tools to anchor on", () => {
+		expect(parseTextToolCalls("call:buscar{}", new Set())).toEqual([]);
 	});
 });
 

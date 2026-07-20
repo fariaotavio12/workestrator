@@ -63,6 +63,106 @@ export const safeToolName = (raw: string, taken: Set<string>): string => {
 	}
 };
 
+// --- Recuperação de tool call escrita como texto (modelos sem tool parser nativo) ---
+
+/** Uma tool call recuperada do texto — mesma forma dos campos que o dispatch já consome. */
+export type TextToolCall = { name: string; arguments: string };
+
+/**
+ * Lê o objeto `{...}` balanceado a partir de `start` (índice de um `{`), respeitando strings e
+ * escapes. `undefined` se o objeto não fechar dentro do texto.
+ */
+const readBalancedObject = (text: string, start: number): string | undefined => {
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (ch === "\\") escaped = true;
+			else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') inString = true;
+		else if (ch === "{") depth++;
+		else if (ch === "}" && --depth === 0) return text.slice(start, i + 1);
+	}
+	return undefined;
+};
+
+/**
+ * Recupera tool calls que o modelo escreveu como TEXTO no `content` em vez de usar o campo
+ * estruturado `tool_calls` da API. Acontece quando o servidor não tem parser de tool nativo pro
+ * template do modelo — Gemma no vLLM é o caso clássico (sem `--tool-call-parser` compatível a
+ * chamada sai crua no conteúdo, ex.: `call:gerar-autentica-o{}`). Sem recuperar, essa "chamada"
+ * vaza como a resposta final do agente, a tool nunca roda e o coordenador redispacha em loop.
+ *
+ * Cobre os dialetos comuns e SEMPRE ancora nos nomes de tools registradas (`known`): um token que
+ * não é tool de verdade é ignorado, então prosa que cite "call:"/"function" ou um JSON solto no
+ * texto não vira chamada por engano.
+ */
+export const parseTextToolCalls = (text: string, known: ReadonlySet<string>): TextToolCall[] => {
+	if (!text || known.size === 0) return [];
+	const calls: TextToolCall[] = [];
+	const add = (name: string, rawArgs: unknown): void => {
+		if (!known.has(name)) return;
+		const args = rawArgs == null ? "{}" : typeof rawArgs === "string" ? rawArgs.trim() || "{}" : JSON.stringify(rawArgs);
+		calls.push({ name, arguments: args });
+	};
+
+	// 1) Hermes / Qwen: <tool_call>{"name":"x","arguments":{...}}</tool_call> (pode repetir).
+	for (const match of text.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi)) {
+		try {
+			const obj = JSON.parse(match[1]) as { name?: unknown; arguments?: unknown; parameters?: unknown };
+			if (typeof obj.name === "string") add(obj.name, obj.arguments ?? obj.parameters);
+		} catch {
+			// bloco não fechou como JSON — ignora.
+		}
+	}
+	if (calls.length > 0) return calls;
+
+	// 2) Mistral: [TOOL_CALLS][{"name":"x","arguments":{...}}, ...]
+	const mistral = text.match(/\[TOOL_CALLS\]\s*(\[[\s\S]*\])/);
+	if (mistral) {
+		try {
+			const arr = JSON.parse(mistral[1]) as Array<{ name?: unknown; arguments?: unknown }>;
+			for (const obj of arr) if (obj && typeof obj.name === "string") add(obj.name, obj.arguments);
+		} catch {
+			// ignora
+		}
+	}
+	if (calls.length > 0) return calls;
+
+	// 3) Dialeto observado no Gemma: `call:<nome>{args}` — também `call: nome (args)`, `tool_call`,
+	//    `function`. Os args (quando há) são o `{...}` balanceado que vem logo após o nome.
+	const prefix = /\b(?:call|tool_call|function|tool)\b\s*[:=]?\s*["'`]?([a-zA-Z0-9_.-]+)["'`]?/gi;
+	for (let m = prefix.exec(text); m !== null; m = prefix.exec(text)) {
+		const name = m[1];
+		if (!known.has(name)) continue;
+		const after = m.index + m[0].length;
+		const brace = text.indexOf("{", after);
+		// só cola os args se o `{` vier imediatamente depois do nome (só espaço/parêntese no meio).
+		const gap = brace >= 0 ? text.slice(after, brace) : "";
+		add(name, brace >= 0 && /^[\s(]*$/.test(gap) ? readBalancedObject(text, brace) : undefined);
+	}
+	if (calls.length > 0) return calls;
+
+	// 4) JSON solto (às vezes em bloco ```json): { "name"|"tool": "<tool>", "arguments"|"parameters": {...} }.
+	for (let i = text.indexOf("{"); i >= 0; i = text.indexOf("{", i + 1)) {
+		const block = readBalancedObject(text, i);
+		if (!block) break;
+		try {
+			const obj = JSON.parse(block) as { name?: unknown; tool?: unknown; arguments?: unknown; parameters?: unknown };
+			const name = typeof obj.name === "string" ? obj.name : typeof obj.tool === "string" ? obj.tool : undefined;
+			if (name) add(name, obj.arguments ?? obj.parameters);
+		} catch {
+			// não é JSON válido — segue procurando.
+		}
+	}
+	return calls;
+};
+
 // --- Tools HTTP (kind: "http") ---
 
 /** Mesma forma consumida por `mcp-servers/http-tool.mjs` — a auth já vem aplicada em headers/url. */
@@ -82,12 +182,24 @@ export const applyUrlTemplate = (template: string, variables: Record<string, unk
 		variables?.[key] != null ? encodeURIComponent(String(variables[key])) : "",
 	);
 
-/** Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa. */
+/**
+ * Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa.
+ * Aceita também a notação JSONPath-lite comum em quem configura `responseMap`: prefixo `$` de raiz
+ * e índices de array `[0]` (`$[0].authHeader`, `data.items[2].id`). Sem isso um `responseMap` com
+ * `$`/`[n]` resolvia pra `undefined` silenciosamente e a tool devolvia a resposta inteira (ou erro).
+ */
 export const extractPath = (value: unknown, dotPath: string | undefined): unknown => {
 	if (!dotPath?.trim()) return value;
-	return dotPath
+	const keys = dotPath
+		.trim()
+		.replace(/^\$/, "") // raiz JSONPath
+		.replace(/\[(\w+)\]/g, ".$1") // a[0] -> a.0
 		.split(".")
-		.reduce<unknown>((acc, key) => (acc != null && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined), value);
+		.filter(Boolean);
+	return keys.reduce<unknown>(
+		(acc, key) => (acc != null && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
+		value,
+	);
 };
 
 /** Placeholders `{{x}}` declarados no template — viram propriedades explícitas do schema. */
@@ -152,10 +264,16 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 					return { ok: false, text: truncateToolResult(`HTTP ${res.status}: ${detail}`) };
 				}
 				const mapped = extractPath(parsed, def.responseMap);
-				return {
-					ok: true,
-					text: truncateToolResult(typeof mapped === "string" ? mapped : JSON.stringify(mapped, null, 2)),
-				};
+				// `mapped` pode ser `undefined` (responseMap aponta pra um campo ausente) — aí
+				// `JSON.stringify` devolve o valor `undefined` e `truncateToolResult` estouraria em
+				// `.length`. Devolve um aviso acionável em vez de quebrar a tool.
+				const text =
+					mapped == null
+						? `(a resposta não tem o campo "${def.responseMap}"; ajuste o responseMap do script)`
+						: typeof mapped === "string"
+							? mapped
+							: JSON.stringify(mapped, null, 2);
+				return { ok: mapped != null, text: truncateToolResult(text) };
 			} catch (error) {
 				return { ok: false, text: `Falha ao chamar ${url}: ${error instanceof Error ? error.message : String(error)}` };
 			}

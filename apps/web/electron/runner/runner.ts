@@ -2,6 +2,7 @@ import crossSpawn from "cross-spawn";
 import {
 	buildHttpTool,
 	connectMcpTools,
+	parseTextToolCalls,
 	safeToolName,
 	type HttpToolDef,
 	type McpConnection,
@@ -1142,14 +1143,28 @@ export const callOpenAiCompat = async (
 		const turn = await readChatResponse(response, res);
 		if (turn.reasoning) lastReasoning = turn.reasoning;
 
-		if (turn.toolCalls.length === 0) {
+		// Fallback pra modelos sem tool parser nativo no servidor (Gemma no vLLM): a call vem como
+		// texto no `content` em vez do campo `tool_calls`. Recupera ancorando nos nomes registrados —
+		// sem isso a "chamada" vira a resposta do agente e o coordenador redispacha em loop.
+		const toolCalls =
+			turn.toolCalls.length > 0
+				? turn.toolCalls
+				: tools.length > 0
+					? parseTextToolCalls(turn.text, new Set(byName.keys())).map((call, index) => ({
+							id: `text_${iteration}_${index}`,
+							type: "function" as const,
+							function: call,
+						}))
+					: [];
+
+		if (toolCalls.length === 0) {
 			output = turn.text;
 			break;
 		}
 
-		messages.push({ role: "assistant", content: turn.text || null, tool_calls: turn.toolCalls });
+		messages.push({ role: "assistant", content: turn.text || null, tool_calls: toolCalls });
 
-		for (const call of turn.toolCalls) {
+		for (const call of toolCalls) {
 			const tool = byName.get(call.function.name);
 			writeSseEvent(res, "tool_use", {
 				id: call.id,
