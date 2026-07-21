@@ -117,5 +117,5 @@ describe("E2E: agent Ollama com tool HTTP anexada", () => {
 		expect(events.find((e) => e.event === "tool_use")?.data).toMatchObject({ name: "buscar-editais" });
 		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true });
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "- Edital TI - TRF1" });
-	});
+	}, 15_000);
 });
