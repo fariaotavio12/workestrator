@@ -29,6 +29,10 @@ vite-dev*.log
 .env.*
 !.env.example
 !apps/*/.env.example
+# Mode-specific build targets are not secrets (just the prod API base URL) — must be committed so
+# `vite build --mode main` / `--mode electron` bake in the real backend regardless of who builds it.
+!apps/web/.env.main
+!apps/web/.env.electron
 
 # Tool caches
 .gradle/
