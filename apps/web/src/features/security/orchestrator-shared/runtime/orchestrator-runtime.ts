@@ -536,6 +536,53 @@ const prepareRunHistory = (squadId: string, squad: SquadDetail): Promise<void> =
 	return loadRunHistorySummary(squadId);
 };
 
+const normalizeAgentKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const parseReviewContextSteps = (content: string, reviewStepNumber: number): number[] => {
+	const jsonContext = content.match(/"requiredContextSteps"\s*:\s*\[([^\]]+)\]/i)?.[1];
+	const textContext = content.match(/context_steps\s*=\s*\[?([0-9,\s]+)\]?/i)?.[1];
+	const raw = jsonContext ?? textContext;
+	const parsed = raw
+		? raw
+				.split(",")
+				.map((value) => Number(value.trim()))
+				.filter((value) => Number.isInteger(value) && value > 0 && value <= reviewStepNumber)
+		: [];
+	const fallback = reviewStepNumber > 1 ? [1, reviewStepNumber] : [reviewStepNumber];
+	return [...new Set(parsed.length > 0 ? [...parsed, reviewStepNumber] : fallback)];
+};
+
+const findPendingReviewOwner = (
+	squad: SquadDetail | undefined,
+	steps: RunRecord["steps"],
+): { target: string; contextSteps: number[]; ownerLabel: string } | null => {
+	if (!squad) return null;
+	for (let index = steps.length - 1; index >= 0; index -= 1) {
+		const content = steps[index]?.artifact?.content ?? "";
+		if (!/REVIEW_CHANGES|changes_requested/i.test(content)) continue;
+		const owner =
+			content.match(/REVIEW_CHANGES\s+owner\s*=\s*"?([^"\s,;]+)/i)?.[1] ??
+			content.match(/"ownerSeatId"\s*:\s*"([^"]+)"/i)?.[1] ??
+			content.match(/"ownerAgentId"\s*:\s*"([^"]+)"/i)?.[1] ??
+			content.match(/"owner"\s*:\s*"([^"]+)"/i)?.[1];
+		if (!owner) return null;
+		const ownerKey = normalizeAgentKey(owner);
+		const seatById = squad.seats.find((seat) => normalizeAgentKey(seat.id) === ownerKey && seat.agentId);
+		if (seatById)
+			return { target: seatById.id, contextSteps: parseReviewContextSteps(content, index + 1), ownerLabel: owner };
+		const agent = squad.agents.find((candidate) => {
+			const nameKey = normalizeAgentKey(candidate.name);
+			const idKey = normalizeAgentKey(candidate.id);
+			return nameKey === ownerKey || idKey === ownerKey;
+		});
+		const seatForAgent = agent ? squad.seats.find((seat) => seat.agentId === agent.id) : undefined;
+		return seatForAgent
+			? { target: seatForAgent.id, contextSteps: parseReviewContextSteps(content, index + 1), ownerLabel: owner }
+			: null;
+	}
+	return null;
+};
+
 /** Monta o contexto que o coordenador vê: briefing, agents sentados disponíveis e o que já rodou. */
 const buildCoordinatorPrompt = (squad: SquadDetail, run: RunRecord, briefing: string): string => {
 	const seatOptions = squad.seats
@@ -566,14 +613,16 @@ const buildCoordinatorPrompt = (squad: SquadDetail, run: RunRecord, briefing: st
 		"REGRAS DE RESPOSTA (obrigatórias):",
 		"- NÃO use ferramentas, NÃO leia arquivos, NÃO explore diretórios, NÃO peça mais informações.",
 		"- Todo o contexto necessário já está acima. Se nenhum passo rodou ainda, escolha o primeiro agent adequado para começar.",
-		'- Sua resposta deve conter APENAS um objeto JSON, sem nenhum outro texto, sem markdown, sem ```.',
+		"- Sua resposta deve conter APENAS um objeto JSON, sem nenhum outro texto, sem markdown, sem ```.",
 		'- Formato: {"next": "<seatId>", "context_steps": [<números de passos>], "reason": "<motivo curto>"} para acionar um agent,',
 		'  ou {"next": "done", "reason": "<motivo>"} quando a tarefa estiver completa.',
 		'- "context_steps": os NÚMEROS dos passos do histórico acima cujo conteúdo o agente escolhido precisa para',
 		"  trabalhar (ex.: o roteiro, a lista de imagens). Escolha pelo PAPEL do agente. Use [] se ele não precisar de",
 		"  nenhum passo anterior. O sistema entrega o conteúdo COMPLETO desses passos ao agente — você não precisa copiá-lo.",
 		'- Use exatamente um dos seatId listados acima (o valor entre aspas após "seatId"), não o nome do agent.',
-		'Exemplo de resposta válida: {"next": "' + (squad.seats.find((s) => s.agentId)?.id ?? "seat-id") + '", "context_steps": [2], "reason": "revisar o roteiro do passo 2"}',
+		'Exemplo de resposta válida: {"next": "' +
+			(squad.seats.find((s) => s.agentId)?.id ?? "seat-id") +
+			'", "context_steps": [2], "reason": "revisar o roteiro do passo 2"}',
 	].join("\n");
 };
 
@@ -599,7 +648,12 @@ const completeOrchestratedStep = (squadId: string, stepId: string, seatId: strin
 	persistRunProgress(squadId, null);
 
 	if (agent?.requiresCheckpointAfter) {
-		patchRuntime(squadId, (r) => ({ ...r, status: "checkpoint", pendingSeatId: seatId, pendingCheckpointKind: "after" }));
+		patchRuntime(squadId, (r) => ({
+			...r,
+			status: "checkpoint",
+			pendingSeatId: seatId,
+			pendingCheckpointKind: "after",
+		}));
 		appendLog(squadId, `Checkpoint: aprovação necessária antes de seguir depois de ${agent.name}.`);
 		appendEvent(squadId, {
 			kind: "checkpoint",
@@ -664,8 +718,7 @@ const runOrchestratedAgentStep = (
 			return content ? `Passo ${n}:\n${content}` : null;
 		})
 		.filter((c): c is string => Boolean(c));
-	const previousOutput =
-		selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
+	const previousOutput = selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
 	const stepId = newId();
 	const scripts = agent.scriptIds.map((id) => getScript(id)).filter((s): s is Script => Boolean(s));
 
@@ -764,10 +817,15 @@ const runOrchestratedAgentStep = (
 		} catch (err) {
 			if (signal.aborted) return;
 			setStreamingText(squadId, null);
-			const message =
-				err instanceof AgentCallError ? err.message : "Erro desconhecido ao chamar o provider de modelo.";
+			const message = err instanceof AgentCallError ? err.message : "Erro desconhecido ao chamar o provider de modelo.";
 			appendLog(squadId, `Erro em ${agent.name}: ${message}`);
-			appendEvent(squadId, { kind: "error", seatId, agentId: agent.id, title: `Erro em ${agent.name}`, content: message });
+			appendEvent(squadId, {
+				kind: "error",
+				seatId,
+				agentId: agent.id,
+				title: `Erro em ${agent.name}`,
+				content: message,
+			});
 			notify.error("Falha ao chamar o provider de modelo.");
 			finishRun(squadId, "aborted");
 		}
@@ -834,7 +892,8 @@ const advanceOrchestrated = (squadId: string): void => {
 			}
 
 			// Alvo: o `next` da decisão; quando não-interpretável, a própria saída crua (tenta o nome do agent).
-			const target = (unparseable ? result.output : decision.next).trim();
+			const reviewOverride = findPendingReviewOwner(currentSquad, run.steps);
+			const target = (reviewOverride?.target ?? (unparseable ? result.output : decision.next)).trim();
 			const targetKey = target.toLowerCase();
 			// Normaliza pra um match tolerante: minúsculas, só alfanumérico. Deixa "COPYWRITER_ROTEIRO_..."
 			// casar com o agent "Copywriter" (o coordenador às vezes devolve um "token" em vez do nome puro).
@@ -886,11 +945,12 @@ const advanceOrchestrated = (squadId: string): void => {
 			}
 
 			// Não vaza o motivo sintético do fallback de parse como se fosse a justificativa do coordenador.
-			const effectiveReason = unparseable ? undefined : decision.reason;
-			appendLog(
-				squadId,
-				`→ Orquestrador escolheu ${nextAgent.name}${effectiveReason ? ` — ${effectiveReason}` : ""}`,
-			);
+			const effectiveReason = reviewOverride
+				? `revisao pendente direcionada para ${reviewOverride.ownerLabel}`
+				: unparseable
+					? undefined
+					: decision.reason;
+			appendLog(squadId, `→ Orquestrador escolheu ${nextAgent.name}${effectiveReason ? ` — ${effectiveReason}` : ""}`);
 			appendEvent(squadId, {
 				kind: "coordinator",
 				seatId: seat.id,
@@ -925,7 +985,14 @@ const advanceOrchestrated = (squadId: string): void => {
 				return;
 			}
 
-			runOrchestratedAgentStep(squadId, seat.id, nextAgent, briefing, [], decision.contextSteps);
+			runOrchestratedAgentStep(
+				squadId,
+				seat.id,
+				nextAgent,
+				briefing,
+				[],
+				reviewOverride?.contextSteps ?? decision.contextSteps,
+			);
 		} catch (err) {
 			if (signal.aborted) return;
 			const message = err instanceof AgentCallError ? err.message : "Erro desconhecido ao chamar o coordenador.";
@@ -973,10 +1040,8 @@ export const startRun = (squadId: string, input: string, origin: RunOrigin = "ma
 
 	// Início só via SO (sem toast in-app): quem disparou manualmente já sabe que rodou; quem não está
 	// olhando a janela é avisado pela notificação de SO (auto-restrita a quando ela está sem foco).
-	notifyOs(
-		origin === "manual" ? "Execução iniciada" : "Execução automática iniciada",
-		squad.name,
-		() => openRunDialog(squadId),
+	notifyOs(origin === "manual" ? "Execução iniciada" : "Execução automática iniciada", squad.name, () =>
+		openRunDialog(squadId),
 	);
 
 	// Preparação antes do 1º passo do coordenador (best-effort, em paralelo):
@@ -1210,7 +1275,6 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
  * pergunta ao coordenador o próximo passo, refaz especificamente o último agent que rodou.
  */
 export const retryLastStep = (squadId: string, run: RunRecord): void => {
-	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
 	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
@@ -1225,6 +1289,8 @@ export const retryLastStep = (squadId: string, run: RunRecord): void => {
 		notify.error("O agent do último passo não existe mais neste squad.");
 		return;
 	}
+
+	if (!requireRunner(squadId)) return;
 
 	const remainingSteps = run.steps.slice(0, -1);
 	const { perAgentStatus, events, log } = seedRunFromHistory(squadId, squad, run, remainingSteps);

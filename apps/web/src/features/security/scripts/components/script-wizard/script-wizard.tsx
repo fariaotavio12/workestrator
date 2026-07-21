@@ -38,7 +38,7 @@ const schema = z
 		url: z.string(),
 		env: z.record(z.string(), z.string()),
 		toolAllowlist: z.string(),
-		connectorProvider: z.enum(["composio", "zapier", "n8n", "youtube"]),
+		connectorProvider: z.enum(["composio", "zapier", "n8n", "youtube", "instagram"]),
 		configRecord: z.record(z.string(), z.string()),
 		authRef: z.string(),
 	})

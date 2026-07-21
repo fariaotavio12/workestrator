@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
 import { AppSheet } from "@/components/sheet";
+import { notify } from "@/components/toast/notify";
 import { Typography } from "@/components/typography";
-import { FileSearch } from "lucide-react";
+import { Download, FileSearch, Loader2 } from "lucide-react";
+import { savePreviewArchive } from "@/features/security/orchestrator-shared/runtime/model-client";
 import { ApprovalBar } from "./approval-bar";
 import { FileList } from "./file-list";
 import { FilePreview, type PreviewFile } from "./file-preview";
@@ -14,6 +17,7 @@ export type PreviewModalProps = {
 	onOpenChange: (open: boolean) => void;
 	title?: string;
 	items: PreviewModalItem[];
+	archiveName?: string;
 	/** Quando ambos sao passados, mostra a barra de aprovacao no rodape. */
 	onApprove?: () => void;
 	onRequestChanges?: (feedback: string) => void;
@@ -25,14 +29,30 @@ export const PreviewModal = ({
 	onOpenChange,
 	title = "Preview",
 	items,
+	archiveName = "arquivos-do-run.zip",
 	onApprove,
 	onRequestChanges,
 }: PreviewModalProps) => {
 	const [selectedId, setSelectedId] = useState<string | undefined>(items[0]?.id);
+	const [savingArchive, setSavingArchive] = useState(false);
 
 	const selected = items.find((item) => item.id === selectedId) ?? items[0];
 	const showApproval = Boolean(onApprove && onRequestChanges);
 	const fileCountLabel = `${items.length} ${items.length === 1 ? "arquivo" : "arquivos"}`;
+	const archiveRootId = items.find((item) => item.rootId)?.rootId;
+
+	const downloadArchive = async () => {
+		if (!archiveRootId) return;
+		setSavingArchive(true);
+		try {
+			const result = await savePreviewArchive({ rootId: archiveRootId, suggestedName: archiveName });
+			if (result.saved) notify.success("Arquivos salvos em ZIP.");
+		} catch (error) {
+			notify.error(error instanceof Error ? error.message : "Nao foi possivel salvar o ZIP.");
+		} finally {
+			setSavingArchive(false);
+		}
+	};
 
 	return (
 		<AppSheet
@@ -48,9 +68,17 @@ export const PreviewModal = ({
 				</div>
 			}
 			headerTrailing={
-				<Badge variant="outline" className="shrink-0">
-					{fileCountLabel}
-				</Badge>
+				<div className="flex shrink-0 items-center gap-2">
+					{archiveRootId && (
+						<Button type="button" variant="outline" size="sm" onClick={downloadArchive} disabled={savingArchive}>
+							{savingArchive ? <Loader2 className="animate-spin" /> : <Download />}
+							Baixar tudo
+						</Button>
+					)}
+					<Badge variant="outline" className="shrink-0">
+						{fileCountLabel}
+					</Badge>
+				</div>
 			}
 			showFooter={showApproval}
 			footer={

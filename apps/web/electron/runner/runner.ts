@@ -15,6 +15,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 
 /**
  * Teto de custo (USD) por invocação de agente, passado ao Claude CLI via `--max-budget-usd`. É um
@@ -214,7 +215,7 @@ export type ScriptPayload = {
 	url?: string;
 	env?: Record<string, string>;
 	toolAllowlist?: string[];
-	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube";
+	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube" | "instagram";
 	config?: string;
 	authRef?: string;
 };
@@ -295,14 +296,22 @@ const resolveMapPlaceholders = async (
 };
 
 /** Metadata keys já consumidas por um `authType` — o resto é mesclado como header fixo (ex.: `anthropic-version`). */
-const KNOWN_AUTH_METADATA_KEYS = new Set(["headerName", "valuePrefix", "queryParam", "basicUsername", "tokenUrl", "clientId", "scopes"]);
+const KNOWN_AUTH_METADATA_KEYS = new Set([
+	"headerName",
+	"valuePrefix",
+	"queryParam",
+	"basicUsername",
+	"tokenUrl",
+	"clientId",
+	"scopes",
+]);
 
 const fixedMetadataHeaders = (metadata: Record<string, string> | undefined): Record<string, string> => {
 	if (!metadata) return {};
 	return Object.fromEntries(Object.entries(metadata).filter(([key]) => !KNOWN_AUTH_METADATA_KEYS.has(key)));
 };
 
-const parseJsonSafe = <T,>(raw: string): T | undefined => {
+const parseJsonSafe = <T>(raw: string): T | undefined => {
 	try {
 		return JSON.parse(raw) as T;
 	} catch {
@@ -373,7 +382,10 @@ export const exchangeOAuth2Token = async (resolved: ResolvedSecret): Promise<str
 		if (body.refresh_token !== parsed?.refreshToken) {
 			const newValue = JSON.stringify({ refreshToken: body.refresh_token, clientSecret: parsed?.clientSecret });
 			rotate(newValue).catch((err) => {
-				console.error("[secrets] Falha ao persistir refresh_token rotacionado:", err instanceof Error ? err.message : err);
+				console.error(
+					"[secrets] Falha ao persistir refresh_token rotacionado:",
+					err instanceof Error ? err.message : err,
+				);
 			});
 		}
 	}
@@ -500,6 +512,7 @@ const CURRENT_DIR = typeof __dirname !== "undefined" ? __dirname : path.dirname(
 // é o `electron/runner/` fonte, então `../mcp-servers` resolve certo sem precisar desse passo.
 const HTTP_TOOL_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "http-tool.mjs");
 const YOUTUBE_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "youtube.mjs");
+const INSTAGRAM_PUBLISHER_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "instagram-publisher.mjs");
 const WORKSPACE_FS_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "workspace-fs.mjs");
 
 /**
@@ -575,6 +588,18 @@ export const buildMcpServerEntry = async (
 		// envolvida, então é o único connector resolvido sem precisar de `config.gatewayUrl`.
 		if (script.connectorProvider === "youtube") {
 			return { command: process.execPath, args: [YOUTUBE_SERVER_PATH], env: { ELECTRON_RUN_AS_NODE: "1" } };
+		}
+		if (script.connectorProvider === "instagram") {
+			const env = await resolveMapPlaceholders(script.env, resolveSecret);
+			if (script.authRef) {
+				const resolved = await resolveSecret(script.authRef);
+				if (resolved) env.WORKESTRATOR_AUTH_TOKEN = await resolveAuthToken(resolved);
+			}
+			return {
+				command: process.execPath,
+				args: [INSTAGRAM_PUBLISHER_SERVER_PATH],
+				env: { ELECTRON_RUN_AS_NODE: "1", ...env },
+			};
 		}
 
 		// Composio/Zapier/n8n: cada gateway real tem sua própria URL por conta/toolkit — não dá pra
@@ -780,7 +805,8 @@ const resolveProviderAuth = async (
 	return { headers: applied.headers, querySuffix: applied.url };
 };
 
-const withProviderAuth = (url: string, auth: ProviderAuth): string => (auth.querySuffix ? `${url}${auth.querySuffix}` : url);
+const withProviderAuth = (url: string, auth: ProviderAuth): string =>
+	auth.querySuffix ? `${url}${auth.querySuffix}` : url;
 
 /** `GET /models` (padrão OpenAI-compat) — usado tanto no cadastro do provider quanto como rede de
  * segurança na execução. */
@@ -836,7 +862,12 @@ export const handleListModels = async (
 		return;
 	}
 
-	const { baseUrl = "", apiKeyRef, backendBaseUrl, backendToken } = rawBody as {
+	const {
+		baseUrl = "",
+		apiKeyRef,
+		backendBaseUrl,
+		backendToken,
+	} = rawBody as {
 		baseUrl?: string;
 		apiKeyRef?: string;
 		backendBaseUrl?: string;
@@ -988,7 +1019,7 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 
 	if (!isStream || !response.body) {
 		const body = (await response.json().catch(() => ({}))) as {
-			choices?: { message?: ({ content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta) }[];
+			choices?: { message?: { content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta }[];
 		};
 		const message = body.choices?.[0]?.message;
 		const text = message?.content ?? "";
@@ -1088,10 +1119,7 @@ const normalizeToolName = (name: string): string =>
  * squad de carrossel), tenta casar por nome normalizado antes de desistir. Só resolve quando a busca
  * por sufixo é inequívoca (exatamente uma tool bate) — ambiguidade continua caindo no erro explícito.
  */
-const resolveToolCall = (
-	byName: Map<string, ResolvedTool>,
-	rawName: string,
-): ResolvedTool | undefined => {
+const resolveToolCall = (byName: Map<string, ResolvedTool>, rawName: string): ResolvedTool | undefined => {
 	const exact = byName.get(rawName);
 	if (exact) return exact;
 	const target = normalizeToolName(rawName);
@@ -1393,6 +1421,153 @@ const MAX_PREVIEW_FILES = 500;
 const previewRoots = new Map<string, string>();
 
 const rootIdFor = (dir: string): string => createHash("sha1").update(path.resolve(dir)).digest("hex").slice(0, 12);
+
+type ZipEntry = { absolutePath: string; relativePath: string };
+
+const ZIP_EXCLUDED_NAMES = new Set([".git", SCRIPTS_SUBDIR, RUNS_SUBDIR, "node_modules"]);
+
+const normalizePreviewRelativePath = (relPath: string): string =>
+	relPath
+		.replace(/\\/g, "/")
+		.split("/")
+		.filter((segment) => segment && segment !== ".")
+		.join("/");
+
+const isInsideRoot = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
+
+const resolvePreviewRoot = (rootId: string): string => {
+	const root = previewRoots.get(rootId);
+	if (!root) throw new Error("Raiz de preview nao registrada ou expirada.");
+	return root;
+};
+
+const resolvePreviewFilePath = (rootId: string, relativePath: string): { filePath: string; normalizedPath: string } => {
+	const root = resolvePreviewRoot(rootId);
+	const normalizedPath = normalizePreviewRelativePath(relativePath);
+	if (!normalizedPath || path.isAbsolute(normalizedPath) || normalizedPath.split("/").includes("..")) {
+		throw new Error("Caminho de arquivo invalido.");
+	}
+	const filePath = path.resolve(root, normalizedPath);
+	if (!isInsideRoot(root, filePath)) throw new Error("Arquivo fora da raiz permitida.");
+	const stat = fs.statSync(filePath);
+	if (!stat.isFile()) throw new Error("Arquivo inexistente ou invalido.");
+	return { filePath, normalizedPath };
+};
+
+const collectZipEntries = (root: string): ZipEntry[] => {
+	const entries: ZipEntry[] = [];
+	const walk = (current: string): void => {
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			if (ZIP_EXCLUDED_NAMES.has(entry.name)) continue;
+			const absolutePath = path.join(current, entry.name);
+			const realPath = fs.realpathSync.native(absolutePath);
+			if (!isInsideRoot(root, realPath)) continue;
+			if (entry.isDirectory()) {
+				walk(absolutePath);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			entries.push({ absolutePath, relativePath: path.relative(root, absolutePath).replace(/\\/g, "/") });
+		}
+	};
+	walk(root);
+	return entries.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+};
+
+let crcTable: number[] | undefined;
+
+const crc32 = (input: Buffer): number => {
+	if (!crcTable) {
+		crcTable = Array.from({ length: 256 }, (_, index) => {
+			let crc = index;
+			for (let bit = 0; bit < 8; bit += 1) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+			return crc >>> 0;
+		});
+	}
+	let crc = 0xffffffff;
+	for (const byte of input) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
+	return (crc ^ 0xffffffff) >>> 0;
+};
+
+const dosDateTime = (date: Date): { date: number; time: number } => {
+	const year = Math.max(1980, date.getFullYear());
+	return {
+		time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+		date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+	};
+};
+
+const writeZipArchive = (entries: ZipEntry[], destinationPath: string): void => {
+	const localParts: Buffer[] = [];
+	const centralParts: Buffer[] = [];
+	let offset = 0;
+
+	for (const entry of entries) {
+		if (!fs.existsSync(entry.absolutePath)) throw new Error(`Arquivo removido durante o ZIP: ${entry.relativePath}`);
+		const stat = fs.statSync(entry.absolutePath);
+		if (!stat.isFile()) throw new Error(`Entrada invalida durante o ZIP: ${entry.relativePath}`);
+		const data = fs.readFileSync(entry.absolutePath);
+		const compressed = zlib.deflateRawSync(data);
+		const name = Buffer.from(entry.relativePath, "utf-8");
+		const checksum = crc32(data);
+		const { date, time } = dosDateTime(stat.mtime);
+
+		const localHeader = Buffer.alloc(30);
+		localHeader.writeUInt32LE(0x04034b50, 0);
+		localHeader.writeUInt16LE(20, 4);
+		localHeader.writeUInt16LE(0x0800, 6);
+		localHeader.writeUInt16LE(8, 8);
+		localHeader.writeUInt16LE(time, 10);
+		localHeader.writeUInt16LE(date, 12);
+		localHeader.writeUInt32LE(checksum, 14);
+		localHeader.writeUInt32LE(compressed.length, 18);
+		localHeader.writeUInt32LE(data.length, 22);
+		localHeader.writeUInt16LE(name.length, 26);
+
+		localParts.push(localHeader, name, compressed);
+
+		const centralHeader = Buffer.alloc(46);
+		centralHeader.writeUInt32LE(0x02014b50, 0);
+		centralHeader.writeUInt16LE(20, 4);
+		centralHeader.writeUInt16LE(20, 6);
+		centralHeader.writeUInt16LE(0x0800, 8);
+		centralHeader.writeUInt16LE(8, 10);
+		centralHeader.writeUInt16LE(time, 12);
+		centralHeader.writeUInt16LE(date, 14);
+		centralHeader.writeUInt32LE(checksum, 16);
+		centralHeader.writeUInt32LE(compressed.length, 20);
+		centralHeader.writeUInt32LE(data.length, 24);
+		centralHeader.writeUInt16LE(name.length, 28);
+		centralHeader.writeUInt32LE(offset, 42);
+		centralParts.push(centralHeader, name);
+
+		offset += localHeader.length + name.length + compressed.length;
+	}
+
+	const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+	const end = Buffer.alloc(22);
+	end.writeUInt32LE(0x06054b50, 0);
+	end.writeUInt16LE(entries.length, 8);
+	end.writeUInt16LE(entries.length, 10);
+	end.writeUInt32LE(centralSize, 12);
+	end.writeUInt32LE(offset, 16);
+
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+	fs.writeFileSync(destinationPath, Buffer.concat([...localParts, ...centralParts, end]));
+};
+
+export const copyPreviewFileTo = (rootId: string, relativePath: string, destinationPath: string): void => {
+	const { filePath } = resolvePreviewFilePath(rootId, relativePath);
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+	fs.copyFileSync(filePath, destinationPath);
+};
+
+export const savePreviewRootZipTo = (rootId: string, destinationPath: string): void => {
+	const root = resolvePreviewRoot(rootId);
+	const entries = collectZipEntries(root);
+	if (entries.length === 0) throw new Error("Nao ha arquivos para compactar.");
+	writeZipArchive(entries, destinationPath);
+};
 
 const jsonResponse = (res: ServerResponse, status: number, body: unknown): void => {
 	res.statusCode = status;
@@ -1774,7 +1949,10 @@ export const handleRunStep = async (
 			if (mcpConfig) {
 				const configPath = writeMcpConfig(mcpConfig, workspaceDir);
 				const allowedTools = scripts
-					.filter((s): s is ScriptPayload & { toolAllowlist: string[] } => s.kind === "mcp" && Boolean(s.toolAllowlist?.length))
+					.filter(
+						(s): s is ScriptPayload & { toolAllowlist: string[] } =>
+							s.kind === "mcp" && Boolean(s.toolAllowlist?.length),
+					)
 					.flatMap((s) => s.toolAllowlist.map((tool) => `mcp__${safeFileName(s.name) || s.id}__${tool}`));
 				mcpResolution = { configPath, allowedTools };
 				logToolConfig(scripts, configPath, workspaceDir);
@@ -1783,8 +1961,7 @@ export const handleRunStep = async (
 	}
 
 	// Codex + conta ChatGPT: descarta o modelo configurado (força o default da conta) — ver acima.
-	const effectiveModel =
-		providerKind === "codex-cli" && codexUsesChatGptAccount() ? CLI_DEFAULT_MODEL : model;
+	const effectiveModel = providerKind === "codex-cli" && codexUsesChatGptAccount() ? CLI_DEFAULT_MODEL : model;
 	const plan = buildExecutorPlan(
 		providerKind,
 		effectiveModel,
@@ -1888,7 +2065,8 @@ export const handleRunStep = async (
 			});
 		} else if (obj.type === "result") {
 			if (typeof obj.result === "string") sjResult = obj.result;
-			if (obj.is_error) sjError = typeof obj.result === "string" && obj.result ? obj.result : "A execução retornou erro.";
+			if (obj.is_error)
+				sjError = typeof obj.result === "string" && obj.result ? obj.result : "A execução retornou erro.";
 		}
 	};
 
@@ -2063,7 +2241,11 @@ const healthCheckStdioServer = (
 		child.stderr?.on("data", (chunk) => (stderr += chunk.toString()));
 		child.on("exit", (code) => {
 			if (code !== null && code !== 0) {
-				finish({ ok: false, message: `Processo saiu com código ${code} antes do health-check terminar.`, detail: stderr.trim() });
+				finish({
+					ok: false,
+					message: `Processo saiu com código ${code} antes do health-check terminar.`,
+					detail: stderr.trim(),
+				});
 			}
 		});
 		child.on("error", (err) => finish({ ok: false, message: `"${command}" não encontrado no PATH (${err.message}).` }));
@@ -2132,7 +2314,12 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					}),
 				);
 			} catch (err) {
-				res.end(JSON.stringify({ ok: false, message: `Caminho não encontrado (${err instanceof Error ? err.message : "erro"}).` }));
+				res.end(
+					JSON.stringify({
+						ok: false,
+						message: `Caminho não encontrado (${err instanceof Error ? err.message : "erro"}).`,
+					}),
+				);
 			}
 			return;
 		}
@@ -2172,7 +2359,9 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					}),
 				);
 			} catch (err) {
-				res.end(JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }));
+				res.end(
+					JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }),
+				);
 			}
 			return;
 		}
@@ -2188,7 +2377,9 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					const response = await fetch(entry.url, { headers: entry.headers });
 					res.end(JSON.stringify({ ok: response.ok, message: `HTTP ${response.status} ${response.statusText}` }));
 				} catch (err) {
-					res.end(JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }));
+					res.end(
+						JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }),
+					);
 				}
 				return;
 			}

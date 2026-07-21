@@ -113,6 +113,8 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				ext: f.ext,
 				isImage: f.isImage,
 				url: buildPreviewUrl(rootId, f.path),
+				rootId,
+				relativePath: f.path,
 				changed: changedPaths.has(f.path),
 			})),
 		);
@@ -211,9 +213,8 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 						<div className="flex min-h-0 flex-1 flex-col gap-3">
 							{!canRunOnThisDevice && (
 								<div className="border-warning/30 bg-warning/10 text-foreground rounded-lg border px-4 py-3 text-sm">
-									Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na
-									máquina — só roda no app desktop. Squads que usam apenas providers de API rodam direto no
-									navegador.
+									Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na máquina —
+									só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador.
 								</div>
 							)}
 							<FieldWrapper
@@ -265,6 +266,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				onOpenChange={setPreviewOpen}
 				title="Arquivos gerados"
 				items={previewItems}
+				archiveName={`${squad.name}-${new Date().toISOString()}-arquivos.zip`.replace(/[^\w.-]+/g, "-").toLowerCase()}
 				// Aprovação só faz sentido quando o run está esperando resposta — vira a resposta do agent.
 				onApprove={status === "awaiting_input" ? () => answerPrompt(squad.id, "Aprovado.") : undefined}
 				onRequestChanges={status === "awaiting_input" ? (feedback) => answerPrompt(squad.id, feedback) : undefined}
