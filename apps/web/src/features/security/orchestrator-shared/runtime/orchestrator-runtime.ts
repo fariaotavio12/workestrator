@@ -762,6 +762,7 @@ const runOrchestratedAgentStep = (
 								output: truncate(activity.detail ?? "", 8000),
 								status: activity.status ?? "done",
 								endedAt: nowIso(),
+								sentHeaders: activity.sentHeaders,
 							});
 						} else {
 							// Resultado sem id pareável (provider em modo texto) — vira uma linha de saída solta.

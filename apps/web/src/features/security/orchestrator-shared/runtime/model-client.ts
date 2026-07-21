@@ -93,6 +93,9 @@ export type AgentActivity = {
 	label: string;
 	detail?: string;
 	status?: "running" | "done" | "error";
+	/** Só em resultado de tool `http` (provider API) — headers finais enviados no `fetch`, pra debug na
+	 * aba Ferramentas. */
+	sentHeaders?: Record<string, string>;
 };
 
 /**
@@ -203,6 +206,8 @@ export const callAgentStep = async (
 					label: parsed.label ?? "resultado",
 					detail: parsed.detail,
 					status: parsed.ok === false ? "error" : "done",
+					sentHeaders:
+						parsed.sentHeaders && typeof parsed.sentHeaders === "object" ? parsed.sentHeaders : undefined,
 				});
 				if (typeof parsed.detail === "string") handlers?.onTerminal?.(parsed.detail);
 			} else if (event === "done") {

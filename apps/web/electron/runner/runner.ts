@@ -1200,6 +1200,7 @@ export const callOpenAiCompat = async (
 				ok: result.ok,
 				label: call.function.name,
 				detail: result.text,
+				sentHeaders: result.sentHeaders,
 			});
 		}
 	}

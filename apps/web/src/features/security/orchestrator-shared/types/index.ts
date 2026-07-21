@@ -290,6 +290,8 @@ export type ToolCallRecord = {
 	status: "running" | "done" | "error";
 	startedAt: string;
 	endedAt?: string;
+	/** Só em tools `http` (provider API) — headers finais enviados no `fetch`, nunca visto pelo modelo. */
+	sentHeaders?: Record<string, string>;
 };
 
 export type Squad = {

@@ -24,7 +24,13 @@ export type OpenAiToolDefinition = {
 };
 
 /** Texto já pronto pra virar a mensagem `{ role: "tool" }` da rodada seguinte. */
-export type ToolCallResult = { ok: boolean; text: string };
+export type ToolCallResult = {
+	ok: boolean;
+	text: string;
+	/** Só em tools `http` — headers finais do `fetch` (auth já resolvida), pra debug na aba Ferramentas.
+	 * Nunca entra em `text`/`messages`: não é visto pelo modelo. */
+	sentHeaders?: Record<string, string>;
+};
 
 export type ResolvedTool = {
 	definition: OpenAiToolDefinition;
@@ -267,10 +273,11 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 		execute: async (args) => {
 			const variables = (args.variables ?? {}) as Record<string, unknown>;
 			const url = applyUrlTemplate(def.urlTemplate, variables);
+			const sentHeaders = { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) };
 			try {
 				const res = await fetch(url, {
 					method: def.method || "GET",
-					headers: { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) },
+					headers: sentHeaders,
 					body: acceptsBody && args.body !== undefined ? JSON.stringify(args.body) : undefined,
 				});
 				const raw = await res.text();
@@ -282,7 +289,7 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 				}
 				if (!res.ok) {
 					const detail = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-					return { ok: false, text: truncateToolResult(`HTTP ${res.status}: ${detail}`) };
+					return { ok: false, text: truncateToolResult(`HTTP ${res.status}: ${detail}`), sentHeaders };
 				}
 				const mapped = extractPath(parsed, def.responseMap);
 				// `mapped` pode ser `undefined` (responseMap aponta pra um campo ausente) — aí
@@ -294,9 +301,13 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 						: typeof mapped === "string"
 							? mapped
 							: JSON.stringify(mapped, null, 2);
-				return { ok: mapped != null, text: truncateToolResult(text) };
+				return { ok: mapped != null, text: truncateToolResult(text), sentHeaders };
 			} catch (error) {
-				return { ok: false, text: `Falha ao chamar ${url}: ${error instanceof Error ? error.message : String(error)}` };
+				return {
+					ok: false,
+					text: `Falha ao chamar ${url}: ${error instanceof Error ? error.message : String(error)}`,
+					sentHeaders,
+				};
 			}
 		},
 	};

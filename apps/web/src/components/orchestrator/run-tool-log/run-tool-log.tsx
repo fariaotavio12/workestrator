@@ -62,6 +62,14 @@ const ToolCallItem = ({ call, agentName }: { call: ToolCallRecord; agentName?: s
 						Sem input.
 					</Typography>
 				)}
+				{call.sentHeaders && Object.keys(call.sentHeaders).length > 0 && (
+					<>
+						<Typography variant="caption" as="p" className="text-muted-foreground mt-3 mb-1">
+							Headers enviados
+						</Typography>
+						<CodeBlock content={JSON.stringify(call.sentHeaders, null, 2)} language="json" className="my-0" />
+					</>
+				)}
 				<Typography variant="caption" as="p" className="text-muted-foreground mt-3 mb-1">
 					Resultado
 				</Typography>
