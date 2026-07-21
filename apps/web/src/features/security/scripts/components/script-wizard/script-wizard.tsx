@@ -92,17 +92,15 @@ const buildDraft = (values: ScriptFormValues) => {
 		path: values.kind === "file" ? values.path?.trim() : undefined,
 		method: values.kind === "http" ? values.method : undefined,
 		urlTemplate: values.kind === "http" ? values.urlTemplate?.trim() : undefined,
-		headers:
-			values.kind === "http" || isMcpHttp
-				? Object.keys(values.headers).length > 0
-					? values.headers
-					: undefined
-				: undefined,
+		// Sempre manda o mapa (mesmo vazio) pros kinds que têm headers: o update do backend é merge
+		// (`request.headers ?: current.headers`), então `undefined` = "não mexe" e removeria a
+		// possibilidade de limpar. Um `{}` explícito sobrescreve e zera os headers.
+		headers: values.kind === "http" || isMcpHttp ? values.headers : undefined,
 		bodySchema: values.kind === "http" ? values.bodySchema?.trim() || undefined : undefined,
 		responseMap: values.kind === "http" ? values.responseMap?.trim() || undefined : undefined,
 		transport: values.kind === "mcp" ? values.transport : undefined,
 		url: isMcpHttp ? values.url?.trim() : undefined,
-		env: values.kind === "mcp" && Object.keys(values.env).length > 0 ? values.env : undefined,
+		env: values.kind === "mcp" ? values.env : undefined,
 		toolAllowlist:
 			values.kind === "mcp" && values.toolAllowlist?.trim()
 				? values.toolAllowlist
