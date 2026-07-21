@@ -1,12 +1,4 @@
-import {
-	AppSheet,
-	Badge,
-	Button,
-	notify,
-	PreviewModal,
-	type PreviewModalItem,
-	Typography,
-} from "@/components";
+import { AppSheet, Badge, Button, notify, PreviewModal, type PreviewModalItem, Typography } from "@/components";
 import {
 	buildPreviewUrl,
 	previewAvailable,
@@ -62,6 +54,8 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 				ext: f.ext,
 				isImage: f.isImage,
 				url: buildPreviewUrl(rootId, f.path),
+				rootId,
+				relativePath: f.path,
 				changed: true,
 			})),
 		);
@@ -228,7 +222,13 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 				prefill={scriptPrefill ?? undefined}
 			/>
 
-			<PreviewModal open={previewOpen} onOpenChange={setPreviewOpen} title="Arquivos gerados" items={previewItems} />
+			<PreviewModal
+				open={previewOpen}
+				onOpenChange={setPreviewOpen}
+				title="Arquivos gerados"
+				items={previewItems}
+				archiveName={`${squad.name}-${run.startedAt}-arquivos.zip`.replace(/[^\w.-]+/g, "-").toLowerCase()}
+			/>
 		</>
 	);
 };

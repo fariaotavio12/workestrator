@@ -20,12 +20,13 @@ const LANGUAGE_LABEL = { bash: "Bash", node: "Node.js", python: "Python" } as co
 const HTTP_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const MCP_TRANSPORTS: McpTransport[] = ["stdio", "http"];
 const MCP_TRANSPORT_LABEL: Record<McpTransport, string> = { stdio: "Local (stdio)", http: "Remoto (HTTP)" };
-const CONNECTOR_PROVIDERS: ConnectorProvider[] = ["composio", "zapier", "n8n", "youtube"];
+const CONNECTOR_PROVIDERS: ConnectorProvider[] = ["composio", "zapier", "n8n", "youtube", "instagram"];
 const CONNECTOR_PROVIDER_LABEL: Record<ConnectorProvider, string> = {
 	composio: "Composio",
 	zapier: "Zapier",
 	n8n: "n8n",
 	youtube: "YouTube",
+	instagram: "Instagram",
 };
 
 type StepConfigureProps = {
@@ -117,7 +118,10 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 				<>
 					<div className="grid gap-4 sm:grid-cols-[140px_1fr]">
 						<FieldWrapper label="Método">
-							<Select value={method} onValueChange={(v) => setValue("method", v as HttpMethod, { shouldValidate: true })}>
+							<Select
+								value={method}
+								onValueChange={(v) => setValue("method", v as HttpMethod, { shouldValidate: true })}
+							>
 								<SelectTrigger>
 									<SelectValue />
 								</SelectTrigger>
@@ -196,7 +200,12 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 
 					{transport === "http" && (
 						<>
-							<Input label="URL" placeholder="Ex.: https://mcp.exemplo.com" error={errors.url?.message} {...register("url")} />
+							<Input
+								label="URL"
+								placeholder="Ex.: https://mcp.exemplo.com"
+								error={errors.url?.message}
+								{...register("url")}
+							/>
 							<KeyValueEditor
 								label="Headers (opcional)"
 								keyPlaceholder="Ex.: Authorization"
@@ -225,7 +234,7 @@ export const StepConfigure = ({ template, control, errors, register, setValue }:
 				</>
 			)}
 
-			{kind === "connector" && template.id !== "youtube" && (
+			{kind === "connector" && template.id !== "youtube" && template.id !== "instagram-publisher" && (
 				<>
 					<FieldWrapper label="Provider" error={errors.connectorProvider?.message}>
 						<Select
