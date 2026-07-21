@@ -485,12 +485,13 @@ export const createBackendSecretResolver = (
 // não existe em ESM de verdade. `__dirname` é ambient global via @types/node, daí o `typeof`.
 const CURRENT_DIR = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 // Empacotado: `main.ts`/`runner.ts` são bundlados por esbuild em `dist-electron/main.cjs`, então
-// `CURRENT_DIR` aponta pra `dist-electron/` ali — o build precisa copiar `electron/mcp-servers/`
-// pra `dist-electron/mcp-servers/` (ou `resources/`) pra este caminho existir de verdade num app
-// empacotado. Em dev (`vite dev`), `CURRENT_DIR` é o `electron/runner/` fonte, então `../mcp-servers`
-// resolve certo sem precisar de nenhum passo extra.
+// `CURRENT_DIR` aponta pra `dist-electron/` ali — `scripts/build-electron.mjs` copia
+// `electron/mcp-servers/` pra `dist-electron/mcp-servers/` pra este caminho existir de verdade tanto
+// no app empacotado quanto no `electron:dev` local. Em dev (`vite dev`, sem Electron), `CURRENT_DIR`
+// é o `electron/runner/` fonte, então `../mcp-servers` resolve certo sem precisar desse passo.
 const HTTP_TOOL_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "http-tool.mjs");
 const YOUTUBE_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "youtube.mjs");
+const WORKSPACE_FS_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "workspace-fs.mjs");
 
 /**
  * Resolve um script `kind: "http"` na definição declarativa da tool, com a auth já aplicada em
@@ -1218,16 +1219,44 @@ export const callOpenAiCompat = async (
  * stdio ou HTTP). Os kinds `command`/`inline`/`file` executam processo arbitrário na máquina e
  * ficam fora — no caminho da Claude CLI quem concede isso é o próprio CLI, com as guardas dele.
  *
+ * Quando `workspaceDir` é passado (agent `canExecute`), injeta incondicionalmente o server built-in
+ * `workspace-fs.mjs` (write_file/read_file/list_files/render_slides) — providers openai-compat não
+ * ganham Bash/Read/Write nativo como a Claude CLI, então sem isso o agent só descrevia arquivos em
+ * texto e nunca os gravava de verdade, independente de o usuário ter anexado algum script `mcp`.
+ *
  * Nunca lança: um server MCP que não sobe vira aviso no log e as demais tools seguem disponíveis —
  * derrubar o passo inteiro por causa de uma integração quebrada seria pior que rodar sem ela.
  */
 const resolveOpenAiTools = async (
 	scripts: ScriptPayload[],
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<{ tools: ResolvedTool[]; close: () => Promise<void> }> => {
 	const tools: ResolvedTool[] = [];
 	const connections: McpConnection[] = [];
 	const taken = new Set<string>();
+
+	if (workspaceDir) {
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{
+					command: process.execPath,
+					args: [WORKSPACE_FS_SERVER_PATH],
+					env: { ELECTRON_RUN_AS_NODE: "1", WORKESTRATOR_WORKSPACE_DIR: workspaceDir },
+				},
+				undefined,
+				taken,
+			);
+			connections.push(connection);
+			tools.push(...connection.tools);
+		} catch (err) {
+			console.error(
+				"[tools] Falha ao subir o server built-in de filesystem:",
+				err instanceof Error ? err.message : err,
+			);
+		}
+	}
 
 	for (const script of scripts) {
 		try {
@@ -1374,6 +1403,32 @@ const listChangedRelPaths = (dir: string): string[] => {
 	}
 };
 
+/**
+ * Lista TODOS os arquivos de `dir` (respeitando `MAX_PREVIEW_FILES`/`PREVIEW_IGNORE`) — fallback usado
+ * quando não há como (ou não teve o que) listar via `listChangedRelPaths`, pra nunca depender só do
+ * git existir/funcionar na máquina do usuário (sem `.git` ou sem o binário `git` no PATH, o diff fica
+ * vazio mesmo com arquivos reais em disco).
+ */
+export const walkAllRelPaths = (dir: string): string[] => {
+	const relPaths: string[] = [];
+	const walk = (current: string): void => {
+		if (relPaths.length >= MAX_PREVIEW_FILES) return;
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			if (relPaths.length >= MAX_PREVIEW_FILES) return;
+			if (entry.name.startsWith(".") || PREVIEW_IGNORE.has(entry.name)) continue;
+			const abs = path.join(current, entry.name);
+			if (entry.isDirectory()) walk(abs);
+			else relPaths.push(path.relative(dir, abs));
+		}
+	};
+	try {
+		walk(dir);
+	} catch {
+		// pasta ilegível — devolve o que já coletou
+	}
+	return relPaths;
+};
+
 /** `POST /api/list-files {dir, changedOnly?}` — lista arquivos da pasta (ou só os alterados via git). */
 export const handleListFiles = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 	if (req.method !== "POST") return jsonResponse(res, 405, { message: "Método não permitido." });
@@ -1397,25 +1452,8 @@ export const handleListFiles = async (req: IncomingMessage, res: ServerResponse)
 		return { path: rel.replace(/\\/g, "/"), ext, isImage: IMAGE_EXTS.has(ext), size };
 	};
 
-	const relPaths: string[] = changedOnly ? listChangedRelPaths(dir) : [];
-
-	if (relPaths.length === 0) {
-		const walk = (current: string): void => {
-			if (relPaths.length >= MAX_PREVIEW_FILES) return;
-			for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-				if (relPaths.length >= MAX_PREVIEW_FILES) return;
-				if (entry.name.startsWith(".") || PREVIEW_IGNORE.has(entry.name)) continue;
-				const abs = path.join(current, entry.name);
-				if (entry.isDirectory()) walk(abs);
-				else relPaths.push(path.relative(dir, abs));
-			}
-		};
-		try {
-			walk(dir);
-		} catch {
-			// pasta ilegível — devolve o que já coletou
-		}
-	}
+	let relPaths: string[] = changedOnly ? listChangedRelPaths(dir) : [];
+	if (relPaths.length === 0) relPaths = walkAllRelPaths(dir);
 
 	const files = [...new Set(relPaths)].sort().map(toEntry);
 	jsonResponse(res, 200, { files });
@@ -1438,7 +1476,11 @@ export const handleSnapshotRun = async (req: IncomingMessage, res: ServerRespons
 		return jsonResponse(res, 200, { files: [], rootId: null });
 	}
 
-	const relPaths = [...new Set(listChangedRelPaths(source))].sort();
+	let relPaths = [...new Set(listChangedRelPaths(source))].sort();
+	// Sem `.git` (ou `git` ausente do PATH), `listChangedRelPaths` sempre volta vazio mesmo com arquivos
+	// reais em disco — sem este fallback, o run perdia o snapshot inteiro (histórico "Ver arquivos" vazio)
+	// mesmo quando os agents geraram tudo certinho.
+	if (relPaths.length === 0) relPaths = [...new Set(walkAllRelPaths(source))].sort();
 	if (relPaths.length === 0) return jsonResponse(res, 200, { files: [], rootId: null });
 
 	const destRoot = path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(runId));
@@ -1637,17 +1679,25 @@ export const handleRunStep = async (
 			return;
 		}
 		// As ferramentas de rede do agent viram function tools de verdade aqui — sem isso o modelo
-		// recebia um prompt anunciando integrações que nunca chegavam no payload.
+		// recebia um prompt anunciando integrações que nunca chegavam no payload. `workspaceDir` injeta
+		// incondicionalmente o server built-in de filesystem (ver `resolveOpenAiTools`).
 		const resolved = canExecute
-			? await resolveOpenAiTools(scripts, resolveSecret)
+			? await resolveOpenAiTools(scripts, resolveSecret, workspaceDir)
 			: { tools: [], close: async () => {} };
+		// Só este branch (openai-compat) ganha o server built-in de filesystem — precisa dizer o nome
+		// exato das tools e deixar explícito que é uma CHAMADA de tool, não só descrever em texto, porque
+		// modelos locais mais fracos tendem a "narrar" que salvaram/renderizaram algo sem de fato chamar
+		// a tool (era exatamente o bug: Slide Author só devolvia o HTML como texto, nunca gravava nada).
+		const openAiSystemPrompt = canExecute
+			? `${effectiveSystemPrompt}\n\nFerramentas de arquivo SEMPRE disponíveis nesta execução — CHAME como tool de verdade, nunca apenas diga em texto que gravou/leu/renderizou algo: "workspace__write_file" (path, content) grava um arquivo; "workspace__read_file" (path) lê um arquivo; "workspace__list_files" (dir?) lista o que já existe de verdade na pasta de trabalho; "workspace__render_slides" (inputDir?, outputDir?) renderiza sozinho todo HTML de output/slides/ em JPEG de output/images/, sem precisar montar URL file:// nem navegar manualmente.`
+			: effectiveSystemPrompt;
 		try {
 			await callOpenAiCompat(
 				{
 					baseUrl: resolvedBaseUrl,
 					apiKeyRef,
 					model,
-					systemPrompt: effectiveSystemPrompt,
+					systemPrompt: openAiSystemPrompt,
 					prompt,
 					tools: resolved.tools,
 				},
