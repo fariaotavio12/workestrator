@@ -701,6 +701,10 @@ const runOrchestratedAgentStep = (
 		selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
 	const stepId = newId();
 	const scripts = agent.scriptIds.map((id) => getScript(id)).filter((s): s is Script => Boolean(s));
+	// Ferramentas de rede (http/mcp/connector) não tocam a máquina — o runner as resolve como function
+	// tools mesmo em provider de API. Só command/inline/file dependem de `canExecute` (execução local).
+	const isNetworkScript = (s: Script): boolean => s.kind === "http" || s.kind === "mcp" || s.kind === "connector";
+	const availableScripts = scripts.filter((s) => isNetworkScript(s) || agent.canExecute);
 
 	runAbortable(squadId, async (signal) => {
 		try {
@@ -712,7 +716,7 @@ const runOrchestratedAgentStep = (
 						briefing,
 						previousOutput,
 						qaHistory,
-						scripts: agent.canExecute ? scripts : undefined,
+						scripts: availableScripts.length > 0 ? availableScripts : undefined,
 						retrieval,
 						providerKind: provider.kind,
 					}),
@@ -721,7 +725,7 @@ const runOrchestratedAgentStep = (
 					baseUrl: provider.baseUrl,
 					apiKeyRef: provider.apiKeyRef,
 					canExecute: agent.canExecute,
-					scripts: agent.canExecute ? scripts.map(toScriptPayload) : undefined,
+					scripts: availableScripts.length > 0 ? availableScripts.map(toScriptPayload) : undefined,
 					maxBudgetUsd: agent.maxBudgetUsd,
 				},
 				signal,

@@ -1642,11 +1642,10 @@ export const handleRunStep = async (
 			res.end();
 			return;
 		}
-		// As ferramentas de rede do agent viram function tools de verdade aqui — sem isso o modelo
-		// recebia um prompt anunciando integrações que nunca chegavam no payload.
-		const resolved = canExecute
-			? await resolveOpenAiTools(scripts, resolveSecret)
-			: { tools: [], close: async () => {} };
+		// As ferramentas de rede do agent viram function tools de verdade aqui — independente de
+		// `canExecute` (que governa execução LOCAL, não integração de rede). `resolveOpenAiTools` só
+		// monta http/mcp/connector e ignora command/inline/file, então isto nunca expõe execução local.
+		const resolved = await resolveOpenAiTools(scripts, resolveSecret);
 		try {
 			await callOpenAiCompat(
 				{ baseUrl: resolvedBaseUrl, apiKeyRef, model, systemPrompt, prompt, tools: resolved.tools },
