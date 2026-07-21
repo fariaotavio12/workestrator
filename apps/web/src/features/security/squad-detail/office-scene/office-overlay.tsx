@@ -148,10 +148,11 @@ export const OfficeOverlay = ({
 								style={{ left: anchor.x, top: anchor.y - 6 }}
 							>
 								{actor?.bubble && (
-									<div className="pointer-events-auto w-60">
+									<div className="pointer-events-auto w-max min-w-40 max-w-72">
 										<SpeechBubble
 											bubble={actor.bubble}
 											inline
+											className="shadow-lg shadow-black/20 backdrop-blur-sm"
 											onAnswer={onAnswerQuestion}
 											onApproveCheckpoint={onApproveCheckpoint}
 											onRejectCheckpoint={onRejectCheckpoint}

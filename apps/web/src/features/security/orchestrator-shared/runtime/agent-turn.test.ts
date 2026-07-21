@@ -46,4 +46,18 @@ describe("parseAgentTurn", () => {
 		const content = '{"type":"question","question":"   "}';
 		expect(parseAgentTurn(content)).toEqual({ kind: "final", content });
 	});
+
+	it("reconhece uma pergunta envolvida num code fence de markdown (modelos locais mais fracos fazem isso)", () => {
+		const raw = '```json\n{"type":"question","question":"Aprova o ângulo?","options":["Sim","Não"]}\n```';
+		expect(parseAgentTurn(raw)).toEqual({
+			kind: "question",
+			question: "Aprova o ângulo?",
+			options: ["Sim", "Não"],
+		});
+	});
+
+	it("reconhece uma pergunta envolvida num code fence sem a tag 'json'", () => {
+		const raw = '```\n{"type":"question","question":"Confirma?"}\n```';
+		expect(parseAgentTurn(raw)).toEqual({ kind: "question", question: "Confirma?" });
+	});
 });
