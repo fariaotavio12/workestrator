@@ -49,16 +49,26 @@ server.registerTool(
 	{
 		description: "Grava um arquivo de texto na pasta de trabalho deste run (cria pastas pai se preciso).",
 		inputSchema: {
-			path: z.string().describe('Caminho relativo à pasta de trabalho, ex.: "output/slides/slide-01.html".'),
-			content: z.string().describe("Conteúdo completo do arquivo."),
+			// Todos os parâmetros de localização/conteúdo aceitam sinônimos comuns (ver list_files acima
+			// pra contexto) — um nome fora do schema é descartado sem erro, então é melhor cobrir os
+			// sinônimos óbvios do que confiar que o modelo sempre usa o nome exato.
+			path: z.string().optional().describe('Caminho relativo à pasta de trabalho, ex.: "output/slides/slide-01.html".'),
+			file: z.string().optional().describe('Alias de "path".'),
+			filepath: z.string().optional().describe('Alias de "path".'),
+			content: z.string().optional().describe("Conteúdo completo do arquivo."),
+			text: z.string().optional().describe('Alias de "content".'),
 		},
 	},
-	async ({ path: relPath, content }) => {
+	async ({ path: relPath, file, filepath, content, text }) => {
 		try {
-			const filePath = resolveInWorkspace(relPath);
+			const target = relPath ?? file ?? filepath;
+			const body = content ?? text;
+			if (!target) return errorResult('Parâmetro obrigatório faltando: informe "path" com o caminho do arquivo.');
+			if (body == null) return errorResult('Parâmetro obrigatório faltando: informe "content" com o conteúdo do arquivo.');
+			const filePath = resolveInWorkspace(target);
 			await mkdir(path.dirname(filePath), { recursive: true });
-			await writeFile(filePath, content, "utf-8");
-			return textResult(`Arquivo "${relPath}" gravado (${content.length} caracteres).`);
+			await writeFile(filePath, body, "utf-8");
+			return textResult(`Arquivo "${target}" gravado (${body.length} caracteres).`);
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
 		}
@@ -69,12 +79,18 @@ server.registerTool(
 	"read_file",
 	{
 		description: "Lê o conteúdo de um arquivo de texto da pasta de trabalho deste run.",
-		inputSchema: { path: z.string().describe("Caminho relativo à pasta de trabalho.") },
+		inputSchema: {
+			path: z.string().optional().describe("Caminho relativo à pasta de trabalho."),
+			file: z.string().optional().describe('Alias de "path".'),
+			filepath: z.string().optional().describe('Alias de "path".'),
+		},
 	},
-	async ({ path: relPath }) => {
+	async ({ path: relPath, file, filepath }) => {
 		try {
-			const filePath = resolveInWorkspace(relPath);
-			if (!existsSync(filePath)) return errorResult(`Arquivo "${relPath}" não existe na pasta de trabalho.`);
+			const target = relPath ?? file ?? filepath;
+			if (!target) return errorResult('Parâmetro obrigatório faltando: informe "path" com o caminho do arquivo.');
+			const filePath = resolveInWorkspace(target);
+			if (!existsSync(filePath)) return errorResult(`Arquivo "${target}" não existe na pasta de trabalho.`);
 			return textResult(await readFile(filePath, "utf-8"));
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));
@@ -87,15 +103,20 @@ server.registerTool(
 	{
 		description: "Lista (recursivo) os arquivos que já existem de verdade na pasta de trabalho deste run.",
 		inputSchema: {
-			// Mesmo nome de parâmetro que write_file/read_file ("path", não "dir") de propósito — modelos
-			// locais mais fracos assumem consistência entre as tools por analogia e chamam com o nome
-			// errado quando os schemas divergem (observado: `workspace.list_files{path:"..."}`).
+			// Aceita "path" (mesmo nome de write_file/read_file) e os sinônimos mais comuns que modelos
+			// locais mais fracos chamam por conta própria — sem isso, um parâmetro com nome diferente do
+			// schema é simplesmente descartado pela validação (some silenciosamente), a tool cai no default
+			// e lista o workspace inteiro em vez da pasta pedida, sem nenhum erro visível (observado ao
+			// vivo: `workspace__list_files{directory:"output/slides/"}`).
 			path: z.string().optional().describe('Subpasta relativa (padrão: raiz da pasta de trabalho), ex.: "output".'),
+			dir: z.string().optional().describe('Alias de "path".'),
+			directory: z.string().optional().describe('Alias de "path".'),
+			folder: z.string().optional().describe('Alias de "path".'),
 		},
 	},
-	async ({ path: relPath }) => {
+	async ({ path: relPath, dir, directory, folder }) => {
 		try {
-			const target = resolveInWorkspace(relPath ?? ".");
+			const target = resolveInWorkspace(relPath ?? dir ?? directory ?? folder ?? ".");
 			if (!existsSync(target)) return textResult("[]");
 			return textResult(JSON.stringify(listFilesRecursive(target), null, 2));
 		} catch (error) {
