@@ -386,6 +386,11 @@ const searchTool = (execute: ResolvedTool["execute"]): ResolvedTool => ({
 	execute,
 });
 
+const namedTool = (name: string, execute: ResolvedTool["execute"]): ResolvedTool => ({
+	definition: { type: "function", function: { name, description: "", parameters: { type: "object", properties: {} } } },
+	execute,
+});
+
 /** `resolveModel` faz um `GET /models` antes da primeira chamada — responde vazio e segue. */
 const mockChatCalls = (responses: Response[]) => {
 	let call = 0;
@@ -514,6 +519,51 @@ describe("callOpenAiCompat tool loop", () => {
 
 		expect(execute).toHaveBeenCalledOnce();
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "final" });
+	});
+
+	// Modelos locais mais fracos (ex.: gemma via Ollama) reproduzem nomes compostos "servidor__tool" de
+	// forma inconsistente — observado ao vivo num squad real: "write_file" (sem o prefixo do servidor
+	// MCP) e "workspace.list_files" (ponto em vez de "__"). Sem tolerar isso, a tool nunca executava e o
+	// agent ficava perguntando ao usuário em vez de gravar/ler o arquivo de verdade.
+	it("resolves a tool call missing the MCP server prefix (e.g. \"write_file\" for \"workspace__write_file\")", async () => {
+		mockChatCalls([
+			sseResponse(toolCallDeltas("write_file", '{"path":"a.html","content":"<html></html>"}')),
+			sseResponse([{ content: "final" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ path: "a.html", content: "<html></html>" });
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true });
+	});
+
+	it("resolves a tool call with a dot instead of the \"__\" separator", async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("workspace.list_files", "{}")), sseResponse([{ content: "final" }])]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "[]" });
+		const { res } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__list_files", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledOnce();
+	});
+
+	it("does not guess when the normalized suffix matches more than one tool (stays a real error)", async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("list_files", "{}")), sseResponse([{ content: "final" }])]);
+		const executeA = vi.fn().mockResolvedValue({ ok: true, text: "a" });
+		const executeB = vi.fn().mockResolvedValue({ ok: true, text: "b" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat(
+			{ ...input, tools: [namedTool("workspace__list_files", executeA), namedTool("archive__list_files", executeB)] },
+			resolveSecret,
+			res,
+		);
+
+		expect(executeA).not.toHaveBeenCalled();
+		expect(executeB).not.toHaveBeenCalled();
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: false });
 	});
 });
 

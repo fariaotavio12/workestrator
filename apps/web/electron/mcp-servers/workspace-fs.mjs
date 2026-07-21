@@ -87,12 +87,15 @@ server.registerTool(
 	{
 		description: "Lista (recursivo) os arquivos que já existem de verdade na pasta de trabalho deste run.",
 		inputSchema: {
-			dir: z.string().optional().describe('Subpasta relativa (padrão: raiz da pasta de trabalho), ex.: "output".'),
+			// Mesmo nome de parâmetro que write_file/read_file ("path", não "dir") de propósito — modelos
+			// locais mais fracos assumem consistência entre as tools por analogia e chamam com o nome
+			// errado quando os schemas divergem (observado: `workspace.list_files{path:"..."}`).
+			path: z.string().optional().describe('Subpasta relativa (padrão: raiz da pasta de trabalho), ex.: "output".'),
 		},
 	},
-	async ({ dir }) => {
+	async ({ path: relPath }) => {
 		try {
-			const target = resolveInWorkspace(dir ?? ".");
+			const target = resolveInWorkspace(relPath ?? ".");
 			if (!existsSync(target)) return textResult("[]");
 			return textResult(JSON.stringify(listFilesRecursive(target), null, 2));
 		} catch (error) {
