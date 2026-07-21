@@ -4,6 +4,7 @@ import com.apibot.features.runstep.dto.RunStepScriptRequest
 import com.apibot.features.script.model.ScriptKind
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ArrayNode
 import org.springframework.stereotype.Component
 import java.net.URI
 import java.net.URLEncoder
@@ -137,9 +138,15 @@ class HttpToolRunner(
 
     private fun extractPath(value: JsonNode, dotPath: String?): JsonNode? {
         if (dotPath.isNullOrBlank()) return value
+        val keys = dotPath.trim()
+            .removePrefix("$")
+            .replace(Regex("""\[(\w+)]"""), ".$1")
+            .split(".")
+            .filter { it.isNotEmpty() }
         var current: JsonNode? = value
-        for (key in dotPath.split(".")) {
-            current = current?.get(key)
+        for (key in keys) {
+            val index = key.toIntOrNull()
+            current = if (current is ArrayNode && index != null) current.get(index) else current?.get(key)
         }
         return current
     }
