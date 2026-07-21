@@ -138,12 +138,17 @@ export const callAgentStep = async (
 	// token de sessão do backend e a base URL viajam no corpo de cada chamada pra ele resolver
 	// `apiKeyRef`/`authRef` contra `GET /secrets/{id}/value` (ver plano §8.4).
 	const backendToken = await tokenStorage.get();
-	const res = await fetch(`${orchApi?.baseUrl ?? ""}/api/run-step`, {
+	// Sem Electron (navegador puro), quem atende `/run-step` é o backend Kotlin (`POST /run-step`,
+	// `RunStepController` em apps/api) — ele resolve os secrets no próprio processo, sem o
+	// round-trip que o runner do Electron precisa dar de volta pro backend. Só squads 100% API
+	// chegam aqui (ver `isApiOnlySquad`/`requireRunner`); providers de CLI já são barrados antes.
+	const url = orchApi?.baseUrl ? `${orchApi.baseUrl}/api/run-step` : `${apiUrl}/run-step`;
+	const headers: Record<string, string> = orchApi?.baseUrl
+		? { "Content-Type": "application/json", ...(orchApi.token ? { "X-Orchestrator-Token": orchApi.token } : {}) }
+		: { "Content-Type": "application/json", ...(backendToken ? { Authorization: `Bearer ${backendToken}` } : {}) };
+	const res = await fetch(url, {
 		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			...(orchApi?.token ? { "X-Orchestrator-Token": orchApi.token } : {}),
-		},
+		headers,
 		body: JSON.stringify({ ...input, backendBaseUrl: apiUrl, backendToken }),
 		signal,
 	});
@@ -249,18 +254,17 @@ export const previewAvailable = (): boolean => Boolean(window.__ORCH_API__?.base
 export const runnerAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
 
 /**
- * `true` quando existe alguém pra atender `POST /api/run-step`: o servidor local do processo main do
- * Electron, ou o middleware do `vite dev` (registrado em `vite.config.ts`, delegando pros mesmos
- * handlers de `electron/runner/runner.ts`).
- *
- * `import.meta.env.DEV` é a checagem exata — não uma aproximação: aquele middleware é registrado em
- * `configureServer`, que só roda em `vite dev`. No build publicado (e no `vite preview`) a rota não
- * existe e um POST ali devolveria o `index.html`, então o gate precisa fechar antes de tentar.
+ * `true` quando existe alguém pra atender a chamada de execução de um passo de agent: o servidor local
+ * do processo main do Electron, o middleware do `vite dev`, OU (desde que o backend Kotlin ganhou
+ * `POST /run-step`, `RunStepController` em apps/api) o próprio backend — que serve essa rota em
+ * qualquer ambiente, dev ou publicado. Na prática isso já não depende mais do transporte: sempre há
+ * alguém pra atender.
  *
  * Só isso não basta pra liberar um run: o squad também precisa ser API-only (`isApiOnlySquad`), já
- * que provider de CLI depende de binário local. Ver `requireRunner` em `orchestrator-runtime.ts`.
+ * que provider de CLI (claude-cli/codex-cli/gpt-cli) depende de binário local — o backend rejeita
+ * esses kinds explicitamente (`RunStepService`). Ver `requireRunner` em `orchestrator-runtime.ts`.
  */
-export const runStepEndpointAvailable = (): boolean => runnerAvailable() || import.meta.env.DEV;
+export const runStepEndpointAvailable = (): boolean => true;
 
 const orchHeaders = (): HeadersInit => {
 	const token = window.__ORCH_API__?.token;
