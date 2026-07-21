@@ -129,9 +129,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 		if (!canRunOnThisDevice) {
 			notify.warning(
 				"Execução disponível no app desktop",
-				apiOnlySquad
-					? "Este squad roda por API, mas esta versão web não tem executor. Baixe o Workestrator desktop."
-					: "Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop.",
+				"Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop.",
 				{
 					label: "Baixar desktop",
 					onClick: () => {
@@ -213,9 +211,9 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 						<div className="flex min-h-0 flex-1 flex-col gap-3">
 							{!canRunOnThisDevice && (
 								<div className="border-warning/30 bg-warning/10 text-foreground rounded-lg border px-4 py-3 text-sm">
-									{apiOnlySquad
-										? "Este squad roda por API, mas esta versão web não tem executor. Baixe o instalador para executá-lo."
-										: "Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na máquina — só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador."}
+									Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na
+									máquina — só roda no app desktop. Squads que usam apenas providers de API rodam direto no
+									navegador.
 								</div>
 							)}
 							<FieldWrapper
