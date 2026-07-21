@@ -1,16 +1,23 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedTool } from "./openai-tools";
+import { connectMcpTools, type ResolvedTool } from "./openai-tools";
 import {
 	buildMcpConfig,
 	buildMcpServerEntry,
 	buildExecutorPlan,
 	callOpenAiCompat,
 	classifyCliFailure,
+	walkAllRelPaths,
 	type ResolvedSecret,
 	type ScriptPayload,
 	type SecretResolver,
 } from "./runner";
+
+const CURRENT_TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const baseScript = (overrides: Partial<ScriptPayload>): ScriptPayload => ({
 	id: "s1",
@@ -508,4 +515,67 @@ describe("callOpenAiCompat tool loop", () => {
 		expect(execute).toHaveBeenCalledOnce();
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "final" });
 	});
+});
+
+describe("walkAllRelPaths", () => {
+	it("finds real files even without a .git — fallback for handleSnapshotRun/handleListFiles when git is absent", () => {
+		const dir = mkdtempSync(path.join(os.tmpdir(), "workestrator-walk-"));
+		try {
+			mkdirSync(path.join(dir, "output", "slides"), { recursive: true });
+			writeFileSync(path.join(dir, "output", "slides", "slide-01.html"), "<html></html>");
+			mkdirSync(path.join(dir, "node_modules"), { recursive: true });
+			writeFileSync(path.join(dir, "node_modules", "ignored.js"), "//");
+
+			const files = walkAllRelPaths(dir).map((f) => f.split(path.sep).join("/"));
+
+			expect(files).toEqual(["output/slides/slide-01.html"]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("workspace-fs MCP server (built-in filesystem tool)", () => {
+	const serverPath = path.resolve(CURRENT_TEST_DIR, "..", "mcp-servers", "workspace-fs.mjs");
+
+	it("writes, reads and lists files scoped to the workspace, and rejects path traversal", async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-"));
+		const taken = new Set<string>();
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+
+				const write = await byName.get("workspace__write_file")!.execute({
+					path: "output/slides/slide-01.html",
+					content: "<html>oi</html>",
+				});
+				expect(write.ok).toBe(true);
+				expect(existsSync(path.join(workspaceDir, "output", "slides", "slide-01.html"))).toBe(true);
+
+				const read = await byName.get("workspace__read_file")!.execute({ path: "output/slides/slide-01.html" });
+				expect(read.ok).toBe(true);
+				expect(read.text).toBe("<html>oi</html>");
+
+				const list = await byName.get("workspace__list_files")!.execute({});
+				expect(JSON.parse(list.text)).toEqual(["output/slides/slide-01.html"]);
+
+				const escape = await byName.get("workspace__write_file")!.execute({
+					path: "../outside.html",
+					content: "nope",
+				});
+				expect(escape.ok).toBe(false);
+				expect(escape.text).toContain("não permitido");
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
 });
