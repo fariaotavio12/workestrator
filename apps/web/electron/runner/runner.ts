@@ -180,7 +180,16 @@ export const buildExecutorPlan = (
 
 // Fase B (M9): execução real. Pasta de trabalho fixa e escopada — só onde o comando *começa*,
 // não é sandbox de verdade (um Bash pode navegar pra fora). Só ligar `canExecute` em agent confiável.
-const WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+
+/**
+ * Define a raiz persistente usada pelo runner. O Electron chama isto depois de `app.whenReady()`,
+ * quando `app.getPath("userData")` já está disponível. Manter a configuração injetável evita que o
+ * módulo do runner dependa de Electron e deixa os handlers testáveis em Node puro.
+ */
+export const configureRunnerWorkspace = (workspaceDir: string): void => {
+	WORKSPACE_DIR = path.resolve(workspaceDir);
+};
 const SCRIPTS_SUBDIR = "scripts";
 /** Snapshots por run em `.runs/<runId>` — preservados pelo reset; servem o preview do histórico. */
 const RUNS_SUBDIR = ".runs";
@@ -1175,6 +1184,18 @@ export const callOpenAiCompat = async (
 		if (turn.reasoning) lastReasoning = turn.reasoning;
 
 		if (turn.toolCalls.length === 0) {
+			const narratedTool =
+				toolDefinitions.length > 0 && /(?:^|\n)\s*(?:call:|tool_call\b|<tool_call>)/i.test(turn.text);
+			if (narratedTool) {
+				writeSseEvent(res, "error", {
+					code: "unknown",
+					message:
+						`O modelo "${model}" descreveu uma chamada de ferramenta como texto, mas não enviou ` +
+						"um tool_call executável. Nenhum arquivo foi criado. Use um modelo/chat template com function calling nativo.",
+				});
+				res.end();
+				return;
+			}
 			output = turn.text;
 			break;
 		}

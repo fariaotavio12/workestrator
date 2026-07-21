@@ -84,6 +84,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	});
 
 	const [scriptIds, setScriptIds] = useState<string[]>(agent?.scriptIds ?? []);
+	const [canExecute, setCanExecute] = useState(agent?.canExecute ?? false);
 	const [knowledgeCollectionIds, setKnowledgeCollectionIds] = useState<string[]>(agent?.knowledgeCollectionIds ?? []);
 	const [requiresCheckpoint, setRequiresCheckpoint] = useState(agent?.requiresCheckpoint ?? false);
 	const [requiresCheckpointAfter, setRequiresCheckpointAfter] = useState(agent?.requiresCheckpointAfter ?? false);
@@ -116,6 +117,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	const addScript = (script: Script) => {
 		if (scriptIds.includes(script.id)) return;
 		setScriptIds((prev) => [...prev, script.id]);
+		setCanExecute(true);
 	};
 
 	const addCustomScript = async () => {
@@ -132,6 +134,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 				args: customArgs.trim() ? customArgs.trim().split(/\s+/) : [],
 			});
 			setScriptIds((prev) => [...prev, script.id]);
+			setCanExecute(true);
 			setCustomName("");
 			setCustomCommand("");
 			setCustomArgs("");
@@ -147,9 +150,6 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	// perder o que já foi preenchido no agent) — anexa automaticamente, como o "criar comando" rápido faz.
 	// O wizard já se fecha sozinho (`onOpenChange(false)`) depois de salvar.
 	const handleScriptSaved = (script: Script) => addScript(script);
-
-	// Scripts anexados já implicam execução real - não há estado "só anexado mas não executa".
-	const canExecute = scriptIds.length > 0;
 
 	const applyTemplate = (templateId: string) => {
 		const template = PROMPT_TEMPLATES.find((item) => item.id === templateId);
@@ -349,6 +349,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		},
 		actions: {
 			setKnowledgeCollectionIds,
+			setCanExecute,
 			setRequiresCheckpoint,
 			setRequiresCheckpointAfter,
 			setCustomName,
