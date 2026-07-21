@@ -27,7 +27,7 @@ export type AgentStatus = "idle" | "working" | "done" | "checkpoint";
  * (claude-cli) conseguem resolver `path`; providers remotos não têm acesso ao disco.
  * `kind: "http"` é um request declarativo a uma API qualquer; `kind: "mcp"` referencia um servidor
  * MCP (stdio local ou HTTP remoto) — o runner escreve a entrada em `.mcp.json`/`--mcp-config` da
- * Claude CLI; `kind: "connector"` é um MCP gateway de terceiro (Composio/Zapier/n8n/youtube).
+ * Claude CLI; `kind: "connector"` é um MCP gateway de terceiro/local (Composio/Zapier/n8n/youtube/instagram).
  */
 export type ScriptKind = "command" | "inline" | "file" | "http" | "mcp" | "connector";
 
@@ -35,7 +35,7 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type McpTransport = "stdio" | "http";
 
-export type ConnectorProvider = "composio" | "zapier" | "n8n" | "youtube";
+export type ConnectorProvider = "composio" | "zapier" | "n8n" | "youtube" | "instagram";
 
 export type Script = {
 	id: string;
@@ -337,4 +337,3 @@ export type RunRecord = {
 	/** Arquivos gerados/alterados, copiados para `.runs/<id>` ao final do run. Ausente em runs antigos/sem arquivos. */
 	files?: RunFile[] | null;
 };
-

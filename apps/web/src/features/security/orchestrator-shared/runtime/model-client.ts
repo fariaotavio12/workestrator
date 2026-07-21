@@ -17,6 +17,15 @@ declare global {
 			baseUrl: string;
 			token: string;
 			selectPath: () => Promise<string | null>;
+			savePreviewFile?: (input: {
+				rootId: string;
+				relativePath: string;
+				suggestedName: string;
+			}) => Promise<{ saved: boolean; path?: string }>;
+			savePreviewArchive?: (input: {
+				rootId: string;
+				suggestedName: string;
+			}) => Promise<{ saved: boolean; path?: string }>;
 			/** Ausente no navegador (`vite dev` fora do Electron) — só o app empacotado/dev do Electron injeta isso. */
 			connectOAuth?: (input: OAuthConnectInput) => Promise<OAuthConnectResult>;
 			/** Cacheia/limpa o token de sessão em disco pro MCP server externo usar sozinho (ver session-token-cache). */
@@ -58,7 +67,7 @@ export type ScriptPayload = {
 	url?: string;
 	env?: Record<string, string>;
 	toolAllowlist?: string[];
-	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube";
+	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube" | "instagram";
 	config?: string;
 	authRef?: string;
 };
@@ -251,7 +260,7 @@ export type PreviewFileEntry = { path: string; ext: string; isImage: boolean; si
 export const previewAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
 
 /** Execucoes reais dependem do runner local do Electron; na web a area privada e configuracao/consulta. */
-export const runnerAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
+export const runnerAvailable = (): boolean => typeof window !== "undefined" && Boolean(window.__ORCH_API__?.baseUrl);
 
 /**
  * `true` quando existe alguém pra atender a chamada de execução de um passo de agent: o servidor local
@@ -354,6 +363,27 @@ export const buildPreviewUrl = (rootId: string, relPath: string): string => {
 		.map((segment) => encodeURIComponent(segment))
 		.join("/");
 	return `${orchApi?.baseUrl ?? ""}/preview/${rootId}/${encoded}${query}`;
+};
+
+export type SavePreviewResult = { saved: boolean; path?: string };
+
+export const savePreviewFile = async (input: {
+	rootId: string;
+	relativePath: string;
+	suggestedName: string;
+}): Promise<SavePreviewResult> => {
+	const save = window.__ORCH_API__?.savePreviewFile;
+	if (!save) throw new Error("Download nativo disponivel apenas no app desktop.");
+	return save(input);
+};
+
+export const savePreviewArchive = async (input: {
+	rootId: string;
+	suggestedName: string;
+}): Promise<SavePreviewResult> => {
+	const save = window.__ORCH_API__?.savePreviewArchive;
+	if (!save) throw new Error("Download nativo disponivel apenas no app desktop.");
+	return save(input);
 };
 
 export type OAuthConnectInput = {

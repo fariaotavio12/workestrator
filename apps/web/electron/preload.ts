@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld("__ORCH_API__", {
 	token: readArg("orch-token"),
 	/** Abre o diálogo nativo do SO; resolve `null` se o usuário cancelar. */
 	selectPath: (): Promise<string | null> => ipcRenderer.invoke("dialog:select-path"),
+	savePreviewFile: (input: {
+		rootId: string;
+		relativePath: string;
+		suggestedName: string;
+	}): Promise<{ saved: boolean; path?: string }> => ipcRenderer.invoke("files:save-preview-file", input),
+	savePreviewArchive: (input: { rootId: string; suggestedName: string }): Promise<{ saved: boolean; path?: string }> =>
+		ipcRenderer.invoke("files:save-preview-archive", input),
 	/** Botão "Conectar" do catálogo de conectores — abre a janela de autorização OAuth (ver oauth-flow.ts). */
 	connectOAuth: (input: {
 		authUrl: string;
@@ -33,12 +40,14 @@ contextBridge.exposeInMainWorld("__ORCH_API__", {
 	updates: {
 		check: (): Promise<void> => ipcRenderer.invoke("updater:check"),
 		install: (): Promise<void> => ipcRenderer.invoke("updater:install"),
-		onStatus: (callback: (payload: {
-			status: "checking" | "available" | "not_available" | "download_progress" | "downloaded" | "error";
-			version?: string;
-			percent?: number;
-			message?: string;
-		}) => void): (() => void) => {
+		onStatus: (
+			callback: (payload: {
+				status: "checking" | "available" | "not_available" | "download_progress" | "downloaded" | "error";
+				version?: string;
+				percent?: number;
+				message?: string;
+			}) => void,
+		): (() => void) => {
 			const listener = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]) =>
 				callback(payload);
 			ipcRenderer.on("updater:status", listener);

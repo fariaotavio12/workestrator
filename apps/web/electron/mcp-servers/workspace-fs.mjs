@@ -19,6 +19,10 @@ if (!WORKSPACE_DIR) {
 	process.exit(1);
 }
 
+// O build instala o Chromium junto de `playwright-core` e o desempacota do ASAR. O mesmo valor no
+// runtime faz o Playwright procurar esse browser empacotado, em vez do cache global da máquina.
+process.env.PLAYWRIGHT_BROWSERS_PATH ??= "0";
+
 const textResult = (text) => ({ content: [{ type: "text", text }] });
 const errorResult = (text) => ({ isError: true, content: [{ type: "text", text }] });
 

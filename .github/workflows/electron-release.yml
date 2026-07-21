@@ -119,6 +119,13 @@ jobs:
 
           find release-artifacts -type f -print0 | xargs -0 gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
 
+          WINDOWS_MANIFEST="$(find release-artifacts -type f -name latest.yml -print -quit)"
+          WINDOWS_INSTALLER="$(sed -n 's/^path: //p' "$WINDOWS_MANIFEST" | head -n 1 | tr -d "'\"")"
+          RELEASE_ASSETS="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+
+          printf '%s\n' "$RELEASE_ASSETS" | grep -Fx -- "$WINDOWS_INSTALLER"
+          printf '%s\n' "$RELEASE_ASSETS" | grep -Fx -- "${WINDOWS_INSTALLER}.blockmap"
+
       - name: Download release metadata and assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

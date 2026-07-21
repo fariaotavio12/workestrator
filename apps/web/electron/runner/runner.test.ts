@@ -125,8 +125,31 @@ describe("buildMcpServerEntry", () => {
 	});
 
 	it("resolves a youtube connector into the local youtube.mjs server without requiring config", async () => {
-		const entry = await buildMcpServerEntry(baseScript({ kind: "connector", connectorProvider: "youtube" }), resolveSecret);
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "youtube" }),
+			resolveSecret,
+		);
 		expect(entry).toMatchObject({ args: [expect.stringContaining("youtube.mjs")], env: { ELECTRON_RUN_AS_NODE: "1" } });
+	});
+
+	it("resolves an instagram connector into the local instagram publisher server", async () => {
+		const entry = await buildMcpServerEntry(
+			baseScript({
+				kind: "connector",
+				connectorProvider: "instagram",
+				env: { INSTAGRAM_ACCESS_TOKEN: "$known-secret", INSTAGRAM_USER_ID: "1789", IMGBB_API_KEY: "imgbb" },
+			}),
+			resolveSecret,
+		);
+		expect(entry).toMatchObject({
+			args: [expect.stringContaining("instagram-publisher.mjs")],
+			env: {
+				ELECTRON_RUN_AS_NODE: "1",
+				INSTAGRAM_ACCESS_TOKEN: "resolved-value",
+				INSTAGRAM_USER_ID: "1789",
+				IMGBB_API_KEY: "imgbb",
+			},
+		});
 	});
 
 	it("returns undefined for a composio connector without config.gatewayUrl", async () => {
@@ -154,7 +177,9 @@ describe("buildMcpServerEntry", () => {
 
 	it("ignores command/inline/file kinds — they never become mcp entries", async () => {
 		expect(await buildMcpServerEntry(baseScript({ kind: "command", command: "npm" }), resolveSecret)).toBeUndefined();
-		expect(await buildMcpServerEntry(baseScript({ kind: "inline", content: "echo hi" }), resolveSecret)).toBeUndefined();
+		expect(
+			await buildMcpServerEntry(baseScript({ kind: "inline", content: "echo hi" }), resolveSecret),
+		).toBeUndefined();
 		expect(await buildMcpServerEntry(baseScript({ kind: "file", path: "/tmp/x" }), resolveSecret)).toBeUndefined();
 	});
 
@@ -190,7 +215,9 @@ describe("buildMcpServerEntry", () => {
 			baseScript({ kind: "http", urlTemplate: "https://api.anthropic.com/v1/messages", authRef: "anthropic-key" }),
 			headerResolveSecret,
 		);
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining('"x-api-key":"anthropic-key"') } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining('"x-api-key":"anthropic-key"') },
+		});
 	});
 });
 
@@ -200,10 +227,14 @@ describe("oauth2_refresh token exchange", () => {
 	});
 
 	it("persists a rotated refresh_token back via resolved.rotate() when the provider reissues one", async () => {
-		const fetchMock = vi.fn(async () =>
-			new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600, refresh_token: "rotated-refresh" }), {
-				status: 200,
-			}),
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({ access_token: "new-access-token", expires_in: 3600, refresh_token: "rotated-refresh" }),
+					{
+						status: 200,
+					},
+				),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -221,14 +252,19 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer new-access-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer new-access-token") },
+		});
 		expect(rotate).toHaveBeenCalledWith(JSON.stringify({ refreshToken: "rotated-refresh", clientSecret: "shh" }));
 	});
 
 	it("does not call rotate() when the provider does not reissue a refresh_token", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200 })),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200 }),
+			),
 		);
 
 		const rotate = vi.fn(async () => undefined);
@@ -254,7 +290,10 @@ describe("oauth2_refresh token exchange", () => {
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
-		const fetchAccessToken = vi.fn(async () => ({ accessToken: "backend-access-token", expiresAt: new Date(Date.now() + 3600_000).toISOString() }));
+		const fetchAccessToken = vi.fn(async () => ({
+			accessToken: "backend-access-token",
+			expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+		}));
 		const oauthResolveSecret: SecretResolver = async () => ({
 			id: "oauth-secret-3",
 			value: JSON.stringify({ refreshToken: "old-refresh" }),
@@ -268,7 +307,9 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer backend-access-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer backend-access-token") },
+		});
 		expect(fetchAccessToken).toHaveBeenCalledTimes(1);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -276,7 +317,10 @@ describe("oauth2_refresh token exchange", () => {
 	it("falls back to the local exchange when the backend has no access-token endpoint yet (undefined)", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(JSON.stringify({ access_token: "local-fallback-token", expires_in: 3600 }), { status: 200 })),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ access_token: "local-fallback-token", expires_in: 3600 }), { status: 200 }),
+			),
 		);
 
 		const fetchAccessToken = vi.fn(async () => undefined);
@@ -293,7 +337,9 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer local-fallback-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer local-fallback-token") },
+		});
 		expect(fetchAccessToken).toHaveBeenCalledTimes(1);
 	});
 });
@@ -326,7 +372,10 @@ describe("classifyCliFailure", () => {
 	});
 
 	it("gives an actionable message when the Playwright browser is missing", () => {
-		const result = classifyCliFailure("claude", "browserType.launch: Executable doesn't exist. Run npx playwright install");
+		const result = classifyCliFailure(
+			"claude",
+			"browserType.launch: Executable doesn't exist. Run npx playwright install",
+		);
 		expect(result.message).toContain("npx playwright install chromium");
 	});
 
@@ -422,7 +471,10 @@ describe("callOpenAiCompat tool loop", () => {
 
 		expect(execute).toHaveBeenCalledWith({ variables: { query: "concursos TI" } });
 		expect(events.find((e) => e.event === "tool_use")?.data).toMatchObject({ name: "buscar" });
-		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true, detail: "resultado da busca" });
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({
+			ok: true,
+			detail: "resultado da busca",
+		});
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "Achei 2 editais." });
 	});
 
@@ -505,7 +557,12 @@ describe("callOpenAiCompat tool loop", () => {
 			new Response(
 				JSON.stringify({
 					choices: [
-						{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "buscar", arguments: "{}" } }] } },
+						{
+							message: {
+								content: null,
+								tool_calls: [{ id: "c1", type: "function", function: { name: "buscar", arguments: "{}" } }],
+							},
+						},
 					],
 				}),
 				{ status: 200, headers: { "content-type": "application/json" } },
@@ -525,7 +582,7 @@ describe("callOpenAiCompat tool loop", () => {
 	// forma inconsistente — observado ao vivo num squad real: "write_file" (sem o prefixo do servidor
 	// MCP) e "workspace.list_files" (ponto em vez de "__"). Sem tolerar isso, a tool nunca executava e o
 	// agent ficava perguntando ao usuário em vez de gravar/ler o arquivo de verdade.
-	it("resolves a tool call missing the MCP server prefix (e.g. \"write_file\" for \"workspace__write_file\")", async () => {
+	it('resolves a tool call missing the MCP server prefix (e.g. "write_file" for "workspace__write_file")', async () => {
 		mockChatCalls([
 			sseResponse(toolCallDeltas("write_file", '{"path":"a.html","content":"<html></html>"}')),
 			sseResponse([{ content: "final" }]),
@@ -539,7 +596,7 @@ describe("callOpenAiCompat tool loop", () => {
 		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true });
 	});
 
-	it("resolves a tool call with a dot instead of the \"__\" separator", async () => {
+	it('resolves a tool call with a dot instead of the "__" separator', async () => {
 		mockChatCalls([sseResponse(toolCallDeltas("workspace.list_files", "{}")), sseResponse([{ content: "final" }])]);
 		const execute = vi.fn().mockResolvedValue({ ok: true, text: "[]" });
 		const { res } = fakeResponse();
@@ -666,7 +723,7 @@ describe("workspace-fs MCP server (built-in filesystem tool)", () => {
 		}
 	}, 20_000);
 
-	it("accepts \"file\"/\"text\" as aliases for write_file's path/content parameters", async () => {
+	it('accepts "file"/"text" as aliases for write_file\'s path/content parameters', async () => {
 		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-alias2-"));
 		const taken = new Set<string>();
 		try {

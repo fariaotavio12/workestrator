@@ -5,7 +5,13 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { autoUpdater } from "electron-updater";
 
 import { runOAuthAuthorizationCodeFlow } from "./oauth-flow";
-import type { ResolvedSecret, SecretCache } from "./runner/runner";
+import {
+	configureRunnerWorkspace,
+	copyPreviewFileTo,
+	savePreviewRootZipTo,
+	type ResolvedSecret,
+	type SecretCache,
+} from "./runner/runner";
 import { startLocalRunnerServer } from "./runner/server";
 import { clearSessionToken, writeSessionToken } from "./session-token-cache";
 import { getSecretValue, isVaultAvailable, setSecretValue } from "./secrets-vault";
@@ -30,19 +36,27 @@ const setupAutoUpdater = (): void => {
 	autoUpdater.autoInstallOnAppQuit = true;
 
 	autoUpdater.on("checking-for-update", () => sendUpdateStatus({ status: "checking" }));
-	autoUpdater.on("update-available", (info) =>
-		sendUpdateStatus({ status: "available", version: info.version }),
-	);
+	autoUpdater.on("update-available", (info) => sendUpdateStatus({ status: "available", version: info.version }));
 	autoUpdater.on("update-not-available", (info) =>
 		sendUpdateStatus({ status: "not_available", version: info.version }),
 	);
 	autoUpdater.on("download-progress", (progress) =>
 		sendUpdateStatus({ status: "download_progress", percent: progress.percent }),
 	);
-	autoUpdater.on("update-downloaded", (info) =>
-		sendUpdateStatus({ status: "downloaded", version: info.version }),
-	);
+	autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ status: "downloaded", version: info.version }));
 	autoUpdater.on("error", (error) => sendUpdateStatus({ status: "error", message: error.message }));
+};
+
+const sanitizeSuggestedFileName = (value: string, fallback: string): string => {
+	const withoutControlChars = Array.from(value)
+		.map((char) => (char.charCodeAt(0) < 32 ? "-" : char))
+		.join("");
+	const cleaned = withoutControlChars
+		.trim()
+		.replace(/[<>:"/\\|?*]+/g, "-")
+		.replace(/\s+/g, " ")
+		.replace(/^\.+|\.+$/g, "");
+	return cleaned || fallback;
 };
 
 /**
@@ -85,6 +99,7 @@ const fixPath = (): void => {
 };
 
 const createWindow = async (): Promise<void> => {
+	configureRunnerWorkspace(path.join(app.getPath("userData"), "runner", "orchestrator-workspace"));
 	const runner = await startLocalRunnerServer(secretCache);
 
 	const win = new BrowserWindow({
@@ -114,6 +129,42 @@ ipcMain.handle("dialog:select-path", async () => {
 	if (result.canceled || result.filePaths.length === 0) return null;
 	return result.filePaths[0];
 });
+
+ipcMain.handle(
+	"files:save-preview-file",
+	async (
+		_event,
+		input: { rootId?: string; relativePath?: string; suggestedName?: string },
+	): Promise<{ saved: boolean; path?: string }> => {
+		const relativePath = input.relativePath ?? "";
+		const suggestedName = sanitizeSuggestedFileName(input.suggestedName ?? path.basename(relativePath), "arquivo");
+		const result = await dialog.showSaveDialog({
+			defaultPath: suggestedName,
+			properties: ["showOverwriteConfirmation"],
+		});
+		if (result.canceled || !result.filePath) return { saved: false };
+		copyPreviewFileTo(input.rootId ?? "", relativePath, result.filePath);
+		return { saved: true, path: result.filePath };
+	},
+);
+
+ipcMain.handle(
+	"files:save-preview-archive",
+	async (_event, input: { rootId?: string; suggestedName?: string }): Promise<{ saved: boolean; path?: string }> => {
+		const suggestedName = sanitizeSuggestedFileName(
+			input.suggestedName ?? "arquivos-do-run.zip",
+			"arquivos-do-run.zip",
+		);
+		const result = await dialog.showSaveDialog({
+			defaultPath: suggestedName.toLowerCase().endsWith(".zip") ? suggestedName : `${suggestedName}.zip`,
+			filters: [{ name: "ZIP", extensions: ["zip"] }],
+			properties: ["showOverwriteConfirmation"],
+		});
+		if (result.canceled || !result.filePath) return { saved: false };
+		savePreviewRootZipTo(input.rootId ?? "", result.filePath);
+		return { saved: true, path: result.filePath };
+	},
+);
 
 /** Botão "Conectar" do catálogo de conectores — ver `oauth-flow.ts`. Só existe dentro do Electron:
  * abrir uma janela nativa e subir um servidor loopback não é algo que o navegador consiga fazer. */
