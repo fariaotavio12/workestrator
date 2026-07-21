@@ -56,8 +56,14 @@ export const SpeechBubble = (props: Props) => {
 				</span>
 			)}
 
-			<div className="max-h-24 overflow-hidden text-sm leading-snug [&_.text-sm]:text-inherit">
-				<Markdown content={bubble.text} className="text-foreground [&_p]:my-0" />
+			<div
+				className="max-h-32 overflow-hidden text-sm leading-snug [&_.text-sm]:text-inherit"
+				style={{ maskImage: "linear-gradient(to bottom, black 75%, transparent 100%)" }}
+			>
+				<Markdown
+					content={bubble.text}
+					className="text-foreground [&_h1]:my-0 [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:my-0 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:my-0 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:my-0 [&_ol]:my-1 [&_p]:my-0 [&_ul]:my-1"
+				/>
 				{bubble.streaming && (
 					<span className="bg-foreground ml-0.5 inline-block h-3.5 w-1 animate-pulse align-middle" />
 				)}

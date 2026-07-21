@@ -79,12 +79,10 @@ export const useOfficeChoreography = (
 					toolLabel: runningTool ? activityLabel(runningTool) : undefined,
 					streaming: Boolean(runtime.streamingText),
 				};
-			} else if (status === "done") {
-				const lastEvent = lastAgentEventFor(runtime.events, seat.id);
-				if (lastEvent?.content) {
-					bubble = { tone: "success", kind: "speech", text: lastEvent.content };
-				}
 			}
+			// Sem bolha para status "done": o rótulo do nome já diz "Concluído", e mostrar o output inteiro
+			// de TODO agente já finalizado ao mesmo tempo (não só o que está falando agora) lota a cena de
+			// balões de 240px sobrepostos — o conteúdo completo continua acessível ao clicar no assento.
 
 			return { seatId: seat.id, agent: view?.agent ?? null, status, bubble };
 		});
