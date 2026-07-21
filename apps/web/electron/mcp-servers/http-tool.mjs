@@ -13,9 +13,18 @@ import { z } from "zod";
 /** @type {HttpToolDef[]} */
 const toolDefs = JSON.parse(process.env.WORKESTRATOR_HTTP_TOOL_CONFIG ?? "[]");
 
-/** Substitui `{{variavel}}` na URL pelos valores informados na chamada da tool. */
+/** Substitui `{{variavel}}` num template pelos valores informados na chamada da tool. */
 const applyUrlTemplate = (template, variables) =>
 	template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key) => (variables?.[key] != null ? String(variables[key]) : ""));
+
+/** Aplica os `{{placeholders}}` nos valores de header (ex.: `Authorization: Bearer {{oauth}}`). */
+const applyHeaderTemplate = (headers, variables) =>
+	Object.fromEntries(Object.entries(headers ?? {}).map(([key, value]) => [key, applyUrlTemplate(value, variables)]));
+
+/** Placeholders `{{x}}` declarados no template. */
+const extractPlaceholders = (template) => [
+	...new Set([...String(template ?? "").matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1])),
+];
 
 /** Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa. */
 const extractPath = (value, dotPath) => {
@@ -28,17 +37,22 @@ const extractPath = (value, dotPath) => {
 const server = new McpServer({ name: "workestrator-http-tool", version: "1.0.0" });
 
 for (const def of toolDefs) {
+	const placeholders = [
+		...new Set([...extractPlaceholders(def.urlTemplate), ...Object.values(def.headers ?? {}).flatMap(extractPlaceholders)]),
+	];
+	const placeholderHint = placeholders.length > 0 ? ` Preencha variables: ${placeholders.join(", ")}.` : "";
 	server.registerTool(
 		def.name,
 		{
-			description: def.description
-				? `${def.description} (${def.method} ${def.urlTemplate})`
-				: `Request declarativo: ${def.method} ${def.urlTemplate}`,
+			description:
+				(def.description
+					? `${def.description} (${def.method} ${def.urlTemplate})`
+					: `Request declarativo: ${def.method} ${def.urlTemplate}`) + placeholderHint,
 			inputSchema: {
 				variables: z
 					.record(z.string(), z.string())
 					.optional()
-					.describe("Valores para substituir {{placeholders}} na URL."),
+					.describe(`Valores para substituir {{placeholders}} na URL e nos headers.${placeholderHint}`),
 				body: z.unknown().optional().describe("Corpo da requisição (JSON), quando o método aceitar body."),
 			},
 		},
@@ -47,7 +61,7 @@ for (const def of toolDefs) {
 			try {
 				const res = await fetch(url, {
 					method: def.method || "GET",
-					headers: { "Content-Type": "application/json", ...(def.headers ?? {}) },
+					headers: { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) },
 					body: body !== undefined && def.method !== "GET" ? JSON.stringify(body) : undefined,
 				});
 				const raw = await res.text();

@@ -140,6 +140,35 @@ describe("buildHttpTool", () => {
 		expect(params.properties.variables.properties).toHaveProperty("query");
 	});
 
+	it("declares placeholders found in headers so the model fills them (e.g. Authorization: Bearer {{oauth}})", () => {
+		const tool = buildHttpTool(
+			httpDef({ urlTemplate: "https://api/chamados", headers: { Authorization: "Bearer {{oauth}}" } }),
+			"chamados",
+		);
+		const params = tool.definition.function.parameters as {
+			properties: { variables: { required: string[]; properties: Record<string, unknown> } };
+		};
+		expect(params.properties.variables.required).toEqual(["oauth"]);
+		expect(params.properties.variables.properties).toHaveProperty("oauth");
+	});
+
+	it("substitutes header placeholders at call time without url-encoding the token", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+		const tool = buildHttpTool(
+			httpDef({ urlTemplate: "https://api/chamados", headers: { Authorization: "Bearer {{oauth}}" } }),
+			"chamados",
+		);
+
+		await tool.execute({ variables: { oauth: "abc.def/ghi+" } });
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://api/chamados",
+			expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer abc.def/ghi+" }) }),
+		);
+	});
+
 	it("omits the body property for GET", () => {
 		const tool = buildHttpTool(httpDef(), "buscar");
 		const params = tool.definition.function.parameters as { properties: Record<string, unknown> };

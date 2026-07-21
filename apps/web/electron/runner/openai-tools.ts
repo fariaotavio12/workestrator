@@ -176,11 +176,27 @@ export type HttpToolDef = {
 	responseMap?: string;
 };
 
-/** Substitui `{{variavel}}` na URL pelos valores informados na chamada da tool. */
+/**
+ * Substitui `{{variavel}}` num template pelos valores informados na chamada da tool. Em URL os
+ * valores vão url-encoded (uma query com espaço/`&` quebraria a URL); em header vão crus — um
+ * `Bearer <token>` url-encoded viraria um token inválido.
+ */
+const substituteTemplate = (template: string, variables: Record<string, unknown> | undefined, encode: boolean): string =>
+	template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) => {
+		const value = variables?.[key];
+		if (value == null) return "";
+		return encode ? encodeURIComponent(String(value)) : String(value);
+	});
+
 export const applyUrlTemplate = (template: string, variables: Record<string, unknown> | undefined): string =>
-	template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) =>
-		variables?.[key] != null ? encodeURIComponent(String(variables[key])) : "",
-	);
+	substituteTemplate(template, variables, true);
+
+/** Aplica os `{{placeholders}}` nos valores de header (sem url-encode). */
+export const applyHeaderTemplate = (
+	headers: Record<string, string> | undefined,
+	variables: Record<string, unknown> | undefined,
+): Record<string, string> =>
+	Object.fromEntries(Object.entries(headers ?? {}).map(([key, value]) => [key, substituteTemplate(value, variables, false)]));
 
 /**
  * Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa.
@@ -213,7 +229,12 @@ export const extractPlaceholders = (template: string): string[] => [
  * modelo pequeno chamar a tool com o objeto vazio e receber uma URL sem o termo de busca.
  */
 export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
-	const placeholders = extractPlaceholders(def.urlTemplate);
+	const placeholders = [
+		...new Set([
+			...extractPlaceholders(def.urlTemplate),
+			...Object.values(def.headers ?? {}).flatMap(extractPlaceholders),
+		]),
+	];
 	const acceptsBody = def.method !== "GET" && def.method !== "DELETE";
 
 	const properties: Record<string, unknown> = {};
@@ -249,7 +270,7 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 			try {
 				const res = await fetch(url, {
 					method: def.method || "GET",
-					headers: { "Content-Type": "application/json", ...(def.headers ?? {}) },
+					headers: { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) },
 					body: acceptsBody && args.body !== undefined ? JSON.stringify(args.body) : undefined,
 				});
 				const raw = await res.text();
