@@ -1615,6 +1615,15 @@ export const handleRunStep = async (
 	const isCustomWorkspace = workspaceDir !== WORKSPACE_DIR;
 	const resolveSecret = createBackendSecretResolver(backendBaseUrl, backendToken, cache);
 
+	// Sem isso, agents que precisam montar `file://` ou caminhos de arquivo (ex.: Playwright navegando
+	// pro HTML de um slide) têm que "adivinhar" o caminho absoluto da workspace no próprio systemPrompt —
+	// e como o agent nunca sabe o caminho real da máquina do usuário, ele aluciona algo genérico (ex.:
+	// "/home/user/workspace") que não existe. Aqui é o único lugar em que o caminho real já é conhecido
+	// com certeza, então injetamos automaticamente — nenhum agent precisa mais descrever localização.
+	const effectiveSystemPrompt = canExecute
+		? `${systemPrompt}\n\nDiretório de trabalho absoluto desta execução: ${workspaceDir}\nSempre que precisar montar um caminho de arquivo ou uma URL file://, use ESSE caminho absoluto exato como base — nunca invente, abrevie ou assuma outro caminho (ex.: nunca use "/home/user/workspace" ou qualquer placeholder genérico).`
+		: systemPrompt;
+
 	const isHttpCompat = providerKind === "openai" || providerKind === "openai-compat";
 
 	if (!LOCAL_CLI_PROVIDERS.has(providerKind) && !isHttpCompat) {
@@ -1648,7 +1657,14 @@ export const handleRunStep = async (
 		const resolved = await resolveOpenAiTools(scripts, resolveSecret);
 		try {
 			await callOpenAiCompat(
-				{ baseUrl: resolvedBaseUrl, apiKeyRef, model, systemPrompt, prompt, tools: resolved.tools },
+				{
+					baseUrl: resolvedBaseUrl,
+					apiKeyRef,
+					model,
+					systemPrompt: effectiveSystemPrompt,
+					prompt,
+					tools: resolved.tools,
+				},
 				resolveSecret,
 				res,
 			);
@@ -1684,7 +1700,7 @@ export const handleRunStep = async (
 	const plan = buildExecutorPlan(
 		providerKind,
 		effectiveModel,
-		systemPrompt,
+		effectiveSystemPrompt,
 		prompt,
 		canExecute,
 		mcpResolution,

@@ -68,12 +68,12 @@ let desktopRequiredNotified = false;
  * Decide se este ambiente pode executar ESTE squad.
  *
  * O app desktop roda qualquer squad (tem runner local com acesso a processo). Fora dele, o run ainda
- * é possível quando as duas condições valem: existe quem atenda `/api/run-step`
- * (`runStepEndpointAvailable`) e o squad é 100% de providers de API (`isApiOnlySquad`) — aí toda a
- * execução é request HTTP e nada depende de binário instalado na máquina.
+ * é possível quando o squad é 100% de providers de API (`isApiOnlySquad`) — o backend Kotlin serve
+ * `POST /run-step` (`RunStepController`) em qualquer ambiente, dev ou publicado, então toda a
+ * execução vira request HTTP e nada depende de binário instalado na máquina.
  *
- * Squad com provider de CLI (claude/codex/gpt) continua exigindo o desktop, mesmo que o endpoint
- * responda: o binário precisa existir e estar autenticado do lado de quem executa.
+ * Squad com provider de CLI (claude/codex/gpt) continua exigindo o desktop: o binário precisa existir
+ * e estar autenticado do lado de quem executa, e isso o backend não tem como fazer por ele.
  */
 const requireRunner = (squadId: string): boolean => {
 	if (runnerAvailable()) return true;
@@ -87,9 +87,7 @@ const requireRunner = (squadId: string): boolean => {
 		desktopRequiredNotified = true;
 		notify.warning(
 			"Execução disponível no app desktop",
-			apiOnly
-				? "Este squad roda por API, mas esta versão web não tem executor. Baixe o Workestrator desktop."
-				: "Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador.",
+			"Este squad usa provider de CLI local (Claude/Codex/GPT), que só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador.",
 			{
 				label: "Baixar desktop",
 				onClick: () => {

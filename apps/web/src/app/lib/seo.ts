@@ -32,27 +32,27 @@ const routeMetadata: Record<string, PageMetadata> = {
 	},
 	"/precos": {
 		title: `Preços - ${SITE_NAME}`,
-		description: "Página de preços pronta para adaptação ao modelo comercial do produto.",
-		keywords: ["preços", "planos", "assinatura", "template"],
+		description: "Planos para coordenar squads de agentes, automações e execuções no Workestrator.",
+		keywords: ["preços", "planos", "assinatura", "workestrator"],
 		canonical: `${SITE_URL}/precos`,
 		robots: "index, follow",
 	},
 	"/download": {
 		title: `Download - ${SITE_NAME}`,
-		description: "Página pública para disponibilizar downloads ou materiais do produto.",
-		keywords: ["download", "web app", "template"],
+		description: "Acesse builds, materiais e recursos para usar o Workestrator no seu ambiente.",
+		keywords: ["download", "workestrator", "agentes de ia"],
 		canonical: `${SITE_URL}/download`,
 		robots: "index, follow",
 	},
 	"/politica-de-privacidade": {
 		title: `Política de Privacidade - ${SITE_NAME}`,
-		description: "Modelo de política de privacidade para adaptar ao produto final.",
+		description: "Como o Workestrator trata dados de conta, configurações, agentes e execuções.",
 		canonical: `${SITE_URL}/politica-de-privacidade`,
 		robots: "index, follow",
 	},
 	"/help-center/introducao": {
 		title: `Central de Ajuda - ${SITE_NAME}`,
-		description: "Base inicial para guias, tutoriais e documentação do produto.",
+		description: "Guias para configurar squads, agentes, ferramentas e execuções no Workestrator.",
 		canonical: `${SITE_URL}/help-center/introducao`,
 		robots: "index, follow",
 	},
@@ -189,7 +189,7 @@ export const resolveMetadataByPath = (pathname: string): PageMetadata => {
 	if (decodedPathname.startsWith("/help-center/") && !routeMetadata[decodedPathname]) {
 		return {
 			title: `Central de Ajuda - ${SITE_NAME}`,
-			description: "Guias e tutoriais para adaptar a central de ajuda ao produto final.",
+			description: "Guias e tutoriais para operar squads, agentes e ferramentas no Workestrator.",
 			canonical: `${SITE_URL}${pathname}`,
 			robots: "index, follow",
 		};
