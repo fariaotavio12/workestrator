@@ -52,6 +52,7 @@ const squad = (overrides: Partial<Squad> = {}): Squad => ({
 		pendingQuestion: null,
 		pendingQaHistory: [],
 		liveActivity: [],
+		toolLog: [],
 		liveTerminal: "",
 		coordinatorThinking: false,
 		stepStartedAt: null,

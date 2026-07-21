@@ -27,6 +27,7 @@ import type {
 	RuntimeSnapshot,
 	Script,
 	SquadRuntimeStatus,
+	ToolCallRecord,
 } from "../types";
 import { searchKnowledgeMulti } from "@/features/security/knowledge/api";
 import { AGENT_TURN_INSTRUCTIONS, parseAgentTurn } from "./agent-turn";
@@ -323,6 +324,36 @@ const updateLiveActivity = (squadId: string, id: string, patch: Partial<LiveActi
 
 const appendLiveTerminal = (squadId: string, chunk: string): void => {
 	patchRuntime(squadId, (runtime) => ({ ...runtime, liveTerminal: runtime.liveTerminal + chunk }));
+};
+
+/** Registra uma chamada de ferramenta no log do run inteiro (painel de debug) — não limpa por passo. */
+const pushToolCall = (squadId: string, record: ToolCallRecord): void => {
+	patchRuntime(squadId, (runtime) => ({ ...runtime, toolLog: [...runtime.toolLog, record] }));
+};
+
+/** Fecha o registro de uma chamada pelo `id` quando o resultado chega (output/status/fim). */
+const closeToolCall = (squadId: string, id: string, patch: Partial<ToolCallRecord>): void => {
+	patchRuntime(squadId, (runtime) => ({
+		...runtime,
+		toolLog: runtime.toolLog.map((call) => (call.id === id ? { ...call, ...patch } : call)),
+	}));
+};
+
+/** Fecha o último registro ainda "running" — resultado sem id pareável (provider em modo texto). */
+const closeLastRunningToolCall = (squadId: string, patch: Partial<ToolCallRecord>): void => {
+	patchRuntime(squadId, (runtime) => {
+		let idx = -1;
+		for (let i = runtime.toolLog.length - 1; i >= 0; i--) {
+			if (runtime.toolLog[i].status === "running") {
+				idx = i;
+				break;
+			}
+		}
+		if (idx === -1) return runtime;
+		const toolLog = [...runtime.toolLog];
+		toolLog[idx] = { ...toolLog[idx], ...patch };
+		return { ...runtime, toolLog };
+	});
 };
 
 /** Liga/desliga "coordenador decidindo" — move o foco no mapa do run e mata o buraco de percepção. */
@@ -705,16 +736,31 @@ const runOrchestratedAgentStep = (
 					onActivity: (activity) => {
 						if (activity.kind === "tool" && activity.status === "running") {
 							// Início de uma ferramenta — item novo, status "running" (fecha no tool_result pelo id).
+							const id = activity.id ?? newId();
 							pushLiveActivity(squadId, {
-								id: activity.id ?? newId(),
+								id,
 								kind: "tool",
 								toolName: activity.toolName,
 								detail: activity.detail,
 								status: "running",
 							});
+							pushToolCall(squadId, {
+								id,
+								seatId,
+								agentId: agent.id,
+								toolName: activity.toolName ?? "ferramenta",
+								input: activity.detail,
+								status: "running",
+								startedAt: nowIso(),
+							});
 						} else if (activity.id) {
 							// Resultado de uma ferramenta já listada — fecha o status pelo id.
 							updateLiveActivity(squadId, activity.id, { status: activity.status ?? "done" });
+							closeToolCall(squadId, activity.id, {
+								output: truncate(activity.detail ?? "", 8000),
+								status: activity.status ?? "done",
+								endedAt: nowIso(),
+							});
 						} else {
 							// Resultado sem id pareável (provider em modo texto) — vira uma linha de saída solta.
 							pushLiveActivity(squadId, {
@@ -722,6 +768,11 @@ const runOrchestratedAgentStep = (
 								kind: "output",
 								detail: activity.detail,
 								status: activity.status ?? "done",
+							});
+							closeLastRunningToolCall(squadId, {
+								output: truncate(activity.detail ?? "", 8000),
+								status: activity.status ?? "done",
+								endedAt: nowIso(),
 							});
 						}
 					},

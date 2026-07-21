@@ -18,6 +18,7 @@ export const idleRuntime = (): Runtime => ({
 	pendingQuestion: null,
 	pendingQaHistory: [],
 	liveActivity: [],
+	toolLog: [],
 	liveTerminal: "",
 	coordinatorThinking: false,
 	stepStartedAt: null,

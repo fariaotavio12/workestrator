@@ -63,6 +63,7 @@ const idleRuntime = (): Squad["runtime"] => ({
 	pendingQuestion: null,
 	pendingQaHistory: [],
 	liveActivity: [],
+	toolLog: [],
 	liveTerminal: "",
 	coordinatorThinking: false,
 	stepStartedAt: null,
