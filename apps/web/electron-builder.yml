@@ -20,5 +20,5 @@ asar: true
 publish:
   provider: github
   owner: fariaotavio12
-  repo: front-workestrador
+  repo: workestrator
   releaseType: release
