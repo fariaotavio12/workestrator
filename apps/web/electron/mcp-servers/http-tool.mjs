@@ -26,12 +26,15 @@ const extractPlaceholders = (template) => [
 	...new Set([...String(template ?? "").matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1])),
 ];
 
-/** Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa. */
 const extractPath = (value, dotPath) => {
 	if (!dotPath?.trim()) return value;
-	return dotPath
+	const keys = dotPath
+		.trim()
+		.replace(/^\$/, "")
+		.replace(/\[(\w+)\]/g, ".$1")
 		.split(".")
-		.reduce((acc, key) => (acc != null && typeof acc === "object" ? acc[key] : undefined), value);
+		.filter(Boolean);
+	return keys.reduce((acc, key) => (acc != null && typeof acc === "object" ? acc[key] : undefined), value);
 };
 
 const server = new McpServer({ name: "workestrator-http-tool", version: "1.0.0" });
