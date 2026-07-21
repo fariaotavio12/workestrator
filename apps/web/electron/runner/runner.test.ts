@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -621,6 +621,70 @@ describe("workspace-fs MCP server (built-in filesystem tool)", () => {
 				});
 				expect(escape.ok).toBe(false);
 				expect(escape.text).toContain("não permitido");
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
+
+	// Reproduz ao vivo: o modelo chamou `workspace__list_files{directory:"output/slides/"}` — "directory"
+	// não existia no schema antigo (só "path"), então era descartado silenciosamente pela validação e a
+	// tool caía no default (raiz inteira do workspace) sem nenhum erro visível.
+	it("accepts common aliases for the directory/path parameter (dir, directory, folder) instead of silently ignoring them", async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-alias-"));
+		const taken = new Set<string>();
+		try {
+			mkdirSync(path.join(workspaceDir, "output", "slides"), { recursive: true });
+			writeFileSync(path.join(workspaceDir, "output", "slides", "slide-01.html"), "<html></html>");
+			writeFileSync(path.join(workspaceDir, "root-level.txt"), "raiz");
+
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+				const listFiles = byName.get("workspace__list_files")!;
+
+				const viaDirectory = await listFiles.execute({ directory: "output/slides" });
+				expect(JSON.parse(viaDirectory.text)).toEqual(["slide-01.html"]);
+
+				const viaDir = await listFiles.execute({ dir: "output/slides" });
+				expect(JSON.parse(viaDir.text)).toEqual(["slide-01.html"]);
+
+				const viaFolder = await listFiles.execute({ folder: "output/slides" });
+				expect(JSON.parse(viaFolder.text)).toEqual(["slide-01.html"]);
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
+
+	it("accepts \"file\"/\"text\" as aliases for write_file's path/content parameters", async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-alias2-"));
+		const taken = new Set<string>();
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+
+				const write = await byName.get("workspace__write_file")!.execute({ file: "a.html", text: "conteudo" });
+				expect(write.ok).toBe(true);
+				expect(readFileSync(path.join(workspaceDir, "a.html"), "utf-8")).toBe("conteudo");
+
+				const read = await byName.get("workspace__read_file")!.execute({ file: "a.html" });
+				expect(read.text).toBe("conteudo");
 			} finally {
 				await connection.close();
 			}
