@@ -48,8 +48,13 @@ describe("E2E: agent Ollama com tool HTTP anexada", () => {
 				chatCalls++;
 				res.setHeader("content-type", "text/event-stream");
 				if (chatCalls === 1) {
-					// O modelo só consegue pedir a tool se ela chegou no payload — asserção implícita.
-					expect(body.tools).toHaveLength(1);
+					// A tool HTTP e as quatro tools built-in de workspace precisam chegar juntas ao modelo.
+					expect(body.tools).toHaveLength(5);
+					expect(
+						body.tools?.some(
+							(tool) => (tool as { function?: { name?: string } }).function?.name === "buscar-editais",
+						),
+					).toBe(true);
 					const call = { index: 0, id: "call_1", function: { name: "buscar-editais", arguments: '{"variables":{"query":"concursos TI"}}' } };
 					res.end(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [call] } }] })}\n\ndata: [DONE]\n\n`);
 					return;

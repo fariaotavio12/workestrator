@@ -5,7 +5,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { autoUpdater } from "electron-updater";
 
 import { runOAuthAuthorizationCodeFlow } from "./oauth-flow";
-import type { ResolvedSecret, SecretCache } from "./runner/runner";
+import { configureRunnerWorkspace, type ResolvedSecret, type SecretCache } from "./runner/runner";
 import { startLocalRunnerServer } from "./runner/server";
 import { clearSessionToken, writeSessionToken } from "./session-token-cache";
 import { getSecretValue, isVaultAvailable, setSecretValue } from "./secrets-vault";
@@ -85,6 +85,7 @@ const fixPath = (): void => {
 };
 
 const createWindow = async (): Promise<void> => {
+	configureRunnerWorkspace(path.join(app.getPath("userData"), "runner", "orchestrator-workspace"));
 	const runner = await startLocalRunnerServer(secretCache);
 
 	const win = new BrowserWindow({

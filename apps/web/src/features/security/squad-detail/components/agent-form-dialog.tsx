@@ -72,6 +72,7 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 	} = state;
 	const {
 		setKnowledgeCollectionIds,
+		setCanExecute,
 		setRequiresCheckpoint,
 		setRequiresCheckpointAfter,
 		setCustomName,
@@ -184,11 +185,13 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 									accentColor={accentColor}
 									requiresCheckpoint={requiresCheckpoint}
 									requiresCheckpointAfter={requiresCheckpointAfter}
+									canExecute={state.canExecute}
 									errors={errors}
 									register={register}
 									setValue={setValue}
 									setRequiresCheckpoint={setRequiresCheckpoint}
 									setRequiresCheckpointAfter={setRequiresCheckpointAfter}
+									setCanExecute={setCanExecute}
 								/>
 							</TabsContent>
 
