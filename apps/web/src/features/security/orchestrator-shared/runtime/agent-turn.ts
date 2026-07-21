@@ -13,10 +13,25 @@ export const AGENT_TURN_INSTRUCTIONS =
 	'{"type":"question","question":"...","options":["...","..."]} (options é opcional) — nada mais na ' +
 	"resposta nesse caso. Caso contrário, responda normalmente com o resultado do seu trabalho.";
 
+/**
+ * Modelos mais fracos (ex.: locais via Ollama) tendem a envolver o JSON pedido em um code fence de
+ * markdown mesmo quando instruídos a responder só com o objeto — aqui só desembrulha quando a resposta
+ * INTEIRA é um único bloco cercado (`^```...```$`), preservando a regra de que texto solto ao redor
+ * (ex.: um snippet de código no meio de uma explicação) continua não contando como pergunta.
+ */
+const stripWrappingCodeFence = (text: string): string => {
+	const match = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
+	return match ? match[1].trim() : text;
+};
+
 export const parseAgentTurn = (raw: string): AgentTurnResult => {
 	const trimmed = raw.trim();
 	try {
-		const parsed = JSON.parse(trimmed) as { type?: unknown; question?: unknown; options?: unknown };
+		const parsed = JSON.parse(stripWrappingCodeFence(trimmed)) as {
+			type?: unknown;
+			question?: unknown;
+			options?: unknown;
+		};
 		if (parsed.type === "question" && typeof parsed.question === "string" && parsed.question.trim()) {
 			const options = Array.isArray(parsed.options)
 				? parsed.options.filter((o): o is string => typeof o === "string")

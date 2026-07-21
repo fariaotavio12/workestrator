@@ -40,21 +40,21 @@ const NameLabel = ({
 	accentColor: string;
 	spinning?: boolean;
 }) => (
-	<span className="pointer-events-none flex flex-col items-center rounded-md bg-black/35 px-2 py-0.5 backdrop-blur-[1px]">
+	<span className="pointer-events-none flex flex-col items-center gap-px rounded-md bg-black/35 px-1.5 py-0.5 backdrop-blur-[1px]">
 		<span className="flex items-center gap-1">
 			<span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accentColor }} aria-hidden />
-			<Typography variant="caption" as="span" className="max-w-32 truncate font-medium text-white">
+			<Typography variant="caption" as="span" className="max-w-20 truncate text-[10px] leading-tight font-medium text-white">
 				{name}
 			</Typography>
 		</span>
 		<span className="flex items-center gap-1 text-white/75">
 			{spinning && <Loader2 className="size-2.5 shrink-0 animate-spin" />}
-			<Typography variant="caption" as="span" className="max-w-32 truncate">
+			<Typography variant="caption" as="span" className="max-w-20 truncate text-[10px] leading-tight">
 				{sub}
 			</Typography>
 		</span>
 		{model && (
-			<Typography variant="caption" as="span" className="max-w-32 truncate text-white/55">
+			<Typography variant="caption" as="span" className="max-w-20 truncate text-[10px] leading-tight text-white/55">
 				{model}
 			</Typography>
 		)}
@@ -148,10 +148,11 @@ export const OfficeOverlay = ({
 								style={{ left: anchor.x, top: anchor.y - 6 }}
 							>
 								{actor?.bubble && (
-									<div className="pointer-events-auto w-60">
+									<div className="pointer-events-auto w-max min-w-40 max-w-72">
 										<SpeechBubble
 											bubble={actor.bubble}
 											inline
+											className="shadow-lg shadow-black/20 backdrop-blur-sm"
 											onAnswer={onAnswerQuestion}
 											onApproveCheckpoint={onApproveCheckpoint}
 											onRejectCheckpoint={onRejectCheckpoint}
