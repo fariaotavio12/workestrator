@@ -1643,7 +1643,14 @@ export const handleRunStep = async (
 			: { tools: [], close: async () => {} };
 		try {
 			await callOpenAiCompat(
-				{ baseUrl: resolvedBaseUrl, apiKeyRef, model, systemPrompt: effectiveSystemPrompt, prompt, tools: resolved.tools },
+				{
+					baseUrl: resolvedBaseUrl,
+					apiKeyRef,
+					model,
+					systemPrompt: effectiveSystemPrompt,
+					prompt,
+					tools: resolved.tools,
+				},
 				resolveSecret,
 				res,
 			);
