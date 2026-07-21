@@ -1062,6 +1062,37 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 	return { text, reasoning, toolCalls };
 };
 
+/** Reduz um nome de tool a letras/números com "_" como único separador — pra casar variações que
+ * modelos locais mais fracos reproduzem de forma inconsistente (ponto, espaço, hífen, "__" duplo). */
+const normalizeToolName = (name: string): string =>
+	name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+
+/**
+ * Resolve o nome de tool que o modelo chamou contra as tools de verdade registradas. Tools de servers
+ * MCP recebem nome composto `servidor__tool` (`connectMcpTools`) — na prática, modelos locais mais
+ * fracos reproduzem esse nome de forma inconsistente: já vimos `write_file` (sem o prefixo do server)
+ * e `workspace.list_files` (ponto em vez de "__"). Em vez de só falhar e torcer pro modelo se corrigir
+ * sozinho na rodada seguinte (nem sempre acontece antes do teto de iterações — era o que travava o
+ * squad de carrossel), tenta casar por nome normalizado antes de desistir. Só resolve quando a busca
+ * por sufixo é inequívoca (exatamente uma tool bate) — ambiguidade continua caindo no erro explícito.
+ */
+const resolveToolCall = (
+	byName: Map<string, ResolvedTool>,
+	rawName: string,
+): ResolvedTool | undefined => {
+	const exact = byName.get(rawName);
+	if (exact) return exact;
+	const target = normalizeToolName(rawName);
+	const candidates = [...byName.entries()].filter(([name]) => {
+		const normalized = normalizeToolName(name);
+		return normalized === target || normalized.endsWith(`_${target}`);
+	});
+	return candidates.length === 1 ? candidates[0][1] : undefined;
+};
+
 /**
  * Chama um endpoint compatível com a API de chat completions da OpenAI (Ollama, vLLM, LM Studio,
  * groq, a própria OpenAI...) rodando o loop de function calling quando o agent tem ferramentas de
@@ -1151,7 +1182,7 @@ export const callOpenAiCompat = async (
 		messages.push({ role: "assistant", content: turn.text || null, tool_calls: turn.toolCalls });
 
 		for (const call of turn.toolCalls) {
-			const tool = byName.get(call.function.name);
+			const tool = resolveToolCall(byName, call.function.name);
 			writeSseEvent(res, "tool_use", {
 				id: call.id,
 				name: call.function.name,
@@ -1689,7 +1720,7 @@ export const handleRunStep = async (
 		// modelos locais mais fracos tendem a "narrar" que salvaram/renderizaram algo sem de fato chamar
 		// a tool (era exatamente o bug: Slide Author só devolvia o HTML como texto, nunca gravava nada).
 		const openAiSystemPrompt = canExecute
-			? `${effectiveSystemPrompt}\n\nFerramentas de arquivo SEMPRE disponíveis nesta execução — CHAME como tool de verdade, nunca apenas diga em texto que gravou/leu/renderizou algo: "workspace__write_file" (path, content) grava um arquivo; "workspace__read_file" (path) lê um arquivo; "workspace__list_files" (dir?) lista o que já existe de verdade na pasta de trabalho; "workspace__render_slides" (inputDir?, outputDir?) renderiza sozinho todo HTML de output/slides/ em JPEG de output/images/, sem precisar montar URL file:// nem navegar manualmente.`
+			? `${effectiveSystemPrompt}\n\nFerramentas de arquivo SEMPRE disponíveis nesta execução — CHAME como tool de verdade, nunca apenas diga em texto que gravou/leu/renderizou algo: "workspace__write_file" (path, content) grava um arquivo; "workspace__read_file" (path) lê um arquivo; "workspace__list_files" (path?) lista o que já existe de verdade na pasta de trabalho; "workspace__render_slides" (inputDir?, outputDir?) renderiza sozinho todo HTML de output/slides/ em JPEG de output/images/, sem precisar montar URL file:// nem navegar manualmente.`
 			: effectiveSystemPrompt;
 		try {
 			await callOpenAiCompat(
