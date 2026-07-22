@@ -6,7 +6,13 @@ import { genderOf, PICKABLE_CHARACTERS } from "@/features/security/orchestrator-
 import { ACCENT_COLORS } from "@/features/security/orchestrator-shared/data/constants";
 import { PROMPT_TEMPLATES } from "@/features/security/orchestrator-shared/data/prompt-templates";
 import { AgentCallError, callAgentStep } from "@/features/security/orchestrator-shared/runtime/model-client";
-import type { Agent, CharacterName, Script } from "@/features/security/orchestrator-shared/types";
+import type {
+	Agent,
+	AgentAuthBinding,
+	CharacterName,
+	Script,
+	Secret,
+} from "@/features/security/orchestrator-shared/types";
 import { useCollectionsQuery } from "@/features/security/knowledge/api";
 import { useProvidersQuery } from "@/features/security/models/api";
 import { useCreateScript, useScriptsQuery } from "@/features/security/scripts/api";
@@ -86,6 +92,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	const [scriptIds, setScriptIds] = useState<string[]>(agent?.scriptIds ?? []);
 	const [canExecute, setCanExecute] = useState(agent?.canExecute ?? false);
 	const [knowledgeCollectionIds, setKnowledgeCollectionIds] = useState<string[]>(agent?.knowledgeCollectionIds ?? []);
+	const [authBindings, setAuthBindings] = useState<AgentAuthBinding[]>(agent?.authBindings ?? []);
 	const [requiresCheckpoint, setRequiresCheckpoint] = useState(agent?.requiresCheckpoint ?? false);
 	const [requiresCheckpointAfter, setRequiresCheckpointAfter] = useState(agent?.requiresCheckpointAfter ?? false);
 	const [customName, setCustomName] = useState("");
@@ -144,7 +151,34 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		}
 	};
 
-	const removeScript = (id: string) => setScriptIds((prev) => prev.filter((scriptId) => scriptId !== id));
+	const removeScript = (id: string) => {
+		setScriptIds((prev) => prev.filter((scriptId) => scriptId !== id));
+		setAuthBindings((prev) => prev.filter((binding) => binding.scriptId !== id));
+	};
+
+	const setScriptAuthConnection = (script: Script, connection?: Secret) => {
+		const connector = script.connectorProvider ?? "generic";
+		const authSlot = `${connector}_account`;
+		setAuthBindings((prev) => {
+			const remaining = prev.filter((binding) => binding.scriptId !== script.id);
+			if (!connection) return remaining;
+			const safeAlias = (connection.accountDisplayName ?? connection.label)
+				.toLowerCase()
+				.replace(/^@/, "")
+				.replace(/[^a-z0-9]+/g, "_")
+				.replace(/^_+|_+$/g, "");
+			return [
+				...remaining,
+				{
+					scriptId: script.id,
+					authSlot,
+					connectionId: connection.id,
+					alias: `${connector}_${safeAlias || connection.id.slice(0, 8)}`,
+					isDefault: true,
+				},
+			];
+		});
+	};
 
 	// Script criado/editado no wizard completo (aberto empilhado sobre este dialog, sem navegar pra fora e
 	// perder o que já foi preenchido no agent) — anexa automaticamente, como o "criar comando" rápido faz.
@@ -296,6 +330,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 			accentColor: values.accentColor,
 			scriptIds,
 			knowledgeCollectionIds,
+			authBindings,
 			canExecute,
 			requiresCheckpoint,
 			requiresCheckpointAfter,
@@ -331,6 +366,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		state: {
 			scriptIds,
 			knowledgeCollectionIds,
+			authBindings,
 			canExecute,
 			requiresCheckpoint,
 			requiresCheckpointAfter,
@@ -349,6 +385,7 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		},
 		actions: {
 			setKnowledgeCollectionIds,
+			setScriptAuthConnection,
 			setCanExecute,
 			setRequiresCheckpoint,
 			setRequiresCheckpointAfter,

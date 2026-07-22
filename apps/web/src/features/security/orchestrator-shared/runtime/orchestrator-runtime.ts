@@ -47,10 +47,19 @@ import { cancelAdvance, runAbortable } from "./runner-controllers";
 import { idleRuntime, useOrchestratorRuntimeStore } from "../model/use-orchestrator-runtime-store";
 import { useRunDialogStore } from "../model/use-run-dialog-store";
 
-const ACTIVE_RUNTIME_STATUSES = new Set(["running", "checkpoint", "awaiting_input"]);
-
-/** Usado pelo `scheduler.ts` pra não disparar um run agendado em cima de um já ativo. */
-export const isRunActive = (squadId: string): boolean => ACTIVE_RUNTIME_STATUSES.has(getRuntime(squadId).status);
+const ACTIVE_RUNTIME_STATUSES = new Set([
+	"queued",
+	"running",
+	"checkpoint",
+	"awaiting_input",
+	"awaiting_auth",
+	"awaiting_approval",
+]);
+const SLOT_RUNTIME_STATUSES = new Set(["running", "paused"]);
+const MAX_CONCURRENT_RUNS = 2;
+const queuedExecutionIds: string[] = [];
+const queuedContinuations = new Map<string, () => void>();
+const workspacePreparationByExecution = new Map<string, Promise<void>>();
 
 /** Origem do disparo — hoje só "manual" existe de verdade; "schedule"/"onComplete" preparam o terreno
  * para o scheduler local (ver docs/plano-integracoes-e-flow-builder.md, Etapa "Scheduler local"). */
@@ -59,7 +68,25 @@ export type RunOrigin = "manual" | "schedule" | "onComplete" | "assistant";
 type QaPair = { question: string; answer: string };
 
 /** Abre o `RunDialog` global (ver `GlobalRunDialog`) — ação padrão da notificação de SO de run. */
-const openRunDialog = (squadId: string): void => useRunDialogStore.getState().openRunDialog(squadId);
+const executionSquadIds = new Map<string, string>();
+const approvedPublishExecutionIds = new Set<string>();
+const resolveSquadId = (executionIdOrSquadId: string): string =>
+	executionSquadIds.get(executionIdOrSquadId) ?? executionIdOrSquadId;
+
+export const isRunActive = (squadId: string): boolean => {
+	const state = useOrchestratorRuntimeStore.getState();
+	return (state.runIdsBySquad[squadId] ?? []).some((runId) =>
+		ACTIVE_RUNTIME_STATUSES.has(state.getRuntime(runId).status),
+	);
+};
+
+const openRunDialog = (executionIdOrSquadId: string): void =>
+	useRunDialogStore
+		.getState()
+		.openRunDialog(
+			resolveSquadId(executionIdOrSquadId),
+			executionSquadIds.has(executionIdOrSquadId) ? executionIdOrSquadId : undefined,
+		);
 
 let desktopRequiredNotified = false;
 
@@ -100,7 +127,7 @@ const requireRunner = (squadId: string): boolean => {
 
 const truncate = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-const toScriptPayload = (script: Script): ScriptPayload => ({
+const toScriptPayload = (script: Script, authRefOverride?: string): ScriptPayload => ({
 	id: script.id,
 	name: script.name,
 	description: script.description,
@@ -121,13 +148,13 @@ const toScriptPayload = (script: Script): ScriptPayload => ({
 	toolAllowlist: script.toolAllowlist,
 	connectorProvider: script.connectorProvider,
 	config: script.config,
-	authRef: script.authRef,
+	authRef: authRefOverride ?? script.authRef,
 });
 
 // --- Leitura de config (servidor), um cache por recurso ---
 
 const getSquadConfig = (squadId: string): SquadDetail | undefined =>
-	tanStackQueryClient.getQueryData<SquadDetail>(squadDetailKeys.detail(squadId));
+	tanStackQueryClient.getQueryData<SquadDetail>(squadDetailKeys.detail(resolveSquadId(squadId)));
 
 const getProvider = (providerId: string): ModelProvider | undefined =>
 	tanStackQueryClient.getQueryData<ModelProvider[]>(providersKeys.list())?.find((p) => p.id === providerId);
@@ -147,6 +174,9 @@ const patchRuntime = (squadId: string, patch: (runtime: Runtime) => Runtime): vo
 // (`ensureRunPersisted`) e atualizado incrementalmente (`persistRunProgress`) — best-effort. ---
 
 const activeRuns = new Map<string, RunRecord>();
+
+const snapshotAuthBindings = (squad: SquadDetail): NonNullable<RunRecord["authBindingsSnapshot"]> =>
+	squad.agents.flatMap((agent) => (agent.authBindings ?? []).map((binding) => ({ ...binding, agentId: agent.id })));
 
 const activeRun = (squadId: string): RunRecord | undefined => activeRuns.get(squadId);
 
@@ -175,7 +205,8 @@ const ensureRunPersisted = (squadId: string): Promise<string | undefined> => {
 	const run = activeRuns.get(squadId);
 	if (!run) return Promise.resolve(undefined);
 
-	const creation = saveRunApi(squadId, {
+	const realSquadId = resolveSquadId(squadId);
+	const creation = saveRunApi(realSquadId, {
 		input: run.input,
 		startedAt: run.startedAt,
 		endedAt: run.endedAt,
@@ -184,6 +215,7 @@ const ensureRunPersisted = (squadId: string): Promise<string | undefined> => {
 		qaLog: run.qaLog,
 		resumedFromRunId: run.resumedFromRunId,
 		runtimeSnapshot: run.runtimeSnapshot,
+		authBindingsSnapshot: run.authBindingsSnapshot,
 	})
 		.then((saved) => {
 			persistedRunIds.set(squadId, saved.id);
@@ -212,7 +244,7 @@ const persistRunProgress = (squadId: string, snapshot: RuntimeSnapshot | null): 
 		const latest = activeRuns.get(squadId);
 		if (!latest) return;
 		try {
-			await updateRunApi(squadId, runId, {
+			await updateRunApi(resolveSquadId(squadId), runId, {
 				status: latest.status,
 				endedAt: latest.endedAt,
 				steps: latest.steps,
@@ -235,12 +267,13 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 	runCreationInFlight.delete(squadId);
 
 	void (async () => {
+		const realSquadId = resolveSquadId(squadId);
 		// Garante o id do backend ANTES do snapshot — a pasta `.runs/<id>` é nomeada por ele, então o
 		// histórico consegue reabrir os arquivos depois. Sem backend (offline), segue só com o manifesto.
 		let runId = existingId;
 		if (!runId) {
 			try {
-				const saved = await saveRunApi(squadId, {
+				const saved = await saveRunApi(realSquadId, {
 					input: run.input,
 					startedAt: run.startedAt,
 					endedAt,
@@ -249,6 +282,7 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 					qaLog: run.qaLog,
 					resumedFromRunId: run.resumedFromRunId,
 					runtimeSnapshot: null,
+					authBindingsSnapshot: run.authBindingsSnapshot,
 				});
 				runId = saved.id;
 			} catch {
@@ -259,10 +293,10 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 		}
 
 		// Snapshot dos arquivos gerados (best-effort, nunca lança) — vira `RunRecord.files`.
-		const files = await snapshotRun(runId);
+		const files = await snapshotRun(runId, squadId);
 
 		try {
-			await updateRunApi(squadId, runId, {
+			await updateRunApi(realSquadId, runId, {
 				status,
 				endedAt,
 				steps: run.steps,
@@ -270,7 +304,7 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 				runtimeSnapshot: null,
 				files: files.length > 0 ? files : null,
 			});
-			await tanStackQueryClient.invalidateQueries({ queryKey: executionsKeys.bySquad(squadId) });
+			await tanStackQueryClient.invalidateQueries({ queryKey: executionsKeys.bySquad(realSquadId) });
 		} catch {
 			notify.error("Falha ao salvar o histórico da execução.");
 		}
@@ -349,6 +383,7 @@ const finishRun = (squadId: string, status: "done" | "aborted"): void => {
 		const squadName = getSquadConfig(squadId)?.name ?? "Squad";
 		notifyOs("Execução concluída", squadName, () => openRunDialog(squadId));
 	}
+	queueMicrotask(drainRunQueue);
 };
 
 const buildAgentPrompt = (
@@ -515,7 +550,7 @@ const runHistorySummaries = new Map<string, string>();
 /** Busca os runs anteriores do squad e guarda o resumo pra este run. Best-effort: falha vira histórico vazio. */
 const loadRunHistorySummary = async (squadId: string): Promise<void> => {
 	try {
-		const summary = buildRunHistorySummary(await fetchRunsApi(squadId));
+		const summary = buildRunHistorySummary(await fetchRunsApi(resolveSquadId(squadId)));
 		if (summary) runHistorySummaries.set(squadId, summary);
 		else runHistorySummaries.delete(squadId);
 	} catch {
@@ -530,10 +565,10 @@ const loadRunHistorySummary = async (squadId: string): Promise<void> => {
  */
 const prepareRunHistory = (squadId: string, squad: SquadDetail): Promise<void> => {
 	if (!squad.orchestrator.useRunHistory) {
-		runHistorySummaries.delete(squadId);
+		runHistorySummaries.delete(squad.id);
 		return Promise.resolve();
 	}
-	return loadRunHistorySummary(squadId);
+	return loadRunHistorySummary(resolveSquadId(squadId));
 };
 
 const normalizeAgentKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -627,7 +662,13 @@ const buildCoordinatorPrompt = (squad: SquadDetail, run: RunRecord, briefing: st
 };
 
 /** Registra o artefato do agent escolhido pelo coordenador e volta a perguntar o próximo passo. */
-const completeOrchestratedStep = (squadId: string, stepId: string, seatId: string, content: string): void => {
+const completeOrchestratedStep = (
+	squadId: string,
+	stepId: string,
+	seatId: string,
+	content: string,
+	publicationAlreadyApproved = false,
+): void => {
 	if (getRuntime(squadId).status !== "running") return;
 
 	const squad = getSquadConfig(squadId);
@@ -647,7 +688,10 @@ const completeOrchestratedStep = (squadId: string, stepId: string, seatId: strin
 	patchRuntime(squadId, (runtime) => ({ ...runtime, currentStep: runtime.currentStep + 1 }));
 	persistRunProgress(squadId, null);
 
-	if (agent?.requiresCheckpointAfter) {
+	const requiresPublicationApproval =
+		!publicationAlreadyApproved &&
+		agent?.scriptIds.some((scriptId) => getScript(scriptId)?.connectorProvider === "instagram");
+	if (agent && ((!publicationAlreadyApproved && agent.requiresCheckpointAfter) || requiresPublicationApproval)) {
 		patchRuntime(squadId, (r) => ({
 			...r,
 			status: "checkpoint",
@@ -668,6 +712,7 @@ const completeOrchestratedStep = (squadId: string, stepId: string, seatId: strin
 			pendingCheckpointKind: "after",
 			pendingQuestion: null,
 		});
+		queueMicrotask(drainRunQueue);
 		return;
 	}
 
@@ -721,13 +766,23 @@ const runOrchestratedAgentStep = (
 	const previousOutput = selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
 	const stepId = newId();
 	const scripts = agent.scriptIds.map((id) => getScript(id)).filter((s): s is Script => Boolean(s));
+	const hasInstagramPublisher = scripts.some((script) => script.connectorProvider === "instagram");
+	const publicationApproved = approvedPublishExecutionIds.has(squadId) && hasInstagramPublisher;
 
 	runAbortable(squadId, async (signal) => {
 		try {
+			await workspacePreparationByExecution.get(squadId)?.catch(() => undefined);
 			const retrieval = await retrieveAgentContext(agent, previousOutput ?? briefing);
 			const result = await callAgentStep(
 				{
-					systemPrompt: `${agent.systemPrompt}${AGENT_TURN_INSTRUCTIONS}`,
+					executionId: squadId,
+					systemPrompt: `${agent.systemPrompt}${AGENT_TURN_INSTRUCTIONS}${
+						publicationApproved
+							? "\n\nA publicação deste run foi aprovada pelo usuário. Execute agora a ferramenta Instagram com dryRun:false e a mesma chave de idempotência retornada no dry run."
+							: hasInstagramPublisher
+								? "\n\nAntes de qualquer publicação no Instagram, execute apenas o dry run com dryRun:true e devolva o preview/resultado para aprovação. dryRun:false está bloqueado até o usuário aprovar o checkpoint."
+								: ""
+					}`,
 					prompt: buildAgentPrompt(agent.name, agent.role, {
 						briefing,
 						previousOutput,
@@ -741,7 +796,25 @@ const runOrchestratedAgentStep = (
 					baseUrl: provider.baseUrl,
 					apiKeyRef: provider.apiKeyRef,
 					canExecute: agent.canExecute,
-					scripts: agent.canExecute ? scripts.map(toScriptPayload) : undefined,
+					scripts: agent.canExecute
+						? scripts.map((script) => {
+								const binding =
+									run?.authBindingsSnapshot?.find(
+										(item) => item.agentId === agent.id && item.scriptId === script.id && item.isDefault,
+									) ?? agent.authBindings?.find((item) => item.scriptId === script.id && item.isDefault);
+								const payload = toScriptPayload(script, binding?.connectionId);
+								return publicationApproved && script.connectorProvider === "instagram"
+									? {
+											...payload,
+											env: {
+												...payload.env,
+												WORKESTRATOR_PUBLISH_APPROVED: "true",
+												WORKESTRATOR_RUN_ID: squadId,
+											},
+										}
+									: payload;
+							})
+						: undefined,
 					maxBudgetUsd: agent.maxBudgetUsd,
 				},
 				signal,
@@ -807,17 +880,44 @@ const runOrchestratedAgentStep = (
 					pendingCheckpointKind: null,
 					pendingQuestion: { seatId, question: turn.question, options: turn.options },
 				});
+				queueMicrotask(drainRunQueue);
 				return;
 			}
 
 			const prefix = result.usedFallbackModel
 				? `[modelo "${agent.modelRef.model}" indisponível no provider "${provider.label}" — usado o padrão]\n`
 				: "";
-			completeOrchestratedStep(squadId, stepId, seatId, `${prefix}${turn.content}`);
+			if (publicationApproved) approvedPublishExecutionIds.delete(squadId);
+			completeOrchestratedStep(squadId, stepId, seatId, `${prefix}${turn.content}`, publicationApproved);
 		} catch (err) {
+			if (publicationApproved) approvedPublishExecutionIds.delete(squadId);
 			if (signal.aborted) return;
 			setStreamingText(squadId, null);
 			const message = err instanceof AgentCallError ? err.message : "Erro desconhecido ao chamar o provider de modelo.";
+			if (err instanceof AgentCallError && err.code === "unauthenticated" && agent.authBindings?.length) {
+				setPerAgentStatus(squadId, seatId, "checkpoint");
+				patchRuntime(squadId, (runtime) => ({
+					...runtime,
+					status: "awaiting_auth",
+					pendingSeatId: seatId,
+				}));
+				appendLog(squadId, `Autenticação necessária para ${agent.name}: ${message}`);
+				appendEvent(squadId, {
+					kind: "error",
+					seatId,
+					agentId: agent.id,
+					title: "Reconecte a conta para continuar",
+					content: message,
+				});
+				persistRunProgress(squadId, {
+					currentStep: getRuntime(squadId).currentStep,
+					pendingSeatId: seatId,
+					pendingCheckpointKind: null,
+					pendingQuestion: null,
+				});
+				queueMicrotask(drainRunQueue);
+				return;
+			}
 			appendLog(squadId, `Erro em ${agent.name}: ${message}`);
 			appendEvent(squadId, {
 				kind: "error",
@@ -982,6 +1082,7 @@ const advanceOrchestrated = (squadId: string): void => {
 					pendingCheckpointKind: "before",
 					pendingQuestion: null,
 				});
+				queueMicrotask(drainRunQueue);
 				return;
 			}
 
@@ -1006,11 +1107,58 @@ const advanceOrchestrated = (squadId: string): void => {
 
 // --- API pública: funções módulo-level (não hooks), chamadas direto de handlers de UI ---
 
-export const startRun = (squadId: string, input: string, origin: RunOrigin = "manual"): void => {
+const activeSlotCount = (): number => {
+	const state = useOrchestratorRuntimeStore.getState();
+	return Object.values(state.runtimes).filter((runtime) => SLOT_RUNTIME_STATUSES.has(runtime.status)).length;
+};
+
+const launchPreparedExecution = (executionId: string, squad: SquadDetail, origin: RunOrigin): void => {
+	patchRuntime(executionId, (runtime) => ({ ...runtime, status: "running" }));
+	persistRunProgress(executionId, null);
+	notifyOs(origin === "manual" ? "Execução iniciada" : "Execução automática iniciada", squad.name, () =>
+		openRunDialog(executionId),
+	);
+	const workspacePreparation = resetWorkspace(executionId);
+	workspacePreparationByExecution.set(executionId, workspacePreparation);
+	void Promise.allSettled([workspacePreparation, prepareRunHistory(executionId, squad)]).finally(() => {
+		workspacePreparationByExecution.delete(executionId);
+		advanceOrchestrated(executionId);
+	});
+};
+
+const runOrQueueContinuation = (executionId: string, continuation: () => void): void => {
+	if (activeSlotCount() < MAX_CONCURRENT_RUNS) {
+		patchRuntime(executionId, (runtime) => ({ ...runtime, status: "running" }));
+		continuation();
+		return;
+	}
+	queuedContinuations.set(executionId, continuation);
+	if (!queuedExecutionIds.includes(executionId)) queuedExecutionIds.push(executionId);
+	patchRuntime(executionId, (runtime) => ({ ...runtime, status: "queued" }));
+};
+
+const drainRunQueue = (): void => {
+	while (activeSlotCount() < MAX_CONCURRENT_RUNS && queuedExecutionIds.length > 0) {
+		const executionId = queuedExecutionIds.shift();
+		if (!executionId) return;
+		const runtime = getRuntime(executionId);
+		const squad = getSquadConfig(executionId);
+		if (runtime.status !== "queued" || !squad) continue;
+		const continuation = queuedContinuations.get(executionId);
+		if (continuation) {
+			queuedContinuations.delete(executionId);
+			patchRuntime(executionId, (current) => ({ ...current, status: "running" }));
+			continuation();
+			continue;
+		}
+		launchPreparedExecution(executionId, squad, "manual");
+	}
+};
+
+export const startRun = (squadId: string, input: string, origin: RunOrigin = "manual"): string | undefined => {
 	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
-	const runtime = getRuntime(squadId);
-	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
+	if (!squad) return;
 	if (!squad.seats.some((s) => s.agentId)) {
 		// Origem "schedule"/"onComplete" não tem usuário na tela pra ler um `notify.error` — vira só
 		// log/notificação de falha em vez de bloquear silenciosamente (ver `scheduler.ts`).
@@ -1022,8 +1170,10 @@ export const startRun = (squadId: string, input: string, origin: RunOrigin = "ma
 		return;
 	}
 
-	activeRuns.set(squadId, {
-		id: newId(),
+	const executionId = newId();
+	executionSquadIds.set(executionId, squadId);
+	activeRuns.set(executionId, {
+		id: executionId,
 		squadId,
 		input,
 		startedAt: nowIso(),
@@ -1031,27 +1181,32 @@ export const startRun = (squadId: string, input: string, origin: RunOrigin = "ma
 		status: "running",
 		steps: [],
 		qaLog: [],
+		authBindingsSnapshot: snapshotAuthBindings(squad),
 	});
 
-	setRuntime(squadId, { ...idleRuntime(), status: "running", startedAt: nowIso(), log: [`Iniciado: ${input}`] });
-	// Cria o registro no backend desde já (best-effort) — sem isso, um run morto por fechar o app antes
-	// do 1º passo terminar não teria nada persistido pra retomar depois.
-	persistRunProgress(squadId, null);
-
-	// Início só via SO (sem toast in-app): quem disparou manualmente já sabe que rodou; quem não está
-	// olhando a janela é avisado pela notificação de SO (auto-restrita a quando ela está sem foco).
-	notifyOs(origin === "manual" ? "Execução iniciada" : "Execução automática iniciada", squad.name, () =>
-		openRunDialog(squadId),
-	);
-
-	// Preparação antes do 1º passo do coordenador (best-effort, em paralelo):
-	// - reset do workspace fixo pra arquivos de runs anteriores não aparecerem no preview (só no `startRun`
-	//   — `continueRun`/`resumeRun`/`retryLastStep` reaproveitam os arquivos);
-	// - resumo do histórico de execuções, quando `useRunHistory` liga (lido pelo `buildCoordinatorPrompt`).
-	// Nenhuma delas pode travar o run: `Promise.allSettled` sempre resolve e o run segue mesmo em falha.
-	void Promise.allSettled([resetWorkspace(), prepareRunHistory(squadId, squad)]).finally(() =>
-		advanceOrchestrated(squadId),
-	);
+	useOrchestratorRuntimeStore.getState().registerRun(squadId, executionId);
+	const queued = activeSlotCount() >= MAX_CONCURRENT_RUNS;
+	setRuntime(executionId, {
+		...idleRuntime(),
+		runId: executionId,
+		squadId,
+		status: queued ? "queued" : "running",
+		startedAt: nowIso(),
+		log: [`Iniciado: ${input}`],
+	});
+	openRunDialog(executionId);
+	if (queued) {
+		queuedExecutionIds.push(executionId);
+		appendEvent(executionId, {
+			kind: "system",
+			title: "Execução na fila",
+			content: "Aguardando um dos 2 slots disponíveis.",
+		});
+		persistRunProgress(executionId, null);
+	} else {
+		launchPreparedExecution(executionId, squad, origin);
+	}
+	return executionId;
 };
 
 export const pauseRun = (squadId: string): void => {
@@ -1069,12 +1224,21 @@ export const pauseRun = (squadId: string): void => {
 
 export const resumeRun = (squadId: string): void => {
 	const runtime = getRuntime(squadId);
-	if (runtime.status !== "paused") return;
+	if (runtime.status !== "paused" && runtime.status !== "awaiting_auth") return;
 	const squad = getSquadConfig(squadId);
-	patchRuntime(squadId, (r) => ({ ...r, status: "running" }));
-	// Recarrega o resumo do histórico (se a flag ligar) antes de voltar a acionar o coordenador.
-	if (squad) void prepareRunHistory(squadId, squad).finally(() => advanceOrchestrated(squadId));
-	else advanceOrchestrated(squadId);
+	runOrQueueContinuation(squadId, () => {
+		if (runtime.status === "awaiting_auth" && squad && runtime.pendingSeatId) {
+			const seat = squad.seats.find((item) => item.id === runtime.pendingSeatId);
+			const agent = seat?.agentId ? squad.agents.find((item) => item.id === seat.agentId) : undefined;
+			if (seat && agent) {
+				patchRuntime(squadId, (current) => ({ ...current, pendingSeatId: null }));
+				runOrchestratedAgentStep(squadId, seat.id, agent, activeRun(squadId)?.input ?? "");
+				return;
+			}
+		}
+		if (squad) void prepareRunHistory(squadId, squad).finally(() => advanceOrchestrated(squadId));
+		else advanceOrchestrated(squadId);
+	});
 };
 
 export const stopRun = (squadId: string): void => {
@@ -1098,6 +1262,8 @@ export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
 	if (!squad || runtime.status !== "checkpoint" || !runtime.pendingSeatId) return;
 	const seatId = runtime.pendingSeatId;
 	const checkpointKind = runtime.pendingCheckpointKind;
+	const seat = squad.seats.find((item) => item.id === seatId);
+	const agent = seat?.agentId ? squad.agents.find((item) => item.id === seat.agentId) : undefined;
 
 	if (!approved) {
 		appendLog(squadId, "Checkpoint rejeitado.");
@@ -1107,13 +1273,29 @@ export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
 
 	if (checkpointKind === "after") {
 		appendLog(squadId, "Checkpoint aprovado.");
-		patchRuntime(squadId, (r) => ({ ...r, status: "running", pendingSeatId: null, pendingCheckpointKind: null }));
-		advanceOrchestrated(squadId);
+		runOrQueueContinuation(squadId, () => {
+			patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+			const hasInstagramPublisher = agent?.scriptIds.some(
+				(scriptId) => getScript(scriptId)?.connectorProvider === "instagram",
+			);
+			if (seat && agent && hasInstagramPublisher) {
+				approvedPublishExecutionIds.add(squadId);
+				const run = activeRun(squadId);
+				runOrchestratedAgentStep(
+					squadId,
+					seat.id,
+					agent,
+					run?.input ?? "",
+					[],
+					run?.steps.length ? [run.steps.length] : [],
+				);
+				return;
+			}
+			advanceOrchestrated(squadId);
+		});
 		return;
 	}
 
-	const seat = squad.seats.find((s) => s.id === seatId);
-	const agent = seat?.agentId ? squad.agents.find((a) => a.id === seat.agentId) : undefined;
 	if (!seat || !agent) {
 		appendLog(squadId, "Checkpoint aprovado, mas a cadeira não existe mais — encerrando.");
 		notify.error("A cadeira aprovada não existe mais — execução encerrada.");
@@ -1123,8 +1305,10 @@ export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
 
 	appendLog(squadId, "Checkpoint aprovado.");
 	const run = activeRun(squadId);
-	patchRuntime(squadId, (r) => ({ ...r, status: "running", pendingSeatId: null, pendingCheckpointKind: null }));
-	runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
+	runOrQueueContinuation(squadId, () => {
+		patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
+	});
 };
 
 /** Responde a pergunta que um agent fez no meio do turno (`runtime.pendingQuestion`) e ele continua. */
@@ -1148,15 +1332,15 @@ export const answerPrompt = (squadId: string, answer: string): void => {
 	patchRun(squadId, (r) => ({ ...r, qaLog: [...r.qaLog, { seatId, question, answer }] }));
 	appendLog(squadId, `Você respondeu: ${answer}`);
 
-	patchRuntime(squadId, (r) => ({
-		...r,
-		status: "running",
-		pendingSeatId: null,
-		pendingQuestion: null,
-		pendingQaHistory: [],
-	}));
-
-	runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "", qaHistory);
+	runOrQueueContinuation(squadId, () => {
+		patchRuntime(squadId, (r) => ({
+			...r,
+			pendingSeatId: null,
+			pendingQuestion: null,
+			pendingQaHistory: [],
+		}));
+		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "", qaHistory);
+	});
 };
 
 // --- Continuar de onde parou (retomar um run terminado / refazer o último passo) ---
@@ -1168,13 +1352,14 @@ export const answerPrompt = (squadId: string, answer: string): void => {
  * `runtime.status` — cada chamador decide o estado inicial (running/checkpoint/awaiting_input).
  */
 const seedRunFromHistory = (
+	executionId: string,
 	squadId: string,
 	squad: SquadDetail,
 	sourceRun: RunRecord,
 	steps: RunRecord["steps"],
 ): { perAgentStatus: Record<string, AgentStatus>; events: RunEvent[]; log: string[] } => {
-	activeRuns.set(squadId, {
-		id: newId(),
+	activeRuns.set(executionId, {
+		id: executionId,
 		squadId,
 		input: sourceRun.input,
 		startedAt: nowIso(),
@@ -1184,6 +1369,7 @@ const seedRunFromHistory = (
 		qaLog: sourceRun.qaLog,
 		resumedFromRunId: sourceRun.id,
 		runtimeSnapshot: null,
+		authBindingsSnapshot: sourceRun.authBindingsSnapshot ?? snapshotAuthBindings(squad),
 	});
 
 	const perAgentStatus: Record<string, AgentStatus> = {};
@@ -1220,14 +1406,16 @@ const seedRunFromHistory = (
 export const continueRun = (squadId: string, run: RunRecord): void => {
 	if (!requireRunner(squadId)) return;
 	const squad = getSquadConfig(squadId);
-	const runtime = getRuntime(squadId);
-	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
+	if (!squad) return;
 	if (!squad.seats.some((s) => s.agentId)) {
 		notify.error("Sente ao menos um agent antes de retomar.");
 		return;
 	}
 
-	const { perAgentStatus, events, log } = seedRunFromHistory(squadId, squad, run, run.steps);
+	const executionId = newId();
+	executionSquadIds.set(executionId, squadId);
+	useOrchestratorRuntimeStore.getState().registerRun(squadId, executionId);
+	const { perAgentStatus, events, log } = seedRunFromHistory(executionId, squadId, squad, run, run.steps);
 	log.unshift(`Retomado a partir do run ${run.id} (${run.steps.length} passo(s) já produzido(s)).`);
 
 	const snapshot = run.runtimeSnapshot ?? null;
@@ -1237,8 +1425,10 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 			? "checkpoint"
 			: "running";
 
-	setRuntime(squadId, {
+	setRuntime(executionId, {
 		...idleRuntime(),
+		runId: executionId,
+		squadId,
 		status: initialStatus,
 		startedAt: nowIso(),
 		currentStep: run.steps.length,
@@ -1251,22 +1441,30 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 		pendingQaHistory: [],
 	});
 
-	notifyOs("Execução retomada", squad.name, () => openRunDialog(squadId));
-	persistRunProgress(squadId, snapshot);
+	openRunDialog(executionId);
+	notifyOs("Execução retomada", squad.name, () => openRunDialog(executionId));
+	persistRunProgress(executionId, snapshot);
 
 	// Carrega o resumo do histórico (se a flag ligar) — em checkpoint/pergunta o coordenador só roda depois
 	// da interação do usuário, então basta disparar em background; na trilha "running" segura o advance.
-	const historyReady = prepareRunHistory(squadId, squad);
+	const historyReady = prepareRunHistory(executionId, squad);
+	const workspaceReady = resetWorkspace(executionId, "", run.id);
+	workspacePreparationByExecution.set(executionId, workspaceReady);
 
 	if (initialStatus === "awaiting_input") {
-		appendLog(squadId, "Pergunta pendente restaurada — aguardando sua resposta.");
+		appendLog(executionId, "Pergunta pendente restaurada — aguardando sua resposta.");
 		return;
 	}
 	if (initialStatus === "checkpoint") {
-		appendLog(squadId, "Checkpoint restaurado — aprovação necessária para continuar.");
+		appendLog(executionId, "Checkpoint restaurado — aprovação necessária para continuar.");
 		return;
 	}
-	void historyReady.finally(() => advanceOrchestrated(squadId));
+	runOrQueueContinuation(executionId, () => {
+		void Promise.allSettled([historyReady, workspaceReady]).finally(() => {
+			workspacePreparationByExecution.delete(executionId);
+			advanceOrchestrated(executionId);
+		});
+	});
 };
 
 /**
@@ -1276,8 +1474,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
  */
 export const retryLastStep = (squadId: string, run: RunRecord): void => {
 	const squad = getSquadConfig(squadId);
-	const runtime = getRuntime(squadId);
-	if (!squad || ACTIVE_RUNTIME_STATUSES.has(runtime.status)) return;
+	if (!squad) return;
 	const lastStep = run.steps.at(-1);
 	if (!lastStep?.seatId) {
 		notify.error("Não há um passo anterior para refazer.");
@@ -1292,12 +1489,17 @@ export const retryLastStep = (squadId: string, run: RunRecord): void => {
 
 	if (!requireRunner(squadId)) return;
 
+	const executionId = newId();
+	executionSquadIds.set(executionId, squadId);
+	useOrchestratorRuntimeStore.getState().registerRun(squadId, executionId);
 	const remainingSteps = run.steps.slice(0, -1);
-	const { perAgentStatus, events, log } = seedRunFromHistory(squadId, squad, run, remainingSteps);
+	const { perAgentStatus, events, log } = seedRunFromHistory(executionId, squadId, squad, run, remainingSteps);
 	log.unshift(`Refazendo o último passo (${agent.name}) a partir do run ${run.id}.`);
 
-	setRuntime(squadId, {
+	setRuntime(executionId, {
 		...idleRuntime(),
+		runId: executionId,
+		squadId,
 		status: "running",
 		startedAt: nowIso(),
 		currentStep: remainingSteps.length,
@@ -1310,9 +1512,17 @@ export const retryLastStep = (squadId: string, run: RunRecord): void => {
 		pendingQaHistory: [],
 	});
 
-	notifyOs("Refazendo último passo", `${agent.name} — ${squad.name}`, () => openRunDialog(squadId));
-	persistRunProgress(squadId, null);
+	openRunDialog(executionId);
+	notifyOs("Refazendo último passo", `${agent.name} — ${squad.name}`, () => openRunDialog(executionId));
+	persistRunProgress(executionId, null);
 	// O coordenador só roda depois que este agent terminar (async), então dá tempo do resumo carregar em background.
-	void prepareRunHistory(squadId, squad);
-	runOrchestratedAgentStep(squadId, seat.id, agent, run.input);
+	void prepareRunHistory(executionId, squad);
+	const workspaceReady = resetWorkspace(executionId, "", run.id);
+	workspacePreparationByExecution.set(executionId, workspaceReady);
+	runOrQueueContinuation(executionId, () => {
+		void workspaceReady.finally(() => {
+			workspacePreparationByExecution.delete(executionId);
+			runOrchestratedAgentStep(executionId, seat.id, agent, run.input);
+		});
+	});
 };

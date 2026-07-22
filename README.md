@@ -6,6 +6,8 @@ Não há pipeline fixo. Você monta um "escritório" com agentes (cada um com se
 
 > ⚠️ **Projeto em desenvolvimento ativo.** APIs, esquema e telas ainda mudam. Veja [Segurança](#segurança) antes de rodar com execução real habilitada.
 
+> 📋 **Plano atual:** [abra aqui o plano consolidado de arquivos, Instagram, autenticações e runs paralelos](PLANO-ATUAL.md).
+
 ![Workestrator em ação](docs/assets/demo.gif)
 
 ## Por que é diferente

@@ -16,6 +16,8 @@ import jakarta.persistence.Table
 import java.time.Instant
 import java.util.UUID
 
+private val emptyScopesNode: JsonNode = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().createArrayNode()
+
 @Entity
 @Table(name = "secrets")
 class SecretEntity(
@@ -44,6 +46,26 @@ class SecretEntity(
     @Column(nullable = true)
     var connectorId: String? = null,
 
+    @Column(nullable = true)
+    var accountExternalId: String? = null,
+
+    @Column(nullable = true)
+    var accountDisplayName: String? = null,
+
+    @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var scopes: JsonNode = emptyScopesNode,
+
+    @Column(nullable = false, columnDefinition = "varchar(32) default 'CONNECTED'")
+    @Enumerated(EnumType.STRING)
+    var status: AuthConnectionStatus = AuthConnectionStatus.CONNECTED,
+
+    @Column(nullable = true)
+    var expiresAt: Instant? = null,
+
+    @Column(nullable = true)
+    var lastValidatedAt: Instant? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 
@@ -70,6 +92,12 @@ class SecretEntity(
         metadata = this.metadata?.toObject(),
         valueCiphertext = this.valueCiphertext,
         connectorId = this.connectorId,
+        accountExternalId = this.accountExternalId,
+        accountDisplayName = this.accountDisplayName,
+        scopes = this.scopes.toObject(),
+        status = this.status,
+        expiresAt = this.expiresAt,
+        lastValidatedAt = this.lastValidatedAt,
         createdAt = this.createdAt,
         updatedAt = this.updatedAt,
     )
@@ -83,6 +111,12 @@ fun Secret.toEntity(): SecretEntity = SecretEntity(
     metadata = this.metadata?.toJsonNode(),
     valueCiphertext = this.valueCiphertext,
     connectorId = this.connectorId,
+    accountExternalId = this.accountExternalId,
+    accountDisplayName = this.accountDisplayName,
+    scopes = this.scopes.toJsonNode(),
+    status = this.status,
+    expiresAt = this.expiresAt,
+    lastValidatedAt = this.lastValidatedAt,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
 )

@@ -26,6 +26,12 @@ class SecretService(
             metadata = request.metadata,
             valueCiphertext = secretCipher.encrypt(userId, request.value),
             connectorId = request.connectorId,
+            accountExternalId = request.accountExternalId,
+            accountDisplayName = request.accountDisplayName,
+            scopes = request.scopes,
+            status = request.status,
+            expiresAt = request.expiresAt,
+            lastValidatedAt = request.lastValidatedAt,
         )
         return secretRepository.save(secret)
     }
@@ -46,6 +52,12 @@ class SecretService(
             authType = request.authType,
             metadata = request.metadata,
             connectorId = request.connectorId ?: secret.connectorId,
+            accountExternalId = request.accountExternalId ?: secret.accountExternalId,
+            accountDisplayName = request.accountDisplayName ?: secret.accountDisplayName,
+            scopes = request.scopes ?: secret.scopes,
+            status = request.status ?: secret.status,
+            expiresAt = request.expiresAt ?: secret.expiresAt,
+            lastValidatedAt = request.lastValidatedAt ?: secret.lastValidatedAt,
         )
         return secretRepository.save(updated)
     }
@@ -64,6 +76,10 @@ class SecretService(
             value = secretCipher.decrypt(userId, ciphertext),
             authType = secret.authType,
             metadata = secret.metadata,
+            connectorId = secret.connectorId,
+            accountExternalId = secret.accountExternalId,
+            accountDisplayName = secret.accountDisplayName,
+            status = secret.status,
         )
     }
 

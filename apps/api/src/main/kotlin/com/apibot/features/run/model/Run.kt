@@ -47,6 +47,8 @@ data class Run(
      * persisted incrementally so a run can be resumed after the app closes mid-execution.
      */
     val runtimeSnapshot: JsonNode? = null,
+    /** Safe connection selections captured at run start; contains ids/aliases, never secret values. */
+    val authBindingsSnapshot: JsonNode = emptyArrayNode,
     /** `{path, ext, isImage, size}[]` — opaque passthrough, owned by the frontend contract. Arquivos gerados no run. */
     val files: JsonNode = emptyArrayNode,
 )
@@ -62,5 +64,6 @@ fun Run.toResponse(): RunResponse = RunResponse(
     qaLog = this.qaLog,
     resumedFromRunId = this.resumedFromRunId,
     runtimeSnapshot = this.runtimeSnapshot,
+    authBindingsSnapshot = this.authBindingsSnapshot,
     files = this.files,
 )

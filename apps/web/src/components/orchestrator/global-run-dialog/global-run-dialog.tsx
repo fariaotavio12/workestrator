@@ -17,9 +17,12 @@ export const GlobalRunDialog = () => {
 	const target = useRunDialogStore((s) => s.target);
 	const closeRunDialog = useRunDialogStore((s) => s.closeRunDialog);
 	const { data: squadDetail } = useSquadQuery(target?.squadId);
-	const runtime = useOrchestratorRuntimeStore((s) =>
-		target ? (s.runtimes[target.squadId] ?? IDLE_RUNTIME) : IDLE_RUNTIME,
-	);
+	const runtime = useOrchestratorRuntimeStore((s) => {
+		if (!target) return IDLE_RUNTIME;
+		if (target.runId === null) return IDLE_RUNTIME;
+		const runId = target.runId ?? s.selectedRunIdBySquad[target.squadId];
+		return runId ? (s.runtimes[runId] ?? IDLE_RUNTIME) : IDLE_RUNTIME;
+	});
 
 	const squad = useMemo<Squad | null>(
 		() => (target && squadDetail ? { ...squadDetail, runtime } : null),

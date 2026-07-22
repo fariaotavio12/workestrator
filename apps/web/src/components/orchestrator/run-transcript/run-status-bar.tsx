@@ -1,27 +1,34 @@
 import { Badge, Button } from "@/components";
-import { Eye, Pause, Play, RotateCcw, RotateCw, Square } from "lucide-react";
+import { Eye, Pause, Play, Plus, RotateCcw, RotateCw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/app/utils/cn";
 import { Typography } from "@/components/typography";
 import type { Squad, SquadRuntimeStatus } from "@/features/security/orchestrator-shared/types";
+import { Rotas } from "@/app/routing/variables";
 
 const statusVariant: Record<SquadRuntimeStatus, "secondary" | "default" | "success" | "warning" | "destructive"> = {
 	idle: "secondary",
+	queued: "secondary",
 	running: "default",
 	paused: "secondary",
 	completed: "success",
 	checkpoint: "warning",
 	awaiting_input: "warning",
+	awaiting_auth: "warning",
+	awaiting_approval: "warning",
 	aborted: "destructive",
 };
 
 const statusLabel: Record<SquadRuntimeStatus, string> = {
 	idle: "Ocioso",
+	queued: "Na fila",
 	running: "Rodando",
 	paused: "Pausado",
 	completed: "Concluído",
 	checkpoint: "Aguardando aprovação",
 	awaiting_input: "Aguardando resposta",
+	awaiting_auth: "Aguardando autenticação",
+	awaiting_approval: "Aguardando aprovação",
 	aborted: "Abortado",
 };
 
@@ -36,6 +43,7 @@ type Props = {
 	onResume: () => void;
 	onStop: () => void;
 	onReset: () => void;
+	onNewRun: () => void;
 	/** Presente só quando há um run anterior pra retomar (`completed`/`aborted`) — omite o botão se ausente. */
 	onContinue?: () => void;
 	/** Presente só quando o run anterior tem ao menos um passo pra refazer. */
@@ -52,13 +60,21 @@ export const RunStatusBar = ({
 	onResume,
 	onStop,
 	onReset,
+	onNewRun,
 	onContinue,
 	onRetryLastStep,
 	onOpenFiles,
 	className,
 }: Props) => {
 	const { status, currentStep, startedAt } = squad.runtime;
-	const isLive = status === "running" || status === "checkpoint" || status === "awaiting_input" || status === "paused";
+	const isLive =
+		status === "queued" ||
+		status === "running" ||
+		status === "checkpoint" ||
+		status === "awaiting_input" ||
+		status === "awaiting_auth" ||
+		status === "awaiting_approval" ||
+		status === "paused";
 	const [now, setNow] = useState(() => Date.now());
 
 	useEffect(() => {
@@ -84,6 +100,10 @@ export const RunStatusBar = ({
 			</div>
 
 			<div className="ml-auto flex flex-wrap items-center gap-2">
+				<Button size="sm" variant="outline" onClick={onNewRun}>
+					<Plus />
+					Nova execução
+				</Button>
 				{onOpenFiles && (
 					<Button size="sm" variant="outline" onClick={onOpenFiles}>
 						<Eye />
@@ -96,10 +116,15 @@ export const RunStatusBar = ({
 						Pausar
 					</Button>
 				)}
-				{status === "paused" && (
+				{status === "awaiting_auth" && (
+					<Button size="sm" variant="outline" asChild>
+						<a href={Rotas.protegidas.orchestrator.secrets}>Reconectar conta</a>
+					</Button>
+				)}
+				{(status === "paused" || status === "awaiting_auth") && (
 					<Button size="sm" variant="outline" onClick={onResume}>
 						<Play />
-						Retomar
+						{status === "awaiting_auth" ? "Tentar novamente" : "Retomar"}
 					</Button>
 				)}
 				{isLive && (
@@ -121,9 +146,9 @@ export const RunStatusBar = ({
 					</Button>
 				)}
 				{(status === "completed" || status === "aborted") && (
-					<Button size="sm" variant="outline" onClick={onReset}>
+					<Button size="sm" variant="ghost" onClick={onReset}>
 						<RotateCcw />
-						Nova execução
+						Limpar painel
 					</Button>
 				)}
 			</div>

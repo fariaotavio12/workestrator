@@ -59,6 +59,7 @@ export const PageSecrets = () => {
 
 	const connectorStatus = (secret: Secret | undefined): ConnectionStatus => {
 		if (!secret || !secret.hasValue) return "not_configured";
+		if (secret.status && secret.status !== "connected") return "failed";
 		if (testResults[secret.id] === false) return "failed";
 		return "connected";
 	};
@@ -76,11 +77,6 @@ export const PageSecrets = () => {
 	};
 
 	const openConnect = (connectorPreset: ConnectorPreset) => {
-		const existing = secretByConnectorId.get(connectorPreset.id);
-		if (existing) {
-			openEdit(existing);
-			return;
-		}
 		if (connectorPreset.authUrl) {
 			setOauthPreset(connectorPreset);
 			return;
@@ -133,6 +129,26 @@ export const PageSecrets = () => {
 					mobileStatus: true,
 					mobileOrder: 2,
 				},
+			},
+			{
+				accessorKey: "accountDisplayName",
+				header: "Conta",
+				cell: ({ row }) => (
+					<Typography variant="body-sm" className="text-muted-foreground">
+						{row.original.accountDisplayName ?? row.original.connectorId ?? "—"}
+					</Typography>
+				),
+				meta: { mobileOrder: 3 },
+			},
+			{
+				accessorKey: "status",
+				header: "Status",
+				cell: ({ row }) => (
+					<Badge variant={row.original.status && row.original.status !== "connected" ? "destructive" : "secondary"}>
+						{row.original.status ?? "configurada"}
+					</Badge>
+				),
+				meta: { mobileStatus: true, mobileOrder: 2 },
 			},
 			{
 				accessorKey: "hasValue",

@@ -103,16 +103,14 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 			description: "Valida e publica carrossel no Instagram Business via Graph API.",
 			toolAllowlist: "publish_carousel",
 			env: {
-				INSTAGRAM_ACCESS_TOKEN: "$instagram-access-token",
-				INSTAGRAM_USER_ID: "$instagram-user-id",
 				IMGBB_API_KEY: "$imgbb-api-key",
 			},
 		},
 		requiresAuth: true,
 		help: {
 			note:
-				"Use uma conta Instagram Business/Creator ligada a uma pagina Meta. Troque os placeholders de ambiente " +
-				"pelas referencias dos secrets reais antes de testar. Rode primeiro com dryRun:true.",
+				"Conecte uma conta Instagram Business/Creator em Conexões e escolha essa conta no agente que usar a ferramenta. " +
+				"Configure apenas o storage de mídia e rode primeiro com dryRun:true.",
 		},
 	},
 	{
