@@ -182,6 +182,7 @@ export const buildExecutorPlan = (
 // Fase B (M9): execução real. Pasta de trabalho fixa e escopada — só onde o comando *começa*,
 // não é sandbox de verdade (um Bash pode navegar pra fora). Só ligar `canExecute` em agent confiável.
 let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+let INSTAGRAM_PROFILES_ROOT = path.resolve(process.cwd(), "instagram-profiles");
 
 /**
  * Define a raiz persistente usada pelo runner. O Electron chama isto depois de `app.whenReady()`,
@@ -190,6 +191,10 @@ let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
  */
 export const configureRunnerWorkspace = (workspaceDir: string): void => {
 	WORKSPACE_DIR = path.resolve(workspaceDir);
+};
+
+export const configureRunnerInstagramProfilesRoot = (profilesRoot: string): void => {
+	INSTAGRAM_PROFILES_ROOT = path.resolve(profilesRoot);
 };
 const SCRIPTS_SUBDIR = "scripts";
 /** Snapshots por run em `.runs/<runId>` — preservados pelo reset; servem o preview do histórico. */
@@ -614,7 +619,22 @@ export const buildMcpServerEntry = async (
 					if (resolved.status && resolved.status !== "connected") {
 						throw new Error(`A conexão Instagram está ${resolved.status}; reconecte a conta antes de publicar.`);
 					}
-					env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					let browserProfileId: string | undefined;
+					try {
+						const value = JSON.parse(resolved.value) as { mode?: string; profileId?: string };
+						if (value.mode === "browser_session") browserProfileId = value.profileId;
+					} catch {
+						// Legacy Graph API secrets remain supported below.
+					}
+					if (browserProfileId) {
+						if (!/^[a-f0-9-]{36}$/i.test(browserProfileId)) {
+							throw new Error("A referência do perfil local do Instagram é inválida; reconecte a conta.");
+						}
+						env.INSTAGRAM_PROFILE_DIR = path.join(INSTAGRAM_PROFILES_ROOT, browserProfileId, "profile");
+						env.INSTAGRAM_PROFILE_ID = browserProfileId;
+					} else {
+						env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					}
 					if (resolved.accountExternalId) env.INSTAGRAM_USER_ID = resolved.accountExternalId;
 				}
 			}

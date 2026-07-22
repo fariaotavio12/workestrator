@@ -33,8 +33,6 @@ declare global {
 			resolveAuthFlow?: (id: string, approved: boolean) => Promise<AuthFlowState>;
 			cancelAuthFlow?: (id: string) => Promise<AuthFlowState>;
 			connectInstagram?: (input: InstagramConnectInput) => Promise<Record<string, unknown>>;
-			getInstagramAppStatus?: () => Promise<{ configured: boolean; callbackUri: string }>;
-			configureInstagramApp?: (input: { clientId: string; clientSecret: string }) => Promise<{ configured: boolean }>;
 			/** Cacheia/limpa o token de sessão em disco pro MCP server externo usar sozinho (ver session-token-cache). */
 			cacheSessionToken?: (token: string, expiresAt: string) => Promise<void>;
 			clearSessionToken?: () => Promise<void>;
@@ -461,9 +459,6 @@ export type OAuthConnectResult = {
 };
 
 export type InstagramConnectInput = {
-	authUrl: string;
-	tokenUrl: string;
-	scopes: string;
 	backendBaseUrl: string;
 	backendToken: string;
 };
@@ -484,18 +479,6 @@ export const connectInstagram = async (input: InstagramConnectInput): Promise<vo
 	const connect = window.__ORCH_API__?.connectInstagram;
 	if (!connect) throw new Error("Conectar o Instagram só funciona dentro do app Workestrator (Electron).");
 	await connect(input);
-};
-
-export const getInstagramAppStatus = async (): Promise<{ configured: boolean; callbackUri: string }> => {
-	const getStatus = window.__ORCH_API__?.getInstagramAppStatus;
-	if (!getStatus) return { configured: false, callbackUri: "" };
-	return getStatus();
-};
-
-export const configureInstagramApp = async (input: { clientId: string; clientSecret: string }): Promise<void> => {
-	const configure = window.__ORCH_API__?.configureInstagramApp;
-	if (!configure) throw new Error("A configuração do Instagram só funciona dentro do app Workestrator (Electron).");
-	await configure(input);
 };
 
 /** Resultado de `/api/test-secret` — só faz verificação de rede de verdade pros esquemas OAuth2. */
