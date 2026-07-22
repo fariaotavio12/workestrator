@@ -194,6 +194,9 @@ export const configureRunnerWorkspace = (workspaceDir: string): void => {
 const SCRIPTS_SUBDIR = "scripts";
 /** Snapshots por run em `.runs/<runId>` — preservados pelo reset; servem o preview do histórico. */
 const RUNS_SUBDIR = ".runs";
+const ACTIVE_RUNS_SUBDIR = ".active";
+export const workspaceForExecution = (executionId?: string): string =>
+	executionId?.trim() ? path.join(WORKSPACE_DIR, ACTIVE_RUNS_SUBDIR, safeFileName(executionId.trim())) : WORKSPACE_DIR;
 const LANGUAGE_EXTENSION: Record<string, string> = { bash: "sh", node: "js", python: "py" };
 
 export type ScriptPayload = {
@@ -240,6 +243,10 @@ export type ResolvedSecret = {
 	value: string;
 	authType: SecretAuthType;
 	metadata?: Record<string, string>;
+	connectorId?: string;
+	accountExternalId?: string;
+	accountDisplayName?: string;
+	status?: "connected" | "expired" | "revoked" | "error";
 	/** Id do secret — usado como chave de cache do token OAuth2 (não vem do backend, é anexado pelo resolver). */
 	id?: string;
 	/**
@@ -462,7 +469,15 @@ export const createBackendSecretResolver = (
 				});
 				if (res.ok) {
 					const body = (await res.json()) as ResolvedSecret;
-					cache?.set(id, { value: body.value, authType: body.authType, metadata: body.metadata });
+					cache?.set(id, {
+						value: body.value,
+						authType: body.authType,
+						metadata: body.metadata,
+						connectorId: body.connectorId,
+						accountExternalId: body.accountExternalId,
+						accountDisplayName: body.accountDisplayName,
+						status: body.status,
+					});
 					return {
 						...body,
 						id,
@@ -548,6 +563,7 @@ export const buildHttpToolDef = async (
 export const buildMcpServerEntry = async (
 	script: ScriptPayload,
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<McpServerConfig | undefined> => {
 	if (script.kind === "mcp") {
 		if (script.transport === "http") {
@@ -591,9 +607,16 @@ export const buildMcpServerEntry = async (
 		}
 		if (script.connectorProvider === "instagram") {
 			const env = await resolveMapPlaceholders(script.env, resolveSecret);
+			if (workspaceDir) env.WORKESTRATOR_WORKSPACE_DIR = workspaceDir;
 			if (script.authRef) {
 				const resolved = await resolveSecret(script.authRef);
-				if (resolved) env.WORKESTRATOR_AUTH_TOKEN = await resolveAuthToken(resolved);
+				if (resolved) {
+					if (resolved.status && resolved.status !== "connected") {
+						throw new Error(`A conexão Instagram está ${resolved.status}; reconecte a conta antes de publicar.`);
+					}
+					env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					if (resolved.accountExternalId) env.INSTAGRAM_USER_ID = resolved.accountExternalId;
+				}
 			}
 			return {
 				command: process.execPath,
@@ -629,11 +652,12 @@ export const buildMcpServerEntry = async (
 export const buildMcpConfig = async (
 	scripts: ScriptPayload[],
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<{ mcpServers: Record<string, McpServerConfig> } | undefined> => {
 	const entries: Record<string, McpServerConfig> = {};
 	for (const script of scripts) {
 		if (script.kind !== "mcp" && script.kind !== "http" && script.kind !== "connector") continue;
-		const entry = await buildMcpServerEntry(script, resolveSecret);
+		const entry = await buildMcpServerEntry(script, resolveSecret, workspaceDir);
 		if (!entry) continue;
 		entries[safeFileName(script.name) || script.id] = entry;
 	}
@@ -783,6 +807,13 @@ export const classifyCliFailure = (command: string, detail: string): { code: Cla
 	return { code: "unknown", message: detail || `${command} não retornou saída.` };
 };
 
+const classifyToolSetupFailure = (error: unknown): { code: ClaudeFailureCode; message: string } => {
+	const message = error instanceof Error ? error.message : String(error);
+	return /reconect|autentic|expired|revoked|conexão/i.test(message)
+		? { code: "unauthenticated", message }
+		: { code: "unknown", message: `Falha ao preparar ferramentas: ${message}` };
+};
+
 /** Headers + sufixo de query já resolvidos pro `apiKeyRef` do provider — ver §8.3/§8.4 do plano. */
 type ProviderAuth = { headers: Record<string, string>; querySuffix: string };
 
@@ -872,6 +903,7 @@ export const handleListModels = async (
 		apiKeyRef?: string;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	const resolvedBaseUrl = baseUrl.trim();
 	if (!resolvedBaseUrl) {
@@ -929,6 +961,7 @@ export const handleTestSecret = async (
 		secretId?: string;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	res.setHeader("Content-Type", "application/json");
 	if (!secretId) {
@@ -1581,13 +1614,14 @@ export const handleRegisterPreview = async (req: IncomingMessage, res: ServerRes
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
 	const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
 	// `runId` → snapshot do run no histórico; `dir` explícito → pasta escolhida; vazio → workspace fixo
 	// do runner (execução de squad, que não expõe o path ao front).
 	const dir = runId
 		? path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(runId))
 		: raw
 			? path.resolve(raw)
-			: WORKSPACE_DIR;
+			: workspaceForExecution(executionId);
 	if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		return jsonResponse(res, 400, { message: "Diretório inexistente." });
 	}
@@ -1661,9 +1695,10 @@ export const handleListFiles = async (req: IncomingMessage, res: ServerResponse)
 	if (req.method !== "POST") return jsonResponse(res, 405, { message: "Método não permitido." });
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
 	const changedOnly = Boolean(body.changedOnly);
 	// `dir` vazio → workspace fixo do runner (execução de squad).
-	const dir = raw ? path.resolve(raw) : WORKSPACE_DIR;
+	const dir = raw ? path.resolve(raw) : workspaceForExecution(executionId);
 	if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		return jsonResponse(res, 400, { message: "Diretório inexistente." });
 	}
@@ -1698,7 +1733,8 @@ export const handleSnapshotRun = async (req: IncomingMessage, res: ServerRespons
 	const runId = typeof body.runId === "string" ? body.runId.trim() : "";
 	if (!runId) return jsonResponse(res, 400, { message: "runId obrigatório." });
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
-	const source = raw ? path.resolve(raw) : WORKSPACE_DIR;
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
+	const source = raw ? path.resolve(raw) : workspaceForExecution(executionId);
 	if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
 		return jsonResponse(res, 200, { files: [], rootId: null });
 	}
@@ -1743,13 +1779,27 @@ export const handleResetWorkspace = async (req: IncomingMessage, res: ServerResp
 	if (req.method !== "POST") return jsonResponse(res, 405, { message: "Método não permitido." });
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
-	const dir = raw ? path.resolve(raw) : WORKSPACE_DIR;
-	if (dir !== WORKSPACE_DIR) return jsonResponse(res, 200, { ok: true, skipped: true });
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
+	const sourceRunId = typeof body.sourceRunId === "string" ? body.sourceRunId.trim() : "";
+	const dir = raw ? path.resolve(raw) : workspaceForExecution(executionId);
+	const activeRoot = path.resolve(WORKSPACE_DIR, ACTIVE_RUNS_SUBDIR);
+	const insideActiveRoot = dir.startsWith(`${activeRoot}${path.sep}`);
+	if (dir !== WORKSPACE_DIR && !insideActiveRoot) return jsonResponse(res, 200, { ok: true, skipped: true });
 	try {
 		if (fs.existsSync(dir)) {
 			for (const entry of fs.readdirSync(dir)) {
-				if (entry === ".git" || entry === SCRIPTS_SUBDIR || entry === RUNS_SUBDIR) continue;
+				if (entry === ".git" || entry === SCRIPTS_SUBDIR || entry === RUNS_SUBDIR || entry === ACTIVE_RUNS_SUBDIR)
+					continue;
 				fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+			}
+		}
+		fs.mkdirSync(dir, { recursive: true });
+		if (sourceRunId) {
+			const sourceRoot = path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(sourceRunId));
+			if (fs.existsSync(sourceRoot) && fs.statSync(sourceRoot).isDirectory()) {
+				for (const entry of fs.readdirSync(sourceRoot)) {
+					fs.cpSync(path.join(sourceRoot, entry), path.join(dir, entry), { recursive: true });
+				}
 			}
 		}
 		jsonResponse(res, 200, { ok: true });
@@ -1843,6 +1893,7 @@ export const handleRunStep = async (
 		maxBudgetUsd?: number;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	const {
 		systemPrompt = "",
@@ -1857,6 +1908,7 @@ export const handleRunStep = async (
 		maxBudgetUsd,
 		backendBaseUrl,
 		backendToken,
+		executionId,
 	} = body;
 	// Só aceita um valor positivo finito vindo do corpo — qualquer coisa fora disso cai no default.
 	const budgetUsd =
@@ -1865,8 +1917,9 @@ export const handleRunStep = async (
 			: DEFAULT_MAX_BUDGET_USD;
 	// Pasta de trabalho efetiva: a escolhida pelo usuário (só quando executa de verdade) ou o workspace
 	// fixo. Nunca deixa o cwd cair fora do que o usuário selecionou — `path.resolve` normaliza o caminho.
-	const workspaceDir = canExecute && workingDir?.trim() ? path.resolve(workingDir.trim()) : WORKSPACE_DIR;
-	const isCustomWorkspace = workspaceDir !== WORKSPACE_DIR;
+	const defaultWorkspaceDir = workspaceForExecution(executionId);
+	const workspaceDir = canExecute && workingDir?.trim() ? path.resolve(workingDir.trim()) : defaultWorkspaceDir;
+	const isCustomWorkspace = Boolean(canExecute && workingDir?.trim());
 	const resolveSecret = createBackendSecretResolver(backendBaseUrl, backendToken, cache);
 
 	// Sem isso, agents que precisam montar `file://` ou caminhos de arquivo (ex.: Playwright navegando
@@ -1908,9 +1961,16 @@ export const handleRunStep = async (
 		// As ferramentas de rede do agent viram function tools de verdade aqui — sem isso o modelo
 		// recebia um prompt anunciando integrações que nunca chegavam no payload. `workspaceDir` injeta
 		// incondicionalmente o server built-in de filesystem (ver `resolveOpenAiTools`).
-		const resolved = canExecute
-			? await resolveOpenAiTools(scripts, resolveSecret, workspaceDir)
-			: { tools: [], close: async () => {} };
+		let resolved: Awaited<ReturnType<typeof resolveOpenAiTools>>;
+		try {
+			resolved = canExecute
+				? await resolveOpenAiTools(scripts, resolveSecret, workspaceDir)
+				: { tools: [], close: async () => {} };
+		} catch (error) {
+			writeSseEvent(res, "error", classifyToolSetupFailure(error));
+			res.end();
+			return;
+		}
 		// Só este branch (openai-compat) ganha o server built-in de filesystem — precisa dizer o nome
 		// exato das tools e deixar explícito que é uma CHAMADA de tool, não só descrever em texto, porque
 		// modelos locais mais fracos tendem a "narrar" que salvaram/renderizaram algo sem de fato chamar
@@ -1945,7 +2005,14 @@ export const handleRunStep = async (
 
 		// MCP só se aplica à Claude CLI (única com `--mcp-config` nativo hoje — ver plano, Etapa 3).
 		if (providerKind === "claude-cli") {
-			const mcpConfig = await buildMcpConfig(scripts, resolveSecret);
+			let mcpConfig: Awaited<ReturnType<typeof buildMcpConfig>>;
+			try {
+				mcpConfig = await buildMcpConfig(scripts, resolveSecret, workspaceDir);
+			} catch (error) {
+				writeSseEvent(res, "error", classifyToolSetupFailure(error));
+				res.end();
+				return;
+			}
 			if (mcpConfig) {
 				const configPath = writeMcpConfig(mcpConfig, workspaceDir);
 				const allowedTools = scripts

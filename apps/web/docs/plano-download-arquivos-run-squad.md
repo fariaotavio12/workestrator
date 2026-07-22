@@ -38,16 +38,26 @@ concluídos nem substituir os critérios de aceite por protótipos.
 
 ## Estado real da branch atual
 
+### Onde acessar no app
+
+- Instagram: `Orquestrador > Conexões > Conectores > Instagram > Conectar`.
+- Conta usada pelo agent: editar o agent, abrir `Ferramentas`, anexar `Instagram Publisher` e escolher `Conta para publicação`.
+- Novo run paralelo: durante qualquer execução, clicar em `Nova execução`; as execuções do mesmo squad aparecem em tabs independentes.
+- Arquivos: no run ou histórico, abrir `Ver arquivos gerados`; usar `Baixar arquivo` ou `Baixar tudo`.
+
+Na primeira conexão Instagram, o administrador informa App ID e App Secret da Meta uma única vez. Eles ficam no cofre
+local do Electron. As conexões seguintes mostram apenas `Entrar com Instagram` e abrem o navegador padrão do computador.
+
 | Demanda | Estado | Observação |
 | ------- | ------ | ---------- |
 | Download de um arquivo do run | Implementado | Usa diálogo nativo de salvamento no Electron |
 | Download de todos os arquivos | Implementado | Gera ZIP pelo runner, com validação de caminho |
 | Repetição após `REVIEW_CHANGES owner=...` | Implementado parcialmente | Guardrail e teste existem; falta o contrato estruturado completo e validar o squad real |
-| Publisher Instagram MCP | Protótipo técnico | Publica, mas ainda depende de token/user ID configurados manualmente; não atende ao login solicitado |
-| Login Instagram pelo navegador do computador | Pendente | A infraestrutura OAuth genérica existe, mas o fluxo Instagram ponta a ponta ainda não foi entregue |
-| Múltiplas contas e referência no agente | Pendente | Ainda existe somente `Script.authRef`; não existe `AuthConnection`/`AgentAuthBinding` |
-| Runs paralelos do mesmo squad | Pendente | Runtime e workspace ainda precisam ser isolados por `runId` |
-| Visualização simultânea dos runs em movimento | Pendente | Depende primeiro do runtime paralelo e dos eventos indexados por `runId` |
+| Publisher Instagram MCP | Implementado | Binding da conta, `dryRun`, aprovação explícita, grant efêmero e idempotência local; falta somente homologação externa com uma conta Meta real |
+| Login Instagram pelo navegador do computador | Implementado, aguardando homologação externa | Electron abre o navegador padrão, usa callback loopback fixo, descobre a conta e salva o token sem devolvê-lo ao renderer |
+| Múltiplas contas e referência no agente | Implementado | Conexões guardam identidade/status e `AgentAuthBinding` seleciona a conta por ferramenta; o run persiste um snapshot imutável |
+| Runs paralelos do mesmo squad | Implementado no MVP | Runtime, cancelamento, fila e workspace usam `executionId`; limite inicial global é 2 |
+| Visualização simultânea dos runs em movimento | Implementado no MVP | Tabs por run preservam mapa, streaming, terminal, arquivos e intervenções independentes |
 
 ## Escopo e premissas
 

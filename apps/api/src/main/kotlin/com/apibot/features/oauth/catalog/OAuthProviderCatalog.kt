@@ -153,7 +153,7 @@ object OAuthProviderCatalog {
             authType = SecretAuthType.OAUTH2_REFRESH,
             authUrl = "https://www.instagram.com/oauth/authorize",
             tokenUrl = "https://api.instagram.com/oauth/access_token",
-            defaultScopes = "instagram_business_basic",
+            defaultScopes = "instagram_business_basic instagram_business_content_publish",
             strategy = "instagram",
         ),
 

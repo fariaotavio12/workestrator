@@ -35,7 +35,9 @@ export const PageSquadDetail = () => {
 
 	const { data: squadDetail, isLoading } = useSquadQuery(id);
 	const { data: providers = [] } = useProvidersQuery();
-	const runtime = useOrchestratorRuntimeStore((s) => s.runtimes[id] ?? IDLE_RUNTIME);
+	const runtime = useOrchestratorRuntimeStore((s) =>
+		s.runtimes[s.selectedRunIdBySquad[id] ?? ""] ?? IDLE_RUNTIME,
+	);
 	const addSeat = useAddSeat(id);
 	const assignSeat = useAssignSeat(id);
 

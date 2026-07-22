@@ -4,6 +4,14 @@ import com.apibot.features.agent.dto.AgentResponse
 import java.time.Instant
 import java.util.UUID
 
+data class AgentAuthBinding(
+    val scriptId: UUID,
+    val authSlot: String,
+    val connectionId: UUID,
+    val alias: String,
+    val isDefault: Boolean = true,
+)
+
 data class Agent(
     val id: UUID = UUID.randomUUID(),
     val squadId: UUID,
@@ -16,6 +24,7 @@ data class Agent(
     val scriptIds: List<UUID> = emptyList(),
     /** Bases de conhecimento (RAG) que este agente consulta durante o run — ver feature `knowledge`. */
     val knowledgeCollectionIds: List<UUID> = emptyList(),
+    val authBindings: List<AgentAuthBinding> = emptyList(),
     val canExecute: Boolean = false,
     val requiresCheckpoint: Boolean = false,
     val requiresCheckpointAfter: Boolean = false,
@@ -36,6 +45,7 @@ fun Agent.toResponse(): AgentResponse = AgentResponse(
     model = this.model,
     scriptIds = this.scriptIds,
     knowledgeCollectionIds = this.knowledgeCollectionIds,
+    authBindings = this.authBindings,
     canExecute = this.canExecute,
     requiresCheckpoint = this.requiresCheckpoint,
     requiresCheckpointAfter = this.requiresCheckpointAfter,

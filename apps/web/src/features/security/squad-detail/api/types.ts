@@ -1,4 +1,4 @@
-import type { Agent, OrchestratorConfig, Seat, Squad, Trigger } from "@/features/security/orchestrator-shared/types";
+import type { Agent, AgentAuthBinding, OrchestratorConfig, Seat, Squad, Trigger } from "@/features/security/orchestrator-shared/types";
 
 /** Squad completo (`agents`+`seats`+`orchestrator`) sem `runtime`, que é sempre client-only. */
 export type SquadDetail = Omit<Squad, "runtime">;
@@ -13,6 +13,7 @@ export type AgentResponseDto = {
 	model: string | null;
 	scriptIds: string[];
 	knowledgeCollectionIds: string[];
+	authBindings: AgentAuthBinding[];
 	canExecute: boolean;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
@@ -79,6 +80,7 @@ export type AgentPayload = {
 	model?: string | null;
 	scriptIds?: string[];
 	knowledgeCollectionIds?: string[];
+	authBindings?: AgentAuthBinding[];
 	canExecute?: boolean;
 	requiresCheckpoint?: boolean;
 	requiresCheckpointAfter?: boolean;
@@ -95,6 +97,7 @@ export const agentDraftToPayload = (draft: {
 	modelRef: { providerId: string; model: string };
 	scriptIds: string[];
 	knowledgeCollectionIds?: string[];
+	authBindings?: AgentAuthBinding[];
 	canExecute: boolean;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
@@ -109,6 +112,7 @@ export const agentDraftToPayload = (draft: {
 	model: draft.modelRef.model || null,
 	scriptIds: draft.scriptIds,
 	knowledgeCollectionIds: draft.knowledgeCollectionIds ?? [],
+	authBindings: draft.authBindings ?? [],
 	canExecute: draft.canExecute,
 	requiresCheckpoint: draft.requiresCheckpoint,
 	requiresCheckpointAfter: draft.requiresCheckpointAfter,
@@ -125,6 +129,7 @@ export const mapAgentDto = (dto: AgentResponseDto): Agent => ({
 	modelRef: { providerId: dto.providerId ?? "", model: dto.model ?? "" },
 	scriptIds: dto.scriptIds,
 	knowledgeCollectionIds: dto.knowledgeCollectionIds ?? [],
+	authBindings: dto.authBindings ?? [],
 	canExecute: dto.canExecute,
 	requiresCheckpoint: dto.requiresCheckpoint,
 	requiresCheckpointAfter: dto.requiresCheckpointAfter,

@@ -9,6 +9,7 @@ import com.apibot.features.run.repository.RunRepository
 import com.apibot.features.squad.service.SquadService
 import com.apibot.shared.extensions.PageRequestParams
 import com.apibot.shared.extensions.PageResult
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.springframework.stereotype.Service
 import java.util.UUID
 
@@ -31,6 +32,7 @@ class RunService(
             qaLog = request.qaLog,
             resumedFromRunId = request.resumedFromRunId,
             runtimeSnapshot = request.runtimeSnapshot,
+            authBindingsSnapshot = request.authBindingsSnapshot ?: jacksonObjectMapper().createArrayNode(),
         )
         // `files` é opcional no POST (o front preenche depois, no PUT final) — só sobrescreve o default se veio.
         return runRepository.save(if (request.files != null) run.copy(files = request.files) else run)
@@ -59,6 +61,7 @@ class RunService(
             steps = request.steps ?: current.steps,
             qaLog = request.qaLog ?: current.qaLog,
             runtimeSnapshot = request.runtimeSnapshot ?: current.runtimeSnapshot,
+			authBindingsSnapshot = request.authBindingsSnapshot ?: current.authBindingsSnapshot,
             files = request.files ?: current.files,
         )
         return runRepository.save(updated)

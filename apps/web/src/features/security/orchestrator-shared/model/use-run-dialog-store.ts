@@ -2,11 +2,12 @@ import { create } from "zustand";
 
 export type RunDialogTarget = {
 	squadId: string;
+	runId?: string | null;
 };
 
 type RunDialogStoreState = {
 	target: RunDialogTarget | null;
-	openRunDialog: (squadId: string) => void;
+	openRunDialog: (squadId: string, runId?: string | null) => void;
 	closeRunDialog: () => void;
 };
 
@@ -17,6 +18,6 @@ type RunDialogStoreState = {
  */
 export const useRunDialogStore = create<RunDialogStoreState>((set) => ({
 	target: null,
-	openRunDialog: (squadId) => set({ target: { squadId } }),
+	openRunDialog: (squadId, runId) => set({ target: { squadId, runId } }),
 	closeRunDialog: () => set({ target: null }),
 }));
