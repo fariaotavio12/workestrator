@@ -1,6 +1,6 @@
 import { Rotas } from "@/app/routing/variables";
 import { Button, Skeleton, SquadFormDialog, Typography, notify } from "@/components";
-import { MAX_SEATS } from "@/features/security/orchestrator-shared/data/constants";
+import { ACTIVE_RUN_STATUSES, MAX_SEATS } from "@/features/security/orchestrator-shared/data/constants";
 import { modelLabel } from "@/features/security/orchestrator-shared/data/providers";
 import {
 	IDLE_RUNTIME,
@@ -29,6 +29,8 @@ const nextSeatPosition = (seatCount: number): { col: number; row: number } => ({
 	row: Math.floor(seatCount / 3) + 1,
 });
 
+const EMPTY_RUN_IDS: string[] = [];
+
 export const PageSquadDetail = () => {
 	const { id = "" } = useParams();
 	const navigate = useNavigate();
@@ -38,12 +40,24 @@ export const PageSquadDetail = () => {
 	const runtime = useOrchestratorRuntimeStore((s) =>
 		s.runtimes[s.selectedRunIdBySquad[id] ?? ""] ?? IDLE_RUNTIME,
 	);
+	const runIds = useOrchestratorRuntimeStore((s) => s.runIdsBySquad[id] ?? EMPTY_RUN_IDS);
+	const runtimes = useOrchestratorRuntimeStore((s) => s.runtimes);
 	const addSeat = useAddSeat(id);
 	const assignSeat = useAssignSeat(id);
 
 	const squad = useMemo<Squad | undefined>(
 		() => (squadDetail ? { ...squadDetail, runtime } : undefined),
 		[squadDetail, runtime],
+	);
+
+	// Execuções ainda vivas deste squad — dá ao header o que precisa pro dropdown "Rodar"
+	// escolher entre reabrir uma delas ou iniciar uma nova (runs paralelos).
+	const activeRuns = useMemo(
+		() =>
+			runIds
+				.map((runId) => ({ runId, status: runtimes[runId]?.status ?? "idle" }))
+				.filter((run) => ACTIVE_RUN_STATUSES.has(run.status)),
+		[runIds, runtimes],
 	);
 
 	const [editOpen, setEditOpen] = useState(false);
@@ -156,13 +170,14 @@ export const PageSquadDetail = () => {
 				isAddingSeat={addSeat.isPending}
 				isRunDisabled={readiness.length > 0}
 				runDisabledTitle={readiness.length > 0 ? readiness.map(readinessMessage).join(" ") : undefined}
+				activeRuns={activeRuns}
 				onBack={() => navigate(Rotas.protegidas.orchestrator.squads)}
 				onEdit={() => setEditOpen(true)}
 				onAddSeat={handleAddSeat}
 				onNewAgent={() => setAgentForm({})}
 				onOpenHistory={() => openHistoryDialog(squad.id)}
 				onShare={() => setShareOpen(true)}
-				onRun={() => openRunDialog(squad.id)}
+				onRun={(runId) => openRunDialog(squad.id, runId)}
 			/>
 
 			<div className="min-h-0 flex-1 p-4 sm:p-6">
