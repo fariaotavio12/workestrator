@@ -582,6 +582,32 @@ describe("callOpenAiCompat tool loop", () => {
 		expect(body.tools).toHaveLength(1);
 	});
 
+	it("recovers a narrated vLLM tool call by retrying with a named tool_choice", async () => {
+		const fetchMock = mockChatCalls([
+			sseResponse([{ content: 'call:workspace__write_file{"path":"output/vllm-result.md","content":"ok"}' }]),
+			sseResponse(toolCallDeltas("workspace__write_file", '{"path":"output/vllm-result.md","content":"ok"}')),
+			sseResponse([{ content: "FILE_READY output/vllm-result.md verified=true" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ path: "output/vllm-result.md", content: "ok" });
+		const chatBodies = fetchMock.mock.calls
+			.filter(([url]) => String(url).includes("/chat/completions"))
+			.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { tool_choice?: unknown });
+		expect(chatBodies[0].tool_choice).toBe("auto");
+		expect(chatBodies[1].tool_choice).toEqual({
+			type: "function",
+			function: { name: "workspace__write_file" },
+		});
+		expect(chatBodies[2].tool_choice).toBe("auto");
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({
+			output: "FILE_READY output/vllm-result.md verified=true",
+		});
+	});
+
 	it("omits tools entirely when the agent has none attached", async () => {
 		const fetchMock = mockChatCalls([sseResponse([{ content: "pronto" }])]);
 		const { res, events } = fakeResponse();
