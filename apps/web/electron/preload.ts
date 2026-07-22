@@ -26,13 +26,40 @@ contextBridge.exposeInMainWorld("__ORCH_API__", {
 		ipcRenderer.invoke("files:save-preview-archive", input),
 	/** Botão "Conectar" do catálogo de conectores — abre a janela de autorização OAuth (ver oauth-flow.ts). */
 	connectOAuth: (input: {
+		connectorId?: string;
 		authUrl: string;
 		tokenUrl: string;
-		clientId: string;
+		clientId?: string;
 		clientSecret?: string;
 		scopes?: string;
-	}): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }> =>
-		ipcRenderer.invoke("oauth:connect", input),
+		openExternal?: boolean;
+	}): Promise<{
+		accessToken: string;
+		refreshToken?: string;
+		expiresIn?: number;
+		accountExternalId?: string;
+		accountDisplayName?: string;
+	}> => ipcRenderer.invoke("oauth:connect", input),
+	startAuthFlow: (input: {
+		kind: "external_authorization" | "action_approval";
+		label: string;
+		url?: string;
+		ttlSeconds?: number;
+	}) => ipcRenderer.invoke("auth-flow:start", input),
+	getAuthFlow: (id: string) => ipcRenderer.invoke("auth-flow:get", id),
+	resolveAuthFlow: (id: string, approved: boolean) => ipcRenderer.invoke("auth-flow:resolve", id, approved),
+	cancelAuthFlow: (id: string) => ipcRenderer.invoke("auth-flow:cancel", id),
+	connectInstagram: (input: {
+		authUrl: string;
+		tokenUrl: string;
+		scopes: string;
+		backendBaseUrl: string;
+		backendToken: string;
+	}): Promise<Record<string, unknown>> => ipcRenderer.invoke("oauth:connect-instagram", input),
+	getInstagramAppStatus: (): Promise<{ configured: boolean; callbackUri: string }> =>
+		ipcRenderer.invoke("oauth:instagram-app-status"),
+	configureInstagramApp: (input: { clientId: string; clientSecret: string }): Promise<{ configured: boolean }> =>
+		ipcRenderer.invoke("oauth:configure-instagram-app", input),
 	/** Cacheia o token de sessão em disco pro MCP server externo usar sozinho (ver `session-token-cache.ts`). */
 	cacheSessionToken: (token: string, expiresAt: string): Promise<void> =>
 		ipcRenderer.invoke("auth:cache-session-token", token, expiresAt),

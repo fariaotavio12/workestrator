@@ -20,8 +20,16 @@ import type { SquadSummary } from "@/features/security/squads/api";
 import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
 
 const squadPath = (id: string) => Rotas.protegidas.orchestrator.squadDetail.replace(":id", id);
-const ACTIVE_STATUSES = new Set(["running", "paused", "checkpoint", "awaiting_input"]);
-const ATTENTION_STATUSES = new Set(["checkpoint", "awaiting_input"]);
+const ACTIVE_STATUSES = new Set([
+	"queued",
+	"running",
+	"paused",
+	"checkpoint",
+	"awaiting_input",
+	"awaiting_auth",
+	"awaiting_approval",
+]);
+const ATTENTION_STATUSES = new Set(["checkpoint", "awaiting_input", "awaiting_auth", "awaiting_approval"]);
 
 export const OrchestratorSquadsSidebar = () => {
 	const { pathname } = useLocation();
@@ -30,18 +38,25 @@ export const OrchestratorSquadsSidebar = () => {
 	const duplicateSquad = useDuplicateSquad();
 	const deleteSquad = useDeleteSquad();
 	const runtimes = useOrchestratorRuntimeStore((s) => s.runtimes);
+	const runIdsBySquad = useOrchestratorRuntimeStore((s) => s.runIdsBySquad);
 	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
 
 	// Indicador global de execuções ao vivo — "precisa de você" tem prioridade sobre "só rodando"
 	// (ver docs/plano-integracoes-e-flow-builder.md, Etapa 4.5). Sem isso, nada no app avisa
 	// persistentemente que um run está esperando resposta fora do dialog.
 	const activity = useMemo(() => {
-		const activeSquads = squads.filter((squad) => ACTIVE_STATUSES.has(runtimes[squad.id]?.status ?? "idle"));
-		const attentionSquads = activeSquads.filter((squad) =>
-			ATTENTION_STATUSES.has(runtimes[squad.id]?.status ?? "idle"),
+		const activeRunIds = Object.values(runIdsBySquad)
+			.flat()
+			.filter((runId) => ACTIVE_STATUSES.has(runtimes[runId]?.status ?? "idle"));
+		const attentionRunIds = activeRunIds.filter((runId) => ATTENTION_STATUSES.has(runtimes[runId]?.status ?? "idle"));
+		const activeSquads = squads.filter((squad) =>
+			(runIdsBySquad[squad.id] ?? []).some((runId) => activeRunIds.includes(runId)),
 		);
-		return { activeSquads, attentionSquads };
-	}, [squads, runtimes]);
+		const attentionSquads = squads.filter((squad) =>
+			(runIdsBySquad[squad.id] ?? []).some((runId) => attentionRunIds.includes(runId)),
+		);
+		return { activeSquads, attentionSquads, activeRunIds, attentionRunIds };
+	}, [runIdsBySquad, squads, runtimes]);
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editingSquad, setEditingSquad] = useState<SquadSummary | undefined>(undefined);
@@ -96,7 +111,11 @@ export const OrchestratorSquadsSidebar = () => {
 								type="button"
 								tooltip="Precisa de você"
 								className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 mb-1 border"
-								onClick={() => openRunDialog(activity.attentionSquads[0].id)}
+								onClick={() => {
+									const squadId = activity.attentionSquads[0].id;
+									const runId = activity.attentionRunIds.find((id) => (runIdsBySquad[squadId] ?? []).includes(id));
+									openRunDialog(squadId, runId);
+								}}
 							>
 								<AlertTriangle className="size-4" />
 								<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
@@ -111,11 +130,15 @@ export const OrchestratorSquadsSidebar = () => {
 									type="button"
 									tooltip="Execuções rodando"
 									className="text-primary mb-1"
-									onClick={() => openRunDialog(activity.activeSquads[0].id)}
+									onClick={() => {
+										const squadId = activity.activeSquads[0].id;
+										const runId = activity.activeRunIds.find((id) => (runIdsBySquad[squadId] ?? []).includes(id));
+										openRunDialog(squadId, runId);
+									}}
 								>
 									<Play className="size-4" />
 									<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
-										{activity.activeSquads.length} execução(ões) rodando
+										{activity.activeRunIds.length} execução(ões) rodando
 									</Typography>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
@@ -134,7 +157,15 @@ export const OrchestratorSquadsSidebar = () => {
 						squads.map((squad) => {
 							const url = squadPath(squad.id);
 							const isActive = pathname === url;
-							const status = runtimes[squad.id]?.status ?? "idle";
+							const squadRunIds = runIdsBySquad[squad.id] ?? [];
+							const status =
+								squadRunIds
+									.map((runId) => runtimes[runId]?.status ?? "idle")
+									.find((item) => ATTENTION_STATUSES.has(item)) ??
+								squadRunIds
+									.map((runId) => runtimes[runId]?.status ?? "idle")
+									.find((item) => ACTIVE_STATUSES.has(item)) ??
+								"idle";
 							const isLive = ACTIVE_STATUSES.has(status);
 							const needsAttention = ATTENTION_STATUSES.has(status);
 

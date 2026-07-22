@@ -1,4 +1,4 @@
-import type { SecretAuthType } from "@/features/security/orchestrator-shared/types";
+import type { AuthConnectionStatus, SecretAuthType } from "@/features/security/orchestrator-shared/types";
 
 export type CreateSecretPayload = {
 	label: string;
@@ -8,6 +8,12 @@ export type CreateSecretPayload = {
 	value: string;
 	/** Id do preset do catálogo de conectores que originou este secret (ex.: "google"). */
 	connectorId?: string;
+	accountExternalId?: string;
+	accountDisplayName?: string;
+	scopes?: string[];
+	status?: AuthConnectionStatus;
+	expiresAt?: string;
+	lastValidatedAt?: string;
 };
 
 export type UpdateSecretPayload = {
@@ -15,6 +21,12 @@ export type UpdateSecretPayload = {
 	authType: SecretAuthType;
 	metadata?: Record<string, string>;
 	connectorId?: string;
+	accountExternalId?: string;
+	accountDisplayName?: string;
+	scopes?: string[];
+	status?: AuthConnectionStatus;
+	expiresAt?: string;
+	lastValidatedAt?: string;
 };
 
 export type UpdateSecretValuePayload = {

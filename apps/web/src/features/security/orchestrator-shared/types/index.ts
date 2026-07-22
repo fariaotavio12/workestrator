@@ -86,6 +86,8 @@ export type SecretAuthType =
 	| "oauth2_refresh"
 	| "raw";
 
+export type AuthConnectionStatus = "connected" | "expired" | "revoked" | "error";
+
 /**
  * Credencial cifrada no backend (AES-256-GCM) — o valor real nunca é devolvido por `GET /secrets`,
  * só resolvido pelo runner em runtime via `GET /secrets/{id}/value`. `apiKeyRef`/`authRef` referenciam
@@ -98,9 +100,24 @@ export type Secret = {
 	metadata?: Record<string, string>;
 	/** Id do preset do catálogo de conectores que originou este secret (ex.: "google") — só informativo. */
 	connectorId?: string;
+	/** Identidade segura da conta conectada; o token continua separado e nunca aparece na UI. */
+	accountExternalId?: string;
+	accountDisplayName?: string;
+	scopes: string[];
+	status: AuthConnectionStatus;
+	expiresAt?: string;
+	lastValidatedAt?: string;
 	hasValue: boolean;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type AgentAuthBinding = {
+	scriptId: string;
+	authSlot: string;
+	connectionId: string;
+	alias: string;
+	isDefault: boolean;
 };
 
 /** Provider de modelo cadastrado (CLI local já autenticado na máquina ou API externa com key própria). */
@@ -136,6 +153,8 @@ export type Agent = {
 	 * no prompt do agente (ver `buildRetrievalBlock` e `orchestrator-runtime`).
 	 */
 	knowledgeCollectionIds?: string[];
+	/** Contas que este agente pode usar em cada slot das suas ferramentas. */
+	authBindings?: AgentAuthBinding[];
 	/**
 	 * Fase B (execução real): habilita tools de verdade (Bash/Read/Write/Edit) numa pasta de trabalho
 	 * escopada, com auto-aceite (sem prompt de permissão ao vivo — exigiria stream bidirecional).
@@ -192,11 +211,14 @@ export type Trigger =
 
 export type SquadRuntimeStatus =
 	| "idle"
+	| "queued"
 	| "running"
 	| "paused"
 	| "completed"
 	| "checkpoint"
 	| "awaiting_input"
+	| "awaiting_auth"
+	| "awaiting_approval"
 	| "aborted";
 
 /** Pergunta que um agent fez no meio do próprio turno — pausa o run até o usuário responder. */
@@ -217,6 +239,9 @@ export type RunEvent = {
 };
 
 export type Runtime = {
+	/** Identidade da execução ao vivo. Ausente somente no estado idle legado. */
+	runId?: string;
+	squadId?: string;
 	status: SquadRuntimeStatus;
 	/** Início da execução atual (ISO) — usado pelo cronômetro ao vivo. Ausente quando idle. */
 	startedAt?: string | null;
@@ -334,6 +359,8 @@ export type RunRecord = {
 	resumedFromRunId?: string | null;
 	/** Estado pendente (checkpoint/pergunta) no momento da última persistência — usado para retomar. */
 	runtimeSnapshot?: RuntimeSnapshot | null;
+	/** SeleÃ§Ã£o imutÃ¡vel de conexÃµes feita no inÃ­cio; nÃ£o carrega tokens. */
+	authBindingsSnapshot?: (AgentAuthBinding & { agentId: string })[] | null;
 	/** Arquivos gerados/alterados, copiados para `.runs/<id>` ao final do run. Ausente em runs antigos/sem arquivos. */
 	files?: RunFile[] | null;
 };

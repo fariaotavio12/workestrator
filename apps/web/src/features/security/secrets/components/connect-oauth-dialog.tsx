@@ -3,12 +3,19 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { connectOAuth } from "@/features/security/orchestrator-shared/runtime/model-client";
-import { useCreateSecret } from "@/features/security/secrets/api";
+import {
+	configureInstagramApp,
+	connectInstagram,
+	connectOAuth,
+	getInstagramAppStatus,
+} from "@/features/security/orchestrator-shared/runtime/model-client";
+import { secretsKeys, useCreateSecret } from "@/features/security/secrets/api";
 import type { ConnectorPreset } from "@/features/security/secrets/connectors-catalog";
+import { apiUrl, tanStackQueryClient } from "@/app/api/clients";
+import { tokenStorage } from "@/app/utils/tokenStorage";
 
 const schema = z.object({
-	clientId: z.string().min(1, "Informe o Client ID"),
+	clientId: z.string().optional(),
 	clientSecret: z.string().optional(),
 	scopes: z.string().optional(),
 });
@@ -31,7 +38,10 @@ type Props = {
  */
 export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 	const [connecting, setConnecting] = useState(false);
+	const [instagramConfigured, setInstagramConfigured] = useState<boolean | null>(null);
+	const [instagramCallbackUri, setInstagramCallbackUri] = useState("");
 	const createSecret = useCreateSecret();
+	const isInstagram = preset?.id === "instagram";
 	const {
 		register,
 		handleSubmit,
@@ -44,8 +54,14 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 	});
 
 	useEffect(() => {
-		if (open) reset({ clientId: "", clientSecret: "", scopes: preset?.defaultScopes ?? "" });
-	}, [open, preset, reset]);
+		if (!open) return;
+		reset({ clientId: "", clientSecret: "", scopes: preset?.defaultScopes ?? "" });
+		if (!isInstagram) return;
+		void getInstagramAppStatus().then((status) => {
+			setInstagramConfigured(status.configured);
+			setInstagramCallbackUri(status.callbackUri);
+		});
+	}, [isInstagram, open, preset, reset]);
 
 	const onSubmit = async (values: FormValues) => {
 		if (!preset?.authUrl || !preset.tokenUrl) {
@@ -57,10 +73,38 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 		}
 		setConnecting(true);
 		try {
+			if (isInstagram) {
+				if (!instagramConfigured) {
+					if (!values.clientId?.trim() || !values.clientSecret?.trim()) {
+						throw new Error("Informe o App ID e o App Secret da Meta para configurar o conector.");
+					}
+					await configureInstagramApp({
+						clientId: values.clientId.trim(),
+						clientSecret: values.clientSecret.trim(),
+					});
+					setInstagramConfigured(true);
+				}
+				const backendToken = await tokenStorage.get();
+				if (!backendToken) throw new Error("Faça login no Workestrator antes de conectar o Instagram.");
+				if (!apiUrl) throw new Error("A URL da API do Workestrator não está configurada.");
+				await connectInstagram({
+					authUrl: preset.authUrl,
+					tokenUrl: preset.tokenUrl,
+					scopes:
+						values.scopes || preset.defaultScopes || "instagram_business_basic instagram_business_content_publish",
+					backendBaseUrl: apiUrl,
+					backendToken,
+				});
+				await tanStackQueryClient.invalidateQueries({ queryKey: secretsKeys.list() });
+				notify.success("Conta do Instagram conectada");
+				onOpenChange(false);
+				return;
+			}
+			if (!values.clientId?.trim()) throw new Error("Informe o Client ID.");
 			const result = await connectOAuth({
 				authUrl: preset.authUrl,
 				tokenUrl: preset.tokenUrl,
-				clientId: values.clientId,
+				clientId: values.clientId.trim(),
 				clientSecret: values.clientSecret || undefined,
 				scopes: values.scopes || undefined,
 			});
@@ -71,7 +115,7 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 					authType: "oauth2_refresh",
 					metadata: {
 						tokenUrl: preset.tokenUrl,
-						clientId: values.clientId,
+						clientId: values.clientId.trim(),
 						...(values.scopes ? { scopes: values.scopes } : {}),
 					},
 					value: JSON.stringify({ refreshToken: result.refreshToken, clientSecret: values.clientSecret || undefined }),
@@ -85,7 +129,9 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 					value: result.accessToken,
 					connectorId: preset.id,
 				});
-				notify.warning(`${preset.name} conectado, mas o provider não emitiu um refresh token — vai precisar reconectar quando o acesso expirar.`);
+				notify.warning(
+					`${preset.name} conectado, mas o provider não emitiu um refresh token — vai precisar reconectar quando o acesso expirar.`,
+				);
 			}
 			onOpenChange(false);
 		} catch (err) {
@@ -102,7 +148,11 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 			open={open}
 			onOpenChange={(next) => !connecting && onOpenChange(next)}
 			title={preset ? `Conectar ${preset.name}` : "Conectar"}
-			description="As credenciais do seu app OAuth (cadastrado no provider) — nunca trafegam além desta troca."
+			description={
+				isInstagram
+					? "Configure o aplicativo Meta uma vez e conecte quantas contas Instagram profissionais precisar."
+					: "As credenciais do seu app OAuth (cadastrado no provider) — nunca trafegam além desta troca."
+			}
 			contentClassName="sm:max-w-md"
 			headerLeading={
 				<div
@@ -116,8 +166,13 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 					<Button type="button" variant="outline" size="sm" disabled={connecting} onClick={() => onOpenChange(false)}>
 						Cancelar
 					</Button>
-					<Button type="submit" form="connect-oauth-form" size="sm" disabled={connecting}>
-						{connecting ? "Abrindo autorização..." : "Conectar"}
+					<Button
+						type="submit"
+						form="connect-oauth-form"
+						size="sm"
+						disabled={connecting || (isInstagram && instagramConfigured === null)}
+					>
+						{connecting ? "Abrindo autorização..." : isInstagram ? "Entrar com Instagram" : "Conectar"}
 					</Button>
 				</>
 			}
@@ -143,11 +198,32 @@ export const ConnectOAuthDialog = ({ open, onOpenChange, preset }: Props) => {
 			</div>
 
 			<form id="connect-oauth-form" onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-				<Input label="Client ID" placeholder="Cadastrado no app OAuth do provider" error={errors.clientId?.message} {...register("clientId")} />
-				<Input label="Client secret (opcional)" type="password" autoComplete="off" {...register("clientSecret")} />
+				{(!isInstagram || instagramConfigured === false) && (
+					<>
+						<Input
+							label={isInstagram ? "App ID da Meta" : "Client ID"}
+							placeholder="Cadastrado no app OAuth do provider"
+							error={errors.clientId?.message}
+							{...register("clientId")}
+						/>
+						<Input
+							label={isInstagram ? "App Secret da Meta" : "Client secret (opcional)"}
+							type="password"
+							autoComplete="off"
+							{...register("clientSecret")}
+						/>
+					</>
+				)}
+				{isInstagram && instagramCallbackUri && (
+					<Typography variant="caption" className="text-muted-foreground">
+						Redirect URI para cadastrar no aplicativo Meta: {instagramCallbackUri}
+					</Typography>
+				)}
 				<Input label="Scopes" placeholder="separados por espaço" {...register("scopes")} />
 				<Typography variant="caption" className="text-muted-foreground">
-					Uma janela de autorização do {preset?.name ?? "provider"} vai abrir. Depois de autorizar, ela fecha sozinha.
+					{isInstagram
+						? "O navegador do seu computador será aberto. Entre no Instagram e autorize a conta profissional que deseja usar."
+						: `Uma janela de autorização do ${preset?.name ?? "provider"} vai abrir. Depois de autorizar, ela fecha sozinha.`}
 				</Typography>
 			</form>
 		</AppSheet>

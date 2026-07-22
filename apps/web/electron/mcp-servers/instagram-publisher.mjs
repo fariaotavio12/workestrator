@@ -7,7 +7,8 @@
 // segredos injetados (via `.mcp.json` env — ver `buildMcpServerEntry` em runner.ts). Este server lê
 // os 3 segredos do `env` do próprio processo, que o runner popula a partir do `env` do Script (com
 // placeholders `$<secretId>` resolvidos contra o backend).
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -83,7 +84,19 @@ async function getPermalink(mediaId, token) {
 	return (await res.json()).permalink ?? null;
 }
 
-async function publishCarousel({ images, caption, dryRun }) {
+const publishLogPath = () => resolve(process.env.WORKESTRATOR_WORKSPACE_DIR || process.cwd(), ".instagram-publish-log.json");
+
+const readPublishLog = () => {
+	try {
+		return existsSync(publishLogPath()) ? JSON.parse(readFileSync(publishLogPath(), "utf8")) : {};
+	} catch {
+		return {};
+	}
+};
+
+const writePublishLog = (log) => writeFileSync(publishLogPath(), JSON.stringify(log, null, 2), "utf8");
+
+async function publishCarousel({ images, caption, dryRun, idempotencyKey }) {
 	if (images.length < 2 || images.length > 10) {
 		throw new Error(`Carrossel do Instagram exige de 2 a 10 imagens (recebeu ${images.length}).`);
 	}
@@ -94,6 +107,16 @@ async function publishCarousel({ images, caption, dryRun }) {
 	if (!INSTAGRAM_ACCESS_TOKEN) throw new Error("INSTAGRAM_ACCESS_TOKEN não está definido no ambiente do tool.");
 	if (!INSTAGRAM_USER_ID) throw new Error("INSTAGRAM_USER_ID não está definido no ambiente do tool.");
 	if (!IMGBB_API_KEY) throw new Error("IMGBB_API_KEY não está definido no ambiente do tool (https://api.imgbb.com/).");
+	const effectiveKey = idempotencyKey || createHash("sha256")
+		.update(JSON.stringify({ userId: INSTAGRAM_USER_ID, images, caption }))
+		.digest("hex");
+	const publishLog = readPublishLog();
+	if (publishLog[effectiveKey]?.postId) {
+		return { ok: true, duplicatePrevented: true, idempotencyKey: effectiveKey, ...publishLog[effectiveKey] };
+	}
+	if (!dryRun && process.env.WORKESTRATOR_PUBLISH_APPROVED !== "true") {
+		throw new Error("Publicação bloqueada: aprove o checkpoint do Workestrator antes de usar dryRun:false.");
+	}
 
 	const log = [];
 	const imageUrls = await Promise.all(images.map((p) => uploadToImgBB(p, IMGBB_API_KEY)));
@@ -110,12 +133,14 @@ async function publishCarousel({ images, caption, dryRun }) {
 	log.push(`Container do carrossel pronto: ${carouselId}.`);
 
 	if (dryRun) {
-		return { ok: true, dryRun: true, carouselId, imageUrls, log: [...log, "DRY RUN — publish final não chamado."] };
+		return { ok: true, dryRun: true, idempotencyKey: effectiveKey, carouselId, imageUrls, log: [...log, "DRY RUN — publish final não chamado."] };
 	}
 
 	const postId = await publishMedia(INSTAGRAM_USER_ID, carouselId, INSTAGRAM_ACCESS_TOKEN);
 	const permalink = await getPermalink(postId, INSTAGRAM_ACCESS_TOKEN);
-	return { ok: true, dryRun: false, postId, permalink, imageUrls, log: [...log, `Publicado. Post ID ${postId}.`] };
+	publishLog[effectiveKey] = { postId, permalink, publishedAt: new Date().toISOString() };
+	writePublishLog(publishLog);
+	return { ok: true, dryRun: false, idempotencyKey: effectiveKey, postId, permalink, imageUrls, log: [...log, `Publicado. Post ID ${postId}.`] };
 }
 
 const server = new McpServer({ name: "workestrator-instagram", version: "1.0.0" });
@@ -134,11 +159,12 @@ server.registerTool(
 				.describe("Caminhos locais das imagens JPEG, na ordem do carrossel (2 a 10)."),
 			caption: z.string().max(2200).describe("Legenda do post (máx. 2200 caracteres)."),
 			dryRun: z.boolean().optional().describe("Se true, prepara tudo mas não chama o publish final."),
+			idempotencyKey: z.string().optional().describe("Chave estável do run para impedir publicação duplicada em retry."),
 		},
 	},
-	async ({ images, caption, dryRun = false }) => {
+	async ({ images, caption, dryRun = true, idempotencyKey }) => {
 		try {
-			const result = await publishCarousel({ images, caption, dryRun });
+			const result = await publishCarousel({ images, caption, dryRun, idempotencyKey });
 			return textResult(JSON.stringify(result, null, 2));
 		} catch (error) {
 			return errorResult(error instanceof Error ? error.message : String(error));

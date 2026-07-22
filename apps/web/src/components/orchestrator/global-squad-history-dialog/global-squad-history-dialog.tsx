@@ -18,7 +18,9 @@ export const GlobalSquadHistoryDialog = () => {
 	const closeHistoryDialog = useSquadHistoryDialogStore((s) => s.closeHistoryDialog);
 	const { data: squadDetail } = useSquadQuery(target?.squadId);
 	const runtime = useOrchestratorRuntimeStore((s) =>
-		target ? (s.runtimes[target.squadId] ?? IDLE_RUNTIME) : IDLE_RUNTIME,
+		target
+			? (s.runtimes[s.selectedRunIdBySquad[target.squadId] ?? ""] ?? IDLE_RUNTIME)
+			: IDLE_RUNTIME,
 	);
 
 	const squad = useMemo<Squad | null>(

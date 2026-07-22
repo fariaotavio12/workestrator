@@ -11,11 +11,14 @@ import {
 	buildExecutorPlan,
 	callOpenAiCompat,
 	classifyCliFailure,
+	configureRunnerWorkspace,
 	walkAllRelPaths,
+	workspaceForExecution,
 	type ResolvedSecret,
 	type ScriptPayload,
 	type SecretResolver,
 } from "./runner";
+import { startLocalRunnerServer } from "./server";
 
 const CURRENT_TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,6 +54,34 @@ describe("buildExecutorPlan", () => {
 		expect(buildExecutorPlan("codex-cli", "cli-default", "", "prompt", true).args).toContain(
 			"--dangerously-bypass-approvals-and-sandbox",
 		);
+	});
+});
+
+describe("isolated execution workspaces", () => {
+	it("resetting one execution never removes files from another execution", async () => {
+		const root = mkdtempSync(path.join(os.tmpdir(), "workestrator-runs-"));
+		configureRunnerWorkspace(root);
+		const runA = workspaceForExecution("run-a");
+		const runB = workspaceForExecution("run-b");
+		mkdirSync(runA, { recursive: true });
+		mkdirSync(runB, { recursive: true });
+		writeFileSync(path.join(runA, "result.md"), "A");
+		writeFileSync(path.join(runB, "result.md"), "B");
+		const server = await startLocalRunnerServer();
+		try {
+			const response = await fetch(`${server.baseUrl}/api/reset-workspace`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-Orchestrator-Token": server.token },
+				body: JSON.stringify({ executionId: "run-a" }),
+			});
+			expect(response.ok).toBe(true);
+			expect(existsSync(path.join(runA, "result.md"))).toBe(false);
+			expect(readFileSync(path.join(runB, "result.md"), "utf8")).toBe("B");
+		} finally {
+			server.close();
+			rmSync(root, { recursive: true, force: true });
+			configureRunnerWorkspace(path.resolve(process.cwd(), "orchestrator-workspace"));
+		}
 	});
 });
 
@@ -150,6 +181,43 @@ describe("buildMcpServerEntry", () => {
 				IMGBB_API_KEY: "imgbb",
 			},
 		});
+	});
+
+	it("injects the account selected by authRef without exposing identity placeholders in the script", async () => {
+		const instagramSecret: SecretResolver = async () => ({
+			value: "account-access-token",
+			authType: "bearer",
+			accountExternalId: "178900000000001",
+			accountDisplayName: "@empresa_a",
+			status: "connected",
+		});
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "instagram-account-a" }),
+			instagramSecret,
+			"D:\\runs\\execution-a",
+		);
+		expect(entry).toMatchObject({
+			env: {
+				INSTAGRAM_ACCESS_TOKEN: "account-access-token",
+				INSTAGRAM_USER_ID: "178900000000001",
+				WORKESTRATOR_WORKSPACE_DIR: "D:\\runs\\execution-a",
+			},
+		});
+	});
+
+	it("blocks an expired Instagram connection before starting the publisher", async () => {
+		const expiredSecret: SecretResolver = async () => ({
+			value: "expired-token",
+			authType: "bearer",
+			accountExternalId: "1789",
+			status: "expired",
+		});
+		await expect(
+			buildMcpServerEntry(
+				baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "expired-account" }),
+				expiredSecret,
+			),
+		).rejects.toThrow("reconecte");
 	});
 
 	it("returns undefined for a composio connector without config.gatewayUrl", async () => {

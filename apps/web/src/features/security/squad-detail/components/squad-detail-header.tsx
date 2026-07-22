@@ -6,11 +6,14 @@ import { ArrowLeft, Bot, History, Pencil, Play, Plus, Share2, Users } from "luci
 
 const STATUS: Record<Squad["runtime"]["status"], { label: string; dot: string; pill: string }> = {
 	idle: { label: "Ocioso", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
+	queued: { label: "Na fila", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
 	running: { label: "Rodando", dot: "bg-primary", pill: "bg-primary/10 text-primary" },
 	paused: { label: "Pausado", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
 	completed: { label: "Concluido", dot: "bg-success", pill: "bg-success/12 text-success" },
 	checkpoint: { label: "Checkpoint", dot: "bg-warning", pill: "bg-warning/15 text-warning" },
 	awaiting_input: { label: "Aguardando resposta", dot: "bg-warning", pill: "bg-warning/15 text-warning" },
+	awaiting_auth: { label: "Aguardando autenticação", dot: "bg-warning", pill: "bg-warning/15 text-warning" },
+	awaiting_approval: { label: "Aguardando aprovação", dot: "bg-warning", pill: "bg-warning/15 text-warning" },
 	aborted: { label: "Abortado", dot: "bg-destructive", pill: "bg-destructive/10 text-destructive" },
 };
 

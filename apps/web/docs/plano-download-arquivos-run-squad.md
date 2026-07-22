@@ -1,12 +1,18 @@
 # Plano — arquivos, roteamento, Instagram e runs paralelos
 
-> Status: proposta técnica para implementação incremental
+> Status: plano de continuidade após a entrega parcial `3f0f869`
 >
 > Última atualização: 21/07/2026
 >
 > Aplicações afetadas: `apps/web` (React/Electron/runner) e `apps/api` (Kotlin/Spring)
 >
-> Documento de referência: este plano não representa funcionalidade já implementada
+> Documento de referência: as marcações abaixo distinguem o que já existe na branch do que ainda será implementado
+
+> Correção de entendimento — Instagram: o fluxo alvo é autenticação interativa pelo próprio computador.
+> O usuário clica em `Conectar Instagram`, o Electron abre o navegador, recebe o retorno OAuth e salva a
+> conta. Não faz parte da experiência final pedir que o usuário cole `INSTAGRAM_ACCESS_TOKEN` ou
+> `INSTAGRAM_USER_ID`. Client ID e Client Secret pertencem à configuração administrativa do aplicativo Meta,
+> não à configuração cotidiana de cada agente.
 
 ## Índice
 
@@ -27,7 +33,31 @@ Organizar cinco melhorias relacionadas ao ciclo completo de uma execução de sq
 4. transformar o OAuth do Instagram e o Publisher já existentes no primeiro caso real dessa arquitetura genérica;
 5. permitir vários runs do mesmo squad em paralelo, com acompanhamento visual independente e ao vivo.
 
-Este documento é somente um plano. Nenhuma implementação faz parte desta etapa.
+Este documento orienta as próximas implementações. Atualizar o plano não autoriza tratar itens pendentes como
+concluídos nem substituir os critérios de aceite por protótipos.
+
+## Estado real da branch atual
+
+### Onde acessar no app
+
+- Instagram: `Orquestrador > Conexões > Conectores > Instagram > Conectar`.
+- Conta usada pelo agent: editar o agent, abrir `Ferramentas`, anexar `Instagram Publisher` e escolher `Conta para publicação`.
+- Novo run paralelo: durante qualquer execução, clicar em `Nova execução`; as execuções do mesmo squad aparecem em tabs independentes.
+- Arquivos: no run ou histórico, abrir `Ver arquivos gerados`; usar `Baixar arquivo` ou `Baixar tudo`.
+
+Na primeira conexão Instagram, o administrador informa App ID e App Secret da Meta uma única vez. Eles ficam no cofre
+local do Electron. As conexões seguintes mostram apenas `Entrar com Instagram` e abrem o navegador padrão do computador.
+
+| Demanda | Estado | Observação |
+| ------- | ------ | ---------- |
+| Download de um arquivo do run | Implementado | Usa diálogo nativo de salvamento no Electron |
+| Download de todos os arquivos | Implementado | Gera ZIP pelo runner, com validação de caminho |
+| Repetição após `REVIEW_CHANGES owner=...` | Implementado parcialmente | Guardrail e teste existem; falta o contrato estruturado completo e validar o squad real |
+| Publisher Instagram MCP | Implementado | Binding da conta, `dryRun`, aprovação explícita, grant efêmero e idempotência local; falta somente homologação externa com uma conta Meta real |
+| Login Instagram pelo navegador do computador | Implementado, aguardando homologação externa | Electron abre o navegador padrão, usa callback loopback fixo, descobre a conta e salva o token sem devolvê-lo ao renderer |
+| Múltiplas contas e referência no agente | Implementado | Conexões guardam identidade/status e `AgentAuthBinding` seleciona a conta por ferramenta; o run persiste um snapshot imutável |
+| Runs paralelos do mesmo squad | Implementado no MVP | Runtime, cancelamento, fila e workspace usam `executionId`; limite inicial global é 2 |
+| Visualização simultânea dos runs em movimento | Implementado no MVP | Tabs por run preservam mapa, streaming, terminal, arquivos e intervenções independentes |
 
 ## Escopo e premissas
 
@@ -85,7 +115,8 @@ Premissas:
 | Autenticações             | Substituir o vínculo único `Script.authRef` por conexões reutilizáveis e vínculos N:N agente/tool/conta |
 | Múltiplas contas          | Permitir várias conexões do mesmo conector, com nome e identidade da conta                              |
 | Escolha da conta          | Configurar uma conta padrão por agente/tool e permitir override antes de iniciar o run                  |
-| Instagram                 | Ser o primeiro conector da autenticação genérica, reaproveitando OAuth, tokens e o MCP Publisher        |
+| Instagram                 | Login pelo navegador do computador; conta descoberta e salva sem token/user ID manual                   |
+| Configuração Meta         | App ID/secret configurados uma vez no sistema; usuário final apenas autoriza sua conta                   |
 | Publicação                | Exigir preview, `dryRun` e aprovação humana antes do efeito externo                                     |
 | Fluxos HTTPS              | Electron inicia, acompanha e cancela fluxos interativos por URL HTTPS validada                          |
 | MCP OAuth                 | Usar OAuth nativo do MCP remoto quando suportado; usar o Auth Flow Manager nos demais casos             |
@@ -525,7 +556,7 @@ Regras de segurança:
 
 - não aceitar URL livre enviada pelo agente;
 - obter `authorizationUrl`, `tokenUrl`, callback e domínios permitidos do catálogo do conector ou metadata MCP;
-- exigir HTTPS para URLs externas;
+- exigir HTTPS para URLs externas; permitir HTTP somente no callback loopback em `127.0.0.1`;
 - bloquear credenciais embutidas na URL, protocolos `file:`, `javascript:` e redirects fora da allowlist;
 - usar `state`, PKCE, expiração curta e uso único;
 - abrir pelo `shell.openExternal` ou `BrowserWindow` isolado, conforme o conector;
@@ -561,6 +592,29 @@ Flow Manager. Sem isso, o suporte presente na SDK permanece inativo.
 
 ### 3.8 Instagram como primeiro conector real
 
+#### 3.8.1 Correção do fluxo alvo
+
+O login deve acontecer pelo próprio computador, como no fluxo já iniciado em `electron/oauth-flow.ts`:
+
+```txt
+Usuário -> Conexões -> Instagram -> Conectar outra conta
+Electron -> abre navegador/BrowserWindow com o login oficial do Instagram
+Instagram -> callback único do fluxo
+Electron -> troca e valida o token sem expô-lo ao renderer
+Workestrator -> descobre id + @usuário e salva a conexão
+Agente -> referencia apenas a conexão/alias autorizado
+```
+
+Não usar como experiência final:
+
+- formulário pedindo access token;
+- formulário pedindo Instagram user ID;
+- placeholders como `$instagram-access-token` e `$instagram-user-id` no Publisher;
+- Client ID/Client Secret digitados novamente a cada conta conectada;
+- token enviado no prompt, transcript ou configuração visível do agente.
+
+#### 3.8.2 O que já existe e será reaproveitado
+
 Reutilizar:
 
 - `apps/web/electron/oauth-flow.ts`;
@@ -569,24 +623,109 @@ Reutilizar:
 - `InstagramTokenStrategy` e `OAuthTokenService`;
 - `apps/web/electron/mcp-servers/instagram-publisher.mjs`.
 
+Lacunas atuais que precisam ser fechadas:
+
+- o diálogo OAuth ainda pede Client ID/Secret ao usuário em toda conexão;
+- o callback loopback usa porta aleatória, enquanto o provider pode exigir redirect URI exata;
+- o catálogo Instagram ainda precisa declarar o escopo de publicação além do escopo básico;
+- o resultado OAuth salva token, mas ainda não cria uma identidade de conta com `id` e `@username`;
+- a tela de conexões reduz um conector a uma única conta;
+- o Publisher ainda lê token e user ID de variáveis de ambiente configuradas manualmente;
+- o agente ainda não possui binding explícito para escolher qual conta usar.
+
+#### 3.8.3 Configuração do aplicativo Meta
+
+Criar uma configuração de sistema separada das contas dos usuários:
+
+```ts
+type OAuthAppConfig = {
+	connectorId: "instagram";
+	clientIdRef: string;
+	clientSecretRef: string;
+	redirectMode: "loopback" | "https_relay";
+	redirectUri: string;
+	allowedAuthHosts: string[];
+};
+```
+
+Regras:
+
+- App ID e App Secret são cadastrados uma vez por administrador/deploy, preferencialmente por secrets do backend;
+- a UI comum mostra somente `Conectar Instagram`, sem solicitar credenciais técnicas do app;
+- builds de desenvolvimento podem permitir configuração local explícita, sem embutir o App Secret no renderer;
+- a conexão de uma conta nunca duplica o App Secret dentro do secret daquela conta;
+- validar na inicialização se o conector está configurado e mostrar instrução acionável se faltar configuração.
+
+#### 3.8.4 Callback no computador
+
+Caminho principal:
+
+1. o Electron cria um `flowId`, `state` e PKCE de uso único;
+2. abre o login oficial no navegador do computador ou em `BrowserWindow` isolada;
+3. recebe o callback em servidor loopback ligado somente a `127.0.0.1`;
+4. troca o código por token no processo main/backend seguro;
+5. fecha a janela/aba e atualiza a tela de conexões automaticamente.
+
+O callback não deve continuar usando uma porta aleatória sem garantia de compatibilidade. Fazer primeiro um spike
+com o aplicativo Meta real e escolher uma destas opções:
+
+- `loopback`: porta fixa configurável e redirect URI exata cadastrada no Meta App;
+- `https_relay`: apenas se a Meta não aceitar o loopback no aplicativo distribuído; o navegador continua abrindo no
+  computador, o backend recebe o callback HTTPS e devolve ao Electron por `flowId` de uso único/deep link.
+
+O relay HTTPS é fallback de compatibilidade, não substitui a experiência de login local. O plano só avança para a
+implementação completa depois que uma conta de teste concluir login, cancelamento e reconexão no app instalado.
+
+#### 3.8.5 Descoberta e persistência da conta
+
+Depois da troca do código:
+
+1. trocar o token curto pelo token de longa duração usando a estratégia Instagram já existente;
+2. consultar a API oficial com o token para obter ao menos `id`, `username` e tipo da conta;
+3. verificar se é uma conta profissional compatível com publicação;
+4. confirmar os scopes `instagram_business_basic` e `instagram_business_content_publish`;
+5. criar `AuthConnection` com `accountExternalId`, `accountDisplayName`, scopes, validade e status;
+6. guardar o token somente no secret cifrado associado à conexão;
+7. exibir a conta como, por exemplo, `Instagram — @empresa_a`.
+
+Falhas de descoberta, conta incompatível ou scope negado não podem criar uma conexão com status `connected`.
+
 Fluxo:
 
 1. `Adicionar conta` -> `Instagram`;
-2. abrir autorização pelo Auth Flow Manager;
-3. solicitar `instagram_business_basic instagram_business_content_publish`;
-4. validar callback, trocar token curto por longo e manter renovação no backend;
-5. consultar a identidade da conta profissional;
-6. criar `AuthConnection` com label e `@usuario`;
-7. vincular a conta ao Publisher do agente;
-8. selecionar/confirmar a conta antes do run ou da publicação.
+2. clicar em `Conectar` sem colar token, user ID ou credenciais do app;
+3. abrir autorização pelo Auth Flow Manager no computador;
+4. solicitar `instagram_business_basic instagram_business_content_publish`;
+5. validar callback, trocar token curto por longo e manter renovação no backend;
+6. consultar a identidade da conta profissional;
+7. criar `AuthConnection` com label e `@usuario`;
+8. vincular a conta ao Publisher do agente;
+9. selecionar/confirmar a conta antes do run ou da publicação.
 
-Para distribuição, preferir callback HTTPS estável no backend quando a Meta exigir redirect URI exata:
+#### 3.8.6 Referência da conta no agente
+
+Na edição do agente Publisher, mostrar:
 
 ```txt
-Electron -> API /oauth/instagram/start -> navegador Meta
-Meta -> API /oauth/instagram/callback -> conexão salva
-API/Electron -> evento de conclusão -> run/configuração atualizada
+Ferramenta: Instagram Publisher
+Conta para publicação: [Instagram — @empresa_a]
+Alias interno: instagram_empresa_a
 ```
+
+O valor salvo é um `AgentAuthBinding` para o slot `instagram_account`. O agente recebe apenas o alias seguro. No
+início do run, o binding vira um snapshot imutável e pode ser sobrescrito para outra conta conectada. Se a conexão
+expirar, somente esse run entra em `awaiting_auth` e oferece `Reconectar no navegador`.
+
+#### 3.8.7 Injeção no Publisher
+
+Alterar o Publisher para receber uma credencial resolvida pelo binding, não por placeholders manuais:
+
+- `AuthConnection.accountExternalId` fornece o ID da conta;
+- o runner resolve o access token válido no último momento;
+- token e ID entram somente no processo MCP local, após validação do run/agente/tool;
+- remover do template os placeholders `INSTAGRAM_ACCESS_TOKEN` e `INSTAGRAM_USER_ID`;
+- manter a credencial de storage em slot separado (`media_storage`) até a migração do imgBB para R2;
+- registrar nos logs apenas `connectionId`, alias seguro e `@username`, nunca o token.
 
 ### 3.9 Publicação no Instagram
 
@@ -922,15 +1061,22 @@ Arquivos prováveis:
 
 ### Etapa 7 — Instagram OAuth
 
-- spike de redirect URI;
-- scopes de publicação;
-- token curto -> longo;
-- descoberta automática da conta e teste de conexão.
+- cadastrar App ID/Secret uma única vez na configuração administrativa, sem pedi-los em toda conexão;
+- validar redirect URI com o Meta App real no Electron instalado e fixar `loopback` ou `https_relay`;
+- fazer `Conectar Instagram` abrir o navegador do computador e concluir/cancelar/reconectar sem colar token;
+- solicitar `instagram_business_basic instagram_business_content_publish`;
+- trocar token curto por longo e manter renovação;
+- descobrir automaticamente `id`, `username`, tipo da conta e scopes;
+- salvar a conta como `AuthConnection` e provar duas contas Instagram simultâneas no mesmo usuário;
+- adicionar teste de conexão real e estados expired/revoked/error.
 
 ### Etapa 8 — publicação Instagram
 
-- ligar conexão ao MCP Publisher;
+- substituir token/user ID manual pelo binding `instagram_account` escolhido no agente/run;
+- remover os placeholders manuais do template do Publisher;
+- injetar token válido + accountExternalId somente no processo MCP local;
 - `dryRun`, checkpoint, idempotência e auditoria;
+- mostrar `@conta` e preview na aprovação antes de publicar;
 - testar em conta de teste antes de produção.
 
 ### Etapa 9 — escala do paralelismo

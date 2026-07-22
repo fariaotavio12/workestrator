@@ -32,6 +32,22 @@ enum class SecretAuthType(@JsonValue val value: String) {
     }
 }
 
+enum class AuthConnectionStatus(@JsonValue val value: String) {
+    CONNECTED("connected"),
+    EXPIRED("expired"),
+    REVOKED("revoked"),
+    ERROR("error"),
+    ;
+
+    companion object {
+        @JsonCreator
+        @JvmStatic
+        fun fromValue(value: String): AuthConnectionStatus =
+            entries.firstOrNull { it.value == value }
+                ?: throw IllegalArgumentException("Unknown auth connection status: $value")
+    }
+}
+
 /**
  * Credential reference used by `Provider.apiKeyRef` and `Script.authRef` (by `id`). The value lives
  * encrypted at rest (`valueCiphertext`, AES-256-GCM via `SecretCipher`) — `GET` endpoints never return
@@ -53,6 +69,12 @@ data class Secret(
      * conjunto conhecido viram headers fixos enviados nas requisições (ver `KNOWN_AUTH_METADATA_KEYS`).
      */
     val connectorId: String? = null,
+    val accountExternalId: String? = null,
+    val accountDisplayName: String? = null,
+    val scopes: List<String> = emptyList(),
+    val status: AuthConnectionStatus = AuthConnectionStatus.CONNECTED,
+    val expiresAt: Instant? = null,
+    val lastValidatedAt: Instant? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )
@@ -63,6 +85,12 @@ fun Secret.toResponse(): SecretResponse = SecretResponse(
     authType = this.authType,
     metadata = this.metadata,
     connectorId = this.connectorId,
+    accountExternalId = this.accountExternalId,
+    accountDisplayName = this.accountDisplayName,
+    scopes = this.scopes,
+    status = this.status,
+    expiresAt = this.expiresAt,
+    lastValidatedAt = this.lastValidatedAt,
     hasValue = this.valueCiphertext != null,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,

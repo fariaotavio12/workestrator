@@ -55,6 +55,7 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 	const {
 		scriptIds,
 		knowledgeCollectionIds,
+		authBindings,
 		requiresCheckpoint,
 		requiresCheckpointAfter,
 		customName,
@@ -72,6 +73,7 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 	} = state;
 	const {
 		setKnowledgeCollectionIds,
+		setScriptAuthConnection,
 		setCanExecute,
 		setRequiresCheckpoint,
 		setRequiresCheckpointAfter,
@@ -209,6 +211,8 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 								<AgentToolsTab
 									scripts={scripts}
 									scriptIds={scriptIds}
+									authBindings={authBindings}
+									onAuthConnectionChange={setScriptAuthConnection}
 									customName={customName}
 									customCommand={customCommand}
 									customArgs={customArgs}

@@ -54,6 +54,10 @@ class AgentEntity(
     @JdbcTypeCode(SqlTypes.JSON)
     var knowledgeCollectionIds: JsonNode = emptyIdsNode,
 
+    @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var authBindings: JsonNode = emptyIdsNode,
+
     @Column(nullable = false)
     var canExecute: Boolean = false,
 
@@ -103,6 +107,7 @@ class AgentEntity(
         model = this.model,
         scriptIds = this.scriptIds.toObject(),
         knowledgeCollectionIds = this.knowledgeCollectionIds.toObject(),
+        authBindings = this.authBindings.toObject(),
         canExecute = this.canExecute,
         requiresCheckpoint = this.requiresCheckpoint,
         requiresCheckpointAfter = this.requiresCheckpointAfter,
@@ -125,6 +130,7 @@ fun Agent.toEntity(): AgentEntity = AgentEntity(
     model = this.model,
     scriptIds = this.scriptIds.toJsonNode(),
     knowledgeCollectionIds = this.knowledgeCollectionIds.toJsonNode(),
+    authBindings = this.authBindings.toJsonNode(),
     canExecute = this.canExecute,
     requiresCheckpoint = this.requiresCheckpoint,
     requiresCheckpointAfter = this.requiresCheckpointAfter,
