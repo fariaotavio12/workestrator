@@ -11,7 +11,7 @@ await build({
 	target: "node20",
 	format: "cjs",
 	bundle: true,
-	external: ["electron", "electron-updater"],
+	external: ["electron", "electron-updater", "playwright"],
 	sourcemap: true,
 	// runner.ts usa `import.meta.url` só como fallback dentro de um `typeof __dirname !== "undefined"`
 	// — nesse bundle CJS, __dirname sempre existe, então esse branch nunca roda; o aviso do esbuild é

@@ -5,9 +5,11 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 
 import { runOAuthAuthorizationCodeFlow } from "./oauth-flow";
+import { configureInstagramProfilesRoot, connectInstagramBrowserSession } from "./instagram-browser-session";
 import { cancelAuthFlow, createAuthFlow, getAuthFlow, markAuthFlowOpened, resolveAuthFlow } from "./auth-flow-manager";
 import {
 	configureRunnerWorkspace,
+	configureRunnerInstagramProfilesRoot,
 	copyPreviewFileTo,
 	savePreviewRootZipTo,
 	type ResolvedSecret,
@@ -101,6 +103,9 @@ const fixPath = (): void => {
 
 const createWindow = async (): Promise<void> => {
 	configureRunnerWorkspace(path.join(app.getPath("userData"), "runner", "orchestrator-workspace"));
+	const instagramProfilesRoot = path.join(app.getPath("userData"), "instagram", "profiles");
+	configureInstagramProfilesRoot(instagramProfilesRoot);
+	configureRunnerInstagramProfilesRoot(instagramProfilesRoot);
 	const runner = await startLocalRunnerServer(secretCache);
 
 	const win = new BrowserWindow({
@@ -186,24 +191,6 @@ ipcMain.handle("auth-flow:get", (_event, id: string) => getAuthFlow(id));
 ipcMain.handle("auth-flow:resolve", (_event, id: string, approved: boolean) => resolveAuthFlow(id, approved));
 ipcMain.handle("auth-flow:cancel", (_event, id: string) => cancelAuthFlow(id));
 
-const INSTAGRAM_CLIENT_ID_VAULT_KEY = "oauth:instagram:client-id";
-const INSTAGRAM_CLIENT_SECRET_VAULT_KEY = "oauth:instagram:client-secret";
-
-ipcMain.handle("oauth:instagram-app-status", () => ({
-	configured: Boolean(
-		(getSecretValue(INSTAGRAM_CLIENT_ID_VAULT_KEY) || process.env.INSTAGRAM_CLIENT_ID) &&
-		(getSecretValue(INSTAGRAM_CLIENT_SECRET_VAULT_KEY) || process.env.INSTAGRAM_CLIENT_SECRET),
-	),
-	callbackUri: `http://127.0.0.1:${process.env.INSTAGRAM_OAUTH_CALLBACK_PORT ?? "53682"}/callback`,
-}));
-
-ipcMain.handle("oauth:configure-instagram-app", (_event, input: { clientId: string; clientSecret: string }) => {
-	if (!input.clientId.trim() || !input.clientSecret.trim()) throw new Error("Informe o App ID e o App Secret da Meta.");
-	setSecretValue(INSTAGRAM_CLIENT_ID_VAULT_KEY, input.clientId.trim());
-	setSecretValue(INSTAGRAM_CLIENT_SECRET_VAULT_KEY, input.clientSecret.trim());
-	return { configured: true };
-});
-
 const assertAllowedBackendUrl = (value: string): string => {
 	const url = new URL(value);
 	const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
@@ -213,33 +200,19 @@ const assertAllowedBackendUrl = (value: string): string => {
 	return url.toString().replace(/\/+$/, "");
 };
 
-/** Fluxo Instagram completo no processo main: token nunca volta ao renderer. */
+/** Login no site real do Instagram; cookies ficam somente no perfil local do Electron. */
 ipcMain.handle(
 	"oauth:connect-instagram",
 	async (
 		_event,
 		input: {
-			authUrl: string;
-			tokenUrl: string;
-			scopes: string;
 			backendBaseUrl: string;
 			backendToken: string;
 		},
 	) => {
 		if (!input.backendToken) throw new Error("Sessão do Workestrator não encontrada.");
 		const backendBaseUrl = assertAllowedBackendUrl(input.backendBaseUrl);
-		const result = await runOAuthAuthorizationCodeFlow({
-			connectorId: "instagram",
-			authUrl: input.authUrl,
-			tokenUrl: input.tokenUrl,
-			clientId: getSecretValue(INSTAGRAM_CLIENT_ID_VAULT_KEY) || process.env.INSTAGRAM_CLIENT_ID,
-			clientSecret: getSecretValue(INSTAGRAM_CLIENT_SECRET_VAULT_KEY) || process.env.INSTAGRAM_CLIENT_SECRET,
-			scopes: input.scopes,
-			openExternal: true,
-		});
-		if (!result.accountExternalId || !result.accountDisplayName) {
-			throw new Error("O Instagram autorizou, mas não retornou a identidade da conta.");
-		}
+		const result = await connectInstagramBrowserSession();
 		const response = await fetch(`${backendBaseUrl}/secrets`, {
 			method: "POST",
 			headers: {
@@ -248,15 +221,14 @@ ipcMain.handle(
 			},
 			body: JSON.stringify({
 				label: `Instagram — ${result.accountDisplayName}`,
-				authType: "oauth2_refresh",
-				metadata: { tokenUrl: input.tokenUrl, scopes: input.scopes },
-				value: JSON.stringify({ refreshToken: result.accessToken }),
+				authType: "raw",
+				metadata: { mode: "browser_session" },
+				value: JSON.stringify({ mode: "browser_session", profileId: result.profileId }),
 				connectorId: "instagram",
 				accountExternalId: result.accountExternalId,
 				accountDisplayName: result.accountDisplayName,
-				scopes: input.scopes.split(/\s+/).filter(Boolean),
+				scopes: ["browser_session", "content_publish"],
 				status: "connected",
-				expiresAt: result.expiresIn ? new Date(Date.now() + result.expiresIn * 1000).toISOString() : undefined,
 				lastValidatedAt: new Date().toISOString(),
 			}),
 		});

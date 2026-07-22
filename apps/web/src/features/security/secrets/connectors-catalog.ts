@@ -141,7 +141,11 @@ const PRESENTATION_BY_ID: Record<string, Presentation> = {
 	},
 };
 
-const DEFAULT_PRESENTATION: Presentation = { description: "", icon: Webhook, colorClassName: "bg-muted text-muted-foreground" };
+const DEFAULT_PRESENTATION: Presentation = {
+	description: "",
+	icon: Webhook,
+	colorClassName: "bg-muted text-muted-foreground",
+};
 
 /** Converte o preset funcional do backend (`GET /connectors`) num `ConnectorPreset` completo pra UI. */
 export const toConnectorPreset = (connector: ConnectorResponse): ConnectorPreset => {
@@ -164,9 +168,30 @@ export const toConnectorPreset = (connector: ConnectorResponse): ConnectorPreset
  * for uma versão antiga sem o endpoint `/connectors`. Mesmo conteúdo funcional de antes da Fase 4.
  */
 export const CONNECTOR_CATALOG: ConnectorPreset[] = [
-	{ id: "google", name: "Google", authType: "oauth2_refresh", authUrl: "https://accounts.google.com/o/oauth2/v2/auth", tokenUrl: "https://oauth2.googleapis.com/token", defaultScopes: "https://www.googleapis.com/auth/spreadsheets", ...PRESENTATION_BY_ID.google },
-	{ id: "slack", name: "Slack", authType: "oauth2_refresh", authUrl: "https://slack.com/oauth/v2/authorize", tokenUrl: "https://slack.com/api/oauth.v2.access", ...PRESENTATION_BY_ID.slack },
-	{ id: "instagram", name: "Instagram", authType: "oauth2_refresh", authUrl: "https://www.instagram.com/oauth/authorize", tokenUrl: "https://api.instagram.com/oauth/access_token", defaultScopes: "instagram_business_basic instagram_business_content_publish", ...PRESENTATION_BY_ID.instagram },
+	{
+		id: "google",
+		name: "Google",
+		authType: "oauth2_refresh",
+		authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+		tokenUrl: "https://oauth2.googleapis.com/token",
+		defaultScopes: "https://www.googleapis.com/auth/spreadsheets",
+		...PRESENTATION_BY_ID.google,
+	},
+	{
+		id: "slack",
+		name: "Slack",
+		authType: "oauth2_refresh",
+		authUrl: "https://slack.com/oauth/v2/authorize",
+		tokenUrl: "https://slack.com/api/oauth.v2.access",
+		...PRESENTATION_BY_ID.slack,
+	},
+	{
+		id: "instagram",
+		name: "Instagram",
+		authType: "raw",
+		authUrl: "https://www.instagram.com/accounts/login/",
+		...PRESENTATION_BY_ID.instagram,
+	},
 	{ id: "notion", name: "Notion", authType: "bearer", ...PRESENTATION_BY_ID.notion },
 	{ id: "github", name: "GitHub", authType: "bearer", ...PRESENTATION_BY_ID.github },
 	{ id: "composio", name: "Composio", authType: "header", ...PRESENTATION_BY_ID.composio },

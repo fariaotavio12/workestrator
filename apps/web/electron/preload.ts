@@ -49,17 +49,8 @@ contextBridge.exposeInMainWorld("__ORCH_API__", {
 	getAuthFlow: (id: string) => ipcRenderer.invoke("auth-flow:get", id),
 	resolveAuthFlow: (id: string, approved: boolean) => ipcRenderer.invoke("auth-flow:resolve", id, approved),
 	cancelAuthFlow: (id: string) => ipcRenderer.invoke("auth-flow:cancel", id),
-	connectInstagram: (input: {
-		authUrl: string;
-		tokenUrl: string;
-		scopes: string;
-		backendBaseUrl: string;
-		backendToken: string;
-	}): Promise<Record<string, unknown>> => ipcRenderer.invoke("oauth:connect-instagram", input),
-	getInstagramAppStatus: (): Promise<{ configured: boolean; callbackUri: string }> =>
-		ipcRenderer.invoke("oauth:instagram-app-status"),
-	configureInstagramApp: (input: { clientId: string; clientSecret: string }): Promise<{ configured: boolean }> =>
-		ipcRenderer.invoke("oauth:configure-instagram-app", input),
+	connectInstagram: (input: { backendBaseUrl: string; backendToken: string }): Promise<Record<string, unknown>> =>
+		ipcRenderer.invoke("oauth:connect-instagram", input),
 	/** Cacheia o token de sessão em disco pro MCP server externo usar sozinho (ver `session-token-cache.ts`). */
 	cacheSessionToken: (token: string, expiresAt: string): Promise<void> =>
 		ipcRenderer.invoke("auth:cache-session-token", token, expiresAt),

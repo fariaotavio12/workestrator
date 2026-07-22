@@ -92,7 +92,7 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 	{
 		id: "instagram-publisher",
 		label: "Instagram Publisher",
-		description: "Publicar carrossel aprovado no Instagram Business",
+		description: "Publicar carrossel aprovado pela sessão local do Instagram",
 		icon: Instagram,
 		category: "ready",
 		featured: true,
@@ -100,17 +100,14 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 		defaults: {
 			connectorProvider: "instagram",
 			name: "Instagram Publisher",
-			description: "Valida e publica carrossel no Instagram Business via Graph API.",
+			description: "Valida e publica carrossel usando a conta Instagram conectada no navegador local.",
 			toolAllowlist: "publish_carousel",
-			env: {
-				IMGBB_API_KEY: "$imgbb-api-key",
-			},
 		},
 		requiresAuth: true,
 		help: {
 			note:
-				"Conecte uma conta Instagram Business/Creator em Conexões e escolha essa conta no agente que usar a ferramenta. " +
-				"Configure apenas o storage de mídia e rode primeiro com dryRun:true.",
+				"Conecte uma conta em Conexões pelo Chrome/Edge e escolha essa conta no agente que usar a ferramenta. " +
+				"Rode primeiro com dryRun:true e aprove o checkpoint antes da publicação real.",
 		},
 	},
 	{
