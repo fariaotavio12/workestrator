@@ -11,6 +11,7 @@ import {
 	buildExecutorPlan,
 	callOpenAiCompat,
 	classifyCliFailure,
+	configureRunnerInstagramProfilesRoot,
 	configureRunnerWorkspace,
 	walkAllRelPaths,
 	workspaceForExecution,
@@ -203,6 +204,30 @@ describe("buildMcpServerEntry", () => {
 				WORKESTRATOR_WORKSPACE_DIR: "D:\\runs\\execution-a",
 			},
 		});
+	});
+
+	it("injects only the selected local browser profile for a browser-session Instagram account", async () => {
+		const profileId = "41cd95ba-d86a-463a-a282-ee954b75eeca";
+		configureRunnerInstagramProfilesRoot("D:\\instagram-profiles");
+		const instagramSecret: SecretResolver = async () => ({
+			value: JSON.stringify({ mode: "browser_session", profileId }),
+			authType: "raw",
+			accountExternalId: "178900000000001",
+			accountDisplayName: "@empresa_a",
+			status: "connected",
+		});
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "instagram-account-a" }),
+			instagramSecret,
+			"D:\\runs\\execution-a",
+		);
+		expect(entry?.env).toMatchObject({
+			INSTAGRAM_PROFILE_DIR: path.join("D:\\instagram-profiles", profileId, "profile"),
+			INSTAGRAM_PROFILE_ID: profileId,
+			INSTAGRAM_USER_ID: "178900000000001",
+			WORKESTRATOR_WORKSPACE_DIR: "D:\\runs\\execution-a",
+		});
+		expect(entry?.env).not.toHaveProperty("INSTAGRAM_ACCESS_TOKEN");
 	});
 
 	it("blocks an expired Instagram connection before starting the publisher", async () => {
@@ -555,6 +580,32 @@ describe("callOpenAiCompat tool loop", () => {
 		const chatCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/chat/completions"));
 		const body = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as { tools?: unknown[] };
 		expect(body.tools).toHaveLength(1);
+	});
+
+	it("recovers a narrated vLLM tool call by retrying with a named tool_choice", async () => {
+		const fetchMock = mockChatCalls([
+			sseResponse([{ content: 'call:workspace__write_file{"path":"output/vllm-result.md","content":"ok"}' }]),
+			sseResponse(toolCallDeltas("workspace__write_file", '{"path":"output/vllm-result.md","content":"ok"}')),
+			sseResponse([{ content: "FILE_READY output/vllm-result.md verified=true" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ path: "output/vllm-result.md", content: "ok" });
+		const chatBodies = fetchMock.mock.calls
+			.filter(([url]) => String(url).includes("/chat/completions"))
+			.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { tool_choice?: unknown });
+		expect(chatBodies[0].tool_choice).toBe("auto");
+		expect(chatBodies[1].tool_choice).toEqual({
+			type: "function",
+			function: { name: "workspace__write_file" },
+		});
+		expect(chatBodies[2].tool_choice).toBe("auto");
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({
+			output: "FILE_READY output/vllm-result.md verified=true",
+		});
 	});
 
 	it("omits tools entirely when the agent has none attached", async () => {

@@ -26,6 +26,13 @@ import zlib from "node:zlib";
  */
 const DEFAULT_MAX_BUDGET_USD = 2.0;
 
+/**
+ * Agentes executores podem produzir vários artefatos numa única etapa. Dez minutos interrompiam
+ * carrosséis completos depois de os arquivos já terem sido gravados, mas antes do marcador final.
+ */
+const EXECUTION_TIMEOUT_MS = 20 * 60_000;
+const READ_ONLY_TIMEOUT_MS = 90_000;
+
 // Orquestrador: alias de modelo interno -> alias aceito pelo Claude Code CLI (só modelos Claude).
 const CLAUDE_MODEL_ALIAS: Record<string, string> = {
 	"claude-opus-4-8": "opus",
@@ -182,6 +189,7 @@ export const buildExecutorPlan = (
 // Fase B (M9): execução real. Pasta de trabalho fixa e escopada — só onde o comando *começa*,
 // não é sandbox de verdade (um Bash pode navegar pra fora). Só ligar `canExecute` em agent confiável.
 let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+let INSTAGRAM_PROFILES_ROOT = path.resolve(process.cwd(), "instagram-profiles");
 
 /**
  * Define a raiz persistente usada pelo runner. O Electron chama isto depois de `app.whenReady()`,
@@ -190,6 +198,10 @@ let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
  */
 export const configureRunnerWorkspace = (workspaceDir: string): void => {
 	WORKSPACE_DIR = path.resolve(workspaceDir);
+};
+
+export const configureRunnerInstagramProfilesRoot = (profilesRoot: string): void => {
+	INSTAGRAM_PROFILES_ROOT = path.resolve(profilesRoot);
 };
 const SCRIPTS_SUBDIR = "scripts";
 /** Snapshots por run em `.runs/<runId>` — preservados pelo reset; servem o preview do histórico. */
@@ -614,7 +626,22 @@ export const buildMcpServerEntry = async (
 					if (resolved.status && resolved.status !== "connected") {
 						throw new Error(`A conexão Instagram está ${resolved.status}; reconecte a conta antes de publicar.`);
 					}
-					env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					let browserProfileId: string | undefined;
+					try {
+						const value = JSON.parse(resolved.value) as { mode?: string; profileId?: string };
+						if (value.mode === "browser_session") browserProfileId = value.profileId;
+					} catch {
+						// Legacy Graph API secrets remain supported below.
+					}
+					if (browserProfileId) {
+						if (!/^[a-f0-9-]{36}$/i.test(browserProfileId)) {
+							throw new Error("A referência do perfil local do Instagram é inválida; reconecte a conta.");
+						}
+						env.INSTAGRAM_PROFILE_DIR = path.join(INSTAGRAM_PROFILES_ROOT, browserProfileId, "profile");
+						env.INSTAGRAM_PROFILE_ID = browserProfileId;
+					} else {
+						env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					}
 					if (resolved.accountExternalId) env.INSTAGRAM_USER_ID = resolved.accountExternalId;
 				}
 			}
@@ -1009,6 +1036,7 @@ const classifyHttpFailure = (status: number, detail: string): { code: ClaudeFail
 const MAX_TOOL_ITERATIONS = 8;
 
 type OpenAiToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+type OpenAiToolChoice = "auto" | { type: "function"; function: { name: string } };
 
 type ChatMessage =
 	| { role: "system" | "user"; content: string }
@@ -1163,6 +1191,18 @@ const resolveToolCall = (byName: Map<string, ResolvedTool>, rawName: string): Re
 	return candidates.length === 1 ? candidates[0][1] : undefined;
 };
 
+const extractNarratedToolName = (text: string): string | undefined => {
+	const trimmed = text.trim();
+	const match =
+		trimmed.match(/^call:\s*([a-zA-Z0-9_.-]{1,128})\s*\{/s) ??
+		trimmed.match(/^tool_call\s*:?\s*([a-zA-Z0-9_.-]{1,128})\s*\{/is) ??
+		trimmed.match(/^<tool_call>\s*([a-zA-Z0-9_.-]{1,128})\s*\{/is);
+	return match?.[1];
+};
+
+const buildOpenAiToolChoice = (toolName: string | undefined): OpenAiToolChoice =>
+	toolName ? { type: "function", function: { name: toolName } } : "auto";
+
 /**
  * Chama um endpoint compatível com a API de chat completions da OpenAI (Ollama, vLLM, LM Studio,
  * groq, a própria OpenAI...) rodando o loop de function calling quando o agent tem ferramentas de
@@ -1199,8 +1239,10 @@ export const callOpenAiCompat = async (
 
 	let output = "";
 	let lastReasoning = "";
+	let forcedToolName: string | undefined;
 
 	for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+		const toolChoice = buildOpenAiToolChoice(forcedToolName);
 		let response: Response;
 		try {
 			response = await fetch(url, {
@@ -1210,7 +1252,7 @@ export const callOpenAiCompat = async (
 					model,
 					stream: true,
 					messages,
-					...(toolDefinitions.length > 0 ? { tools: toolDefinitions, tool_choice: "auto" } : {}),
+					...(toolDefinitions.length > 0 ? { tools: toolDefinitions, tool_choice: toolChoice } : {}),
 				}),
 			});
 		} catch (err) {
@@ -1245,22 +1287,38 @@ export const callOpenAiCompat = async (
 		if (turn.reasoning) lastReasoning = turn.reasoning;
 
 		if (turn.toolCalls.length === 0) {
-			const narratedTool =
-				toolDefinitions.length > 0 && /(?:^|\n)\s*(?:call:|tool_call\b|<tool_call>)/i.test(turn.text);
-			if (narratedTool) {
+			const narratedToolName = toolDefinitions.length > 0 ? extractNarratedToolName(turn.text) : undefined;
+			if (narratedToolName) {
+				const tool = resolveToolCall(byName, narratedToolName);
+				if (tool && !forcedToolName) {
+					forcedToolName = tool.definition.function.name;
+					continue;
+				}
+				const errorMessage =
+					tool && forcedToolName
+						? `O modelo "${model}" descreveu a ferramenta "${narratedToolName}" como texto mesmo depois do retry estruturado com tool_choice nomeado. Nenhum argumento textual foi executado.`
+						: `O modelo "${model}" descreveu uma chamada de ferramenta como texto, mas a ferramenta "${narratedToolName}" nao existe neste run. Nenhum argumento textual foi executado.`;
 				writeSseEvent(res, "error", {
 					code: "unknown",
-					message:
-						`O modelo "${model}" descreveu uma chamada de ferramenta como texto, mas não enviou ` +
-						"um tool_call executável. Nenhum arquivo foi criado. Use um modelo/chat template com function calling nativo.",
+					message: errorMessage,
 				});
 				res.end();
 				return;
 			}
+			if (forcedToolName) {
+				writeSseEvent(res, "error", {
+					code: "unknown",
+					message: `O modelo "${model}" nao retornou tool_call estruturado para "${forcedToolName}" mesmo com tool_choice nomeado. Nenhum texto foi tratado como execucao de ferramenta.`,
+				});
+				res.end();
+				return;
+			}
+			forcedToolName = undefined;
 			output = turn.text;
 			break;
 		}
 
+		forcedToolName = undefined;
 		messages.push({ role: "assistant", content: turn.text || null, tool_calls: turn.toolCalls });
 
 		for (const call of turn.toolCalls) {
@@ -2139,7 +2197,7 @@ export const handleRunStep = async (
 
 	// Execução real (rodar testes, build, render de imagem via Playwright, etc.) pode demorar bem mais
 	// que uma resposta de texto simples — daí o timeout maior no modo execução.
-	const timeoutMs = canExecute ? 600_000 : 90_000;
+	const timeoutMs = canExecute ? EXECUTION_TIMEOUT_MS : READ_ONLY_TIMEOUT_MS;
 	// Quando o spawn falha (ex.: binário fora do PATH), o Node emite `error` E `close` para o mesmo
 	// child — sem essa trava, os dois handlers abaixo tentam responder a mesma request.
 	let settled = false;

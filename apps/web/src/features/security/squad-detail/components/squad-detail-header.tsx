@@ -1,8 +1,19 @@
 import { cn } from "@/app/utils/cn";
-import { Button, Skeleton, Typography } from "@/components";
+import {
+	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	Skeleton,
+	Typography,
+} from "@/components";
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
+import { RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
 import type { Squad } from "@/features/security/orchestrator-shared/types";
-import { ArrowLeft, Bot, History, Pencil, Play, Plus, Share2, Users } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, History, Pencil, Play, Plus, Share2, Users } from "lucide-react";
 
 const STATUS: Record<Squad["runtime"]["status"], { label: string; dot: string; pill: string }> = {
 	idle: { label: "Ocioso", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
@@ -42,13 +53,16 @@ type SquadDetailHeaderProps = {
 	isAddingSeat: boolean;
 	isRunDisabled: boolean;
 	runDisabledTitle?: string;
+	/** Execuções vivas deste squad — controla se "Rodar" abre direto ou vira dropdown (ver runs paralelos). */
+	activeRuns: { runId: string; status: Squad["runtime"]["status"] }[];
 	onBack: () => void;
 	onEdit: () => void;
 	onAddSeat: () => void;
 	onNewAgent: () => void;
 	onOpenHistory: () => void;
 	onShare: () => void;
-	onRun: () => void;
+	/** Abre o dialog na execução (existente ou nova, quando `runId` é omitido/null). */
+	onRun: (runId?: string | null) => void;
 };
 
 export const SquadDetailHeader = ({
@@ -59,6 +73,7 @@ export const SquadDetailHeader = ({
 	isAddingSeat,
 	isRunDisabled,
 	runDisabledTitle,
+	activeRuns,
 	onBack,
 	onEdit,
 	onAddSeat,
@@ -134,10 +149,38 @@ export const SquadDetailHeader = ({
 			>
 				<Share2 />
 			</Button>
-			<Button size="sm" className="ml-1" disabled={isRunDisabled} title={runDisabledTitle} onClick={onRun}>
-				<Play />
-				Rodar
-			</Button>
+			{activeRuns.length > 0 ? (
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button size="sm" className="ml-1" disabled={isRunDisabled} title={runDisabledTitle}>
+							<Play />
+							Rodar
+							<ChevronDown className="size-3.5" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-64">
+						<DropdownMenuLabel>Execuções em andamento</DropdownMenuLabel>
+						{activeRuns.map((run, index) => (
+							<DropdownMenuItem key={run.runId} onClick={() => onRun(run.runId)}>
+								<Play className="size-3.5" />
+								<span className="truncate">
+									Execução {activeRuns.length - index} · {RUN_STATUS_LABEL[run.status]}
+								</span>
+							</DropdownMenuItem>
+						))}
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={() => onRun(null)}>
+							<Plus className="size-3.5" />
+							Iniciar nova execução
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			) : (
+				<Button size="sm" className="ml-1" disabled={isRunDisabled} title={runDisabledTitle} onClick={() => onRun()}>
+					<Play />
+					Rodar
+				</Button>
+			)}
 		</div>
 	</header>
 );

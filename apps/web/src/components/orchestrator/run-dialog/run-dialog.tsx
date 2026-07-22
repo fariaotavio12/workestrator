@@ -16,7 +16,8 @@ import {
 	runnerAvailable,
 	runStepEndpointAvailable,
 } from "@/features/security/orchestrator-shared/runtime/model-client";
-import { MonitorDown, Play, Save } from "lucide-react";
+import { ATTENTION_RUN_STATUSES, RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
+import { AlertTriangle, MonitorDown, Play, Save } from "lucide-react";
 import { useState } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import {
@@ -221,17 +222,20 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 						<div className="flex gap-2 overflow-x-auto pb-1">
 							{runIds.map((runId, index) => {
 								const item = runtimes[runId];
+								const itemStatus = item?.status ?? "idle";
 								const active = runId === squad.runtime.runId;
+								const needsAttention = ATTENTION_RUN_STATUSES.has(itemStatus);
 								return (
 									<Button
 										key={runId}
 										type="button"
 										size="sm"
-										variant={active ? "default" : "outline"}
+										variant={active ? "default" : needsAttention ? "error" : "outline"}
 										className="shrink-0"
 										onClick={() => openRunDialog(squad.id, runId)}
 									>
-										Execução {runIds.length - index} · {item?.status ?? "idle"}
+										{needsAttention && <AlertTriangle className="size-3.5" />}
+										Execução {runIds.length - index} · {RUN_STATUS_LABEL[itemStatus]}
 									</Button>
 								);
 							})}

@@ -17,7 +17,11 @@ import {
 } from "@/components";
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
 import { useRecentRunsQuery } from "@/features/security/executions/api";
-import { useSquadHistoryDialogStore } from "@/features/security/orchestrator-shared/model";
+import {
+	useOrchestratorRuntimeStore,
+	useRunDialogStore,
+	useSquadHistoryDialogStore,
+} from "@/features/security/orchestrator-shared/model";
 import type { RunRecord } from "@/features/security/orchestrator-shared/types";
 import { useSquadsQuery } from "@/features/security/squads/api";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -117,6 +121,8 @@ const MetricCard = ({ helper, icon, label, value }: MetricCardProps) => (
 export const PageExecutions = () => {
 	const navigate = useNavigate();
 	const openHistoryDialog = useSquadHistoryDialogStore((s) => s.openHistoryDialog);
+	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
+	const liveRuntimes = useOrchestratorRuntimeStore((s) => s.runtimes);
 	const { data: squads = [], isError: isSquadsError, refetch: refetchSquads } = useSquadsQuery();
 	const {
 		data: summaryPage,
@@ -317,6 +323,12 @@ export const PageExecutions = () => {
 
 	const openRun = (run: RunRecord) => {
 		if (!squadById.has(run.squadId)) return;
+		// Run ainda vivo na memória do runtime (esta sessão do app) → abre o transcript ao vivo,
+		// não o snapshot estático do histórico — senão "Rodando" clicado aqui parece travado.
+		if (liveRuntimes[run.id]) {
+			openRunDialog(run.squadId, run.id);
+			return;
+		}
 		openHistoryDialog(run.squadId, { initialRunId: run.id });
 	};
 
