@@ -287,14 +287,22 @@ const resolveMapPlaceholders = async (
 };
 
 /** Metadata keys já consumidas por um `authType` — o resto é mesclado como header fixo (ex.: `anthropic-version`). */
-const KNOWN_AUTH_METADATA_KEYS = new Set(["headerName", "valuePrefix", "queryParam", "basicUsername", "tokenUrl", "clientId", "scopes"]);
+const KNOWN_AUTH_METADATA_KEYS = new Set([
+	"headerName",
+	"valuePrefix",
+	"queryParam",
+	"basicUsername",
+	"tokenUrl",
+	"clientId",
+	"scopes",
+]);
 
 const fixedMetadataHeaders = (metadata: Record<string, string> | undefined): Record<string, string> => {
 	if (!metadata) return {};
 	return Object.fromEntries(Object.entries(metadata).filter(([key]) => !KNOWN_AUTH_METADATA_KEYS.has(key)));
 };
 
-const parseJsonSafe = <T,>(raw: string): T | undefined => {
+const parseJsonSafe = <T>(raw: string): T | undefined => {
 	try {
 		return JSON.parse(raw) as T;
 	} catch {
@@ -365,7 +373,10 @@ export const exchangeOAuth2Token = async (resolved: ResolvedSecret): Promise<str
 		if (body.refresh_token !== parsed?.refreshToken) {
 			const newValue = JSON.stringify({ refreshToken: body.refresh_token, clientSecret: parsed?.clientSecret });
 			rotate(newValue).catch((err) => {
-				console.error("[secrets] Falha ao persistir refresh_token rotacionado:", err instanceof Error ? err.message : err);
+				console.error(
+					"[secrets] Falha ao persistir refresh_token rotacionado:",
+					err instanceof Error ? err.message : err,
+				);
 			});
 		}
 	}
@@ -771,7 +782,8 @@ const resolveProviderAuth = async (
 	return { headers: applied.headers, querySuffix: applied.url };
 };
 
-const withProviderAuth = (url: string, auth: ProviderAuth): string => (auth.querySuffix ? `${url}${auth.querySuffix}` : url);
+const withProviderAuth = (url: string, auth: ProviderAuth): string =>
+	auth.querySuffix ? `${url}${auth.querySuffix}` : url;
 
 /** `GET /models` (padrão OpenAI-compat) — usado tanto no cadastro do provider quanto como rede de
  * segurança na execução. */
@@ -827,7 +839,12 @@ export const handleListModels = async (
 		return;
 	}
 
-	const { baseUrl = "", apiKeyRef, backendBaseUrl, backendToken } = rawBody as {
+	const {
+		baseUrl = "",
+		apiKeyRef,
+		backendBaseUrl,
+		backendToken,
+	} = rawBody as {
 		baseUrl?: string;
 		apiKeyRef?: string;
 		backendBaseUrl?: string;
@@ -966,6 +983,60 @@ const readReasoning = (source: ReasoningDelta | undefined): string =>
  */
 const THINKING_FLUSH_CHARS = 240;
 
+const THINK_OPEN = "<think>";
+const THINK_CLOSE = "</think>";
+
+type ThinkPiece = { text: string; reasoning: string };
+
+export class ThinkTagFilter {
+	private mode: "text" | "thinking" = "text";
+	private carry = "";
+
+	feed(chunk: string): ThinkPiece {
+		this.carry += chunk;
+		let text = "";
+		let reasoning = "";
+		for (;;) {
+			const buf = this.carry;
+			const marker = this.mode === "text" ? THINK_OPEN : THINK_CLOSE;
+			const idx = buf.toLowerCase().indexOf(marker);
+			if (idx >= 0) {
+				const before = buf.slice(0, idx);
+				if (this.mode === "text") text += before;
+				else reasoning += before;
+				this.carry = buf.slice(idx + marker.length);
+				this.mode = this.mode === "text" ? "thinking" : "text";
+				continue;
+			}
+			const holdBack = this.partialSuffixLength(buf, marker);
+			const safeLen = buf.length - holdBack;
+			if (safeLen > 0) {
+				const safe = buf.slice(0, safeLen);
+				if (this.mode === "text") text += safe;
+				else reasoning += safe;
+				this.carry = buf.slice(safeLen);
+			}
+			break;
+		}
+		return { text, reasoning };
+	}
+
+	/** Descarrega o que sobrou no carry quando o stream acaba, atribuído ao modo atual. */
+	finish(): ThinkPiece {
+		const remaining = this.carry;
+		this.carry = "";
+		return this.mode === "text" ? { text: remaining, reasoning: "" } : { text: "", reasoning: remaining };
+	}
+
+	private partialSuffixLength(buf: string, marker: string): number {
+		const maxLen = Math.min(buf.length, marker.length - 1);
+		for (let len = maxLen; len >= 1; len--) {
+			if (marker.startsWith(buf.slice(buf.length - len).toLowerCase())) return len;
+		}
+		return 0;
+	}
+}
+
 /**
  * Consome a resposta do `/chat/completions`. Aceita as duas formas: SSE (`stream: true`, o caminho
  * normal — texto sai ao vivo via `chunk`) e JSON único, porque nem todo servidor OpenAI-compat
@@ -979,11 +1050,15 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 
 	if (!isStream || !response.body) {
 		const body = (await response.json().catch(() => ({}))) as {
-			choices?: { message?: ({ content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta) }[];
+			choices?: { message?: { content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta }[];
 		};
 		const message = body.choices?.[0]?.message;
-		const text = message?.content ?? "";
-		const reasoning = readReasoning(message);
+		const rawText = message?.content ?? "";
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed(rawText);
+		const tail = filter.finish();
+		const text = piece.text + tail.text;
+		const reasoning = readReasoning(message) + piece.reasoning + tail.reasoning;
 		if (text) writeSseEvent(res, "chunk", { text });
 		if (reasoning) writeSseEvent(res, "thinking", { text: reasoning });
 		return { text, reasoning, toolCalls: message?.tool_calls ?? [] };
@@ -996,6 +1071,7 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 	let reasoning = "";
 	let thinkingBuffer = "";
 	const pending = new Map<number, { id: string; name: string; arguments: string }>();
+	const thinkFilter = new ThinkTagFilter();
 
 	const flushThinking = (force: boolean): void => {
 		if (!thinkingBuffer || (!force && thinkingBuffer.length < THINKING_FLUSH_CHARS)) return;
@@ -1025,8 +1101,16 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 				};
 				const delta = parsed.choices?.[0]?.delta;
 				if (delta?.content) {
-					text += delta.content;
-					writeSseEvent(res, "chunk", { text: delta.content });
+					const piece = thinkFilter.feed(delta.content);
+					if (piece.text) {
+						text += piece.text;
+						writeSseEvent(res, "chunk", { text: piece.text });
+					}
+					if (piece.reasoning) {
+						reasoning += piece.reasoning;
+						thinkingBuffer += piece.reasoning;
+						flushThinking(false);
+					}
 				}
 				const reasoningDelta = readReasoning(delta);
 				if (reasoningDelta) {
@@ -1048,6 +1132,15 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 		}
 	}
 
+	const tail = thinkFilter.finish();
+	if (tail.text) {
+		text += tail.text;
+		writeSseEvent(res, "chunk", { text: tail.text });
+	}
+	if (tail.reasoning) {
+		reasoning += tail.reasoning;
+		thinkingBuffer += tail.reasoning;
+	}
 	flushThinking(true);
 
 	const toolCalls = [...pending.entries()]
@@ -1687,7 +1780,10 @@ export const handleRunStep = async (
 			if (mcpConfig) {
 				const configPath = writeMcpConfig(mcpConfig, workspaceDir);
 				const allowedTools = scripts
-					.filter((s): s is ScriptPayload & { toolAllowlist: string[] } => s.kind === "mcp" && Boolean(s.toolAllowlist?.length))
+					.filter(
+						(s): s is ScriptPayload & { toolAllowlist: string[] } =>
+							s.kind === "mcp" && Boolean(s.toolAllowlist?.length),
+					)
 					.flatMap((s) => s.toolAllowlist.map((tool) => `mcp__${safeFileName(s.name) || s.id}__${tool}`));
 				mcpResolution = { configPath, allowedTools };
 				logToolConfig(scripts, configPath, workspaceDir);
@@ -1696,8 +1792,7 @@ export const handleRunStep = async (
 	}
 
 	// Codex + conta ChatGPT: descarta o modelo configurado (força o default da conta) — ver acima.
-	const effectiveModel =
-		providerKind === "codex-cli" && codexUsesChatGptAccount() ? CLI_DEFAULT_MODEL : model;
+	const effectiveModel = providerKind === "codex-cli" && codexUsesChatGptAccount() ? CLI_DEFAULT_MODEL : model;
 	const plan = buildExecutorPlan(
 		providerKind,
 		effectiveModel,
@@ -1801,7 +1896,8 @@ export const handleRunStep = async (
 			});
 		} else if (obj.type === "result") {
 			if (typeof obj.result === "string") sjResult = obj.result;
-			if (obj.is_error) sjError = typeof obj.result === "string" && obj.result ? obj.result : "A execução retornou erro.";
+			if (obj.is_error)
+				sjError = typeof obj.result === "string" && obj.result ? obj.result : "A execução retornou erro.";
 		}
 	};
 
@@ -1976,7 +2072,11 @@ const healthCheckStdioServer = (
 		child.stderr?.on("data", (chunk) => (stderr += chunk.toString()));
 		child.on("exit", (code) => {
 			if (code !== null && code !== 0) {
-				finish({ ok: false, message: `Processo saiu com código ${code} antes do health-check terminar.`, detail: stderr.trim() });
+				finish({
+					ok: false,
+					message: `Processo saiu com código ${code} antes do health-check terminar.`,
+					detail: stderr.trim(),
+				});
 			}
 		});
 		child.on("error", (err) => finish({ ok: false, message: `"${command}" não encontrado no PATH (${err.message}).` }));
@@ -2045,7 +2145,12 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					}),
 				);
 			} catch (err) {
-				res.end(JSON.stringify({ ok: false, message: `Caminho não encontrado (${err instanceof Error ? err.message : "erro"}).` }));
+				res.end(
+					JSON.stringify({
+						ok: false,
+						message: `Caminho não encontrado (${err instanceof Error ? err.message : "erro"}).`,
+					}),
+				);
 			}
 			return;
 		}
@@ -2085,7 +2190,9 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					}),
 				);
 			} catch (err) {
-				res.end(JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }));
+				res.end(
+					JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }),
+				);
 			}
 			return;
 		}
@@ -2101,7 +2208,9 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 					const response = await fetch(entry.url, { headers: entry.headers });
 					res.end(JSON.stringify({ ok: response.ok, message: `HTTP ${response.status} ${response.statusText}` }));
 				} catch (err) {
-					res.end(JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }));
+					res.end(
+						JSON.stringify({ ok: false, message: `Falha de rede (${err instanceof Error ? err.message : "erro"}).` }),
+					);
 				}
 				return;
 			}

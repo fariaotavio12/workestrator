@@ -33,6 +33,61 @@ private class MutableToolCall {
     var arguments: String = ""
 }
 
+private const val THINK_OPEN = "<think>"
+private const val THINK_CLOSE = "</think>"
+
+private class ThinkTagFilter {
+    private enum class Mode { TEXT, THINKING }
+    private var mode = Mode.TEXT
+    private val carry = StringBuilder()
+
+    data class Piece(val text: String, val reasoning: String)
+
+    fun feed(chunk: String): Piece {
+        carry.append(chunk)
+        val text = StringBuilder()
+        val reasoning = StringBuilder()
+        while (true) {
+            val buf = carry.toString()
+            val marker = if (mode == Mode.TEXT) THINK_OPEN else THINK_CLOSE
+            val idx = buf.indexOf(marker, ignoreCase = true)
+            if (idx >= 0) {
+                val before = buf.substring(0, idx)
+                if (mode == Mode.TEXT) text.append(before) else reasoning.append(before)
+                carry.setLength(0)
+                carry.append(buf.substring(idx + marker.length))
+                mode = if (mode == Mode.TEXT) Mode.THINKING else Mode.TEXT
+                continue
+            }
+            val holdBack = partialSuffixLength(buf, marker)
+            val safeLen = buf.length - holdBack
+            if (safeLen > 0) {
+                val safe = buf.substring(0, safeLen)
+                if (mode == Mode.TEXT) text.append(safe) else reasoning.append(safe)
+                carry.setLength(0)
+                carry.append(buf.substring(safeLen))
+            }
+            break
+        }
+        return Piece(text.toString(), reasoning.toString())
+    }
+
+    /** Descarrega o que sobrou no carry quando o stream acaba, atribuído ao modo atual. */
+    fun finish(): Piece {
+        val remaining = carry.toString()
+        carry.setLength(0)
+        return if (mode == Mode.TEXT) Piece(remaining, "") else Piece("", remaining)
+    }
+
+    private fun partialSuffixLength(buf: String, marker: String): Int {
+        val maxLen = minOf(buf.length, marker.length - 1)
+        for (len in maxLen downTo 1) {
+            if (marker.startsWith(buf.substring(buf.length - len), ignoreCase = true)) return len
+        }
+        return 0
+    }
+}
+
 /**
  * Calls an OpenAI chat-completions-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, OpenAI
  * itself...), running the function-calling loop when the agent has network tools attached. A Kotlin
@@ -191,8 +246,12 @@ class OpenAiCompatExecutor(
         if (!isStream) {
             val raw = response.body().bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
             val message = runCatching { objectMapper.readTree(raw) }.getOrNull()?.get("choices")?.get(0)?.get("message")
-            val text = message?.get("content")?.takeIf { !it.isNull }?.asText() ?: ""
-            val reasoning = readReasoning(message)
+            val rawText = message?.get("content")?.takeIf { !it.isNull }?.asText() ?: ""
+            val filter = ThinkTagFilter()
+            val piece = filter.feed(rawText)
+            val tail = filter.finish()
+            val text = piece.text + tail.text
+            val reasoning = readReasoning(message) + piece.reasoning + tail.reasoning
             if (text.isNotEmpty()) emitEvent(emitter, "chunk", ChunkEvent(text))
             if (reasoning.isNotEmpty()) emitEvent(emitter, "thinking", ThinkingEvent(reasoning))
             val toolCalls = message?.get("tool_calls")?.let { parseToolCallsArray(it) } ?: emptyList()
@@ -204,6 +263,7 @@ class OpenAiCompatExecutor(
         var reasoning = ""
         var thinkingBuffer = ""
         val pending = linkedMapOf<Int, MutableToolCall>()
+        val thinkFilter = ThinkTagFilter()
 
         fun flushThinking(force: Boolean) {
             if (thinkingBuffer.isEmpty() || (!force && thinkingBuffer.length < THINKING_FLUSH_CHARS)) return
@@ -221,8 +281,16 @@ class OpenAiCompatExecutor(
 
             val content = delta.get("content")?.takeIf { !it.isNull }?.asText()
             if (!content.isNullOrEmpty()) {
-                text += content
-                emitEvent(emitter, "chunk", ChunkEvent(content))
+                val piece = thinkFilter.feed(content)
+                if (piece.text.isNotEmpty()) {
+                    text += piece.text
+                    emitEvent(emitter, "chunk", ChunkEvent(piece.text))
+                }
+                if (piece.reasoning.isNotEmpty()) {
+                    reasoning += piece.reasoning
+                    thinkingBuffer += piece.reasoning
+                    flushThinking(false)
+                }
             }
             val reasoningDelta = readReasoning(delta)
             if (reasoningDelta.isNotEmpty()) {
@@ -239,6 +307,15 @@ class OpenAiCompatExecutor(
             }
         }
 
+        val tail = thinkFilter.finish()
+        if (tail.text.isNotEmpty()) {
+            text += tail.text
+            emitEvent(emitter, "chunk", ChunkEvent(tail.text))
+        }
+        if (tail.reasoning.isNotEmpty()) {
+            reasoning += tail.reasoning
+            thinkingBuffer += tail.reasoning
+        }
         flushThinking(true)
 
         val toolCalls = pending.entries

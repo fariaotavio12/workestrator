@@ -7,6 +7,7 @@ import {
 	buildExecutorPlan,
 	callOpenAiCompat,
 	classifyCliFailure,
+	ThinkTagFilter,
 	type ResolvedSecret,
 	type ScriptPayload,
 	type SecretResolver,
@@ -507,5 +508,48 @@ describe("callOpenAiCompat tool loop", () => {
 
 		expect(execute).toHaveBeenCalledOnce();
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "final" });
+	});
+});
+
+describe("ThinkTagFilter", () => {
+	it("passes plain text through untouched", () => {
+		const filter = new ThinkTagFilter();
+		expect(filter.feed("hello world")).toEqual({ text: "hello world", reasoning: "" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("routes a <think>...</think> block into reasoning, in a single chunk", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("before<think>hmm let me see</think>after");
+		expect(piece).toEqual({ text: "beforeafter", reasoning: "hmm let me see" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("handles the tag split across chunk boundaries", () => {
+		const filter = new ThinkTagFilter();
+		const pieces = [
+			filter.feed("before<thi"),
+			filter.feed("nk>thinking "),
+			filter.feed("more</thi"),
+			filter.feed("nk>after"),
+		];
+		const text = pieces.map((p) => p.text).join("") + filter.finish().text;
+		const reasoning = pieces.map((p) => p.reasoning).join("") + filter.finish().reasoning;
+		expect(text).toBe("beforeafter");
+		expect(reasoning).toBe("thinking more");
+	});
+
+	it("streams an unterminated trailing <think> block as reasoning without waiting for a close tag", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("before<think>never closes");
+		expect(piece).toEqual({ text: "before", reasoning: "never closes" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("holds back a partial </think> prefix until finish if the stream ends mid-tag", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("<think>reasoning</thi");
+		expect(piece).toEqual({ text: "", reasoning: "reasoning" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "</thi" });
 	});
 });
