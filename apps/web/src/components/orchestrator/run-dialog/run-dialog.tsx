@@ -16,7 +16,8 @@ import {
 	runnerAvailable,
 	runStepEndpointAvailable,
 } from "@/features/security/orchestrator-shared/runtime/model-client";
-import { MonitorDown, Play, Save } from "lucide-react";
+import { ATTENTION_RUN_STATUSES, RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
+import { AlertTriangle, MonitorDown, Play, Save } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import {
@@ -44,6 +45,9 @@ import { RunInteractionPanel, RunStatusBar, RunTranscript } from "../run-transcr
 import { RunToolLog } from "../run-tool-log";
 import { ConfirmDialog } from "../confirm-dialog";
 import { cn } from "@/app/utils/cn";
+import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
+
+const EMPTY_RUN_IDS: string[] = [];
 
 type Props = {
 	open: boolean;
@@ -70,6 +74,10 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 	const [previewItems, setPreviewItems] = useState<PreviewModalItem[]>([]);
 
 	const updateSquad = useUpdateSquad(squad.id);
+	const openRunDialog = useRunDialogStore((state) => state.openRunDialog);
+	const runIds = useOrchestratorRuntimeStore((state) => state.runIdsBySquad[squad.id] ?? EMPTY_RUN_IDS);
+	const runtimes = useOrchestratorRuntimeStore((state) => state.runtimes);
+	const runKey = squad.runtime.runId ?? squad.id;
 	const briefingDirty = input.trim() !== (squad.savedBriefing ?? "").trim();
 	// Desktop roda tudo; fora dele, só squad 100% de API e com endpoint de execução disponível
 	// (`vite dev`). Mesma regra do `requireRunner` no runtime — aqui só decide o que a UI mostra.
@@ -96,18 +104,18 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 			notify.error("Preview de arquivos disponível apenas no app desktop.");
 			return;
 		}
-		const rootId = await registerPreviewRoot("");
+		const rootId = await registerPreviewRoot({ executionId: squad.runtime.runId });
 		if (!rootId) {
 			notify.error("Nenhum arquivo em disco (agents sem execução de arquivos ou app precisa ser reiniciado).");
 			return;
 		}
-		const files = await listWorkspaceFiles("", false);
+		const files = await listWorkspaceFiles(squad.runtime.runId ?? "", false);
 		if (files.length === 0) {
 			notify.info("Nenhum arquivo gerado ainda — o resultado está no transcript acima.");
 			return;
 		}
 		// Marca os arquivos criados/alterados neste run (via git diff) com o ponto "changed" na lista.
-		const changed = await listWorkspaceFiles("", true);
+		const changed = await listWorkspaceFiles(squad.runtime.runId ?? "", true);
 		const changedPaths = new Set(changed.map((f) => f.path));
 		setPreviewItems(
 			files.map((f, i) => ({
@@ -116,6 +124,8 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				ext: f.ext,
 				isImage: f.isImage,
 				url: buildPreviewUrl(rootId, f.path),
+				rootId,
+				relativePath: f.path,
 				changed: changedPaths.has(f.path),
 			})),
 		);
@@ -196,10 +206,11 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 					) : (
 						<RunStatusBar
 							squad={squad}
-							onPause={() => pauseRun(squad.id)}
-							onResume={() => resumeRun(squad.id)}
+							onPause={() => pauseRun(runKey)}
+							onResume={() => resumeRun(runKey)}
 							onStop={() => setStopConfirmOpen(true)}
-							onReset={() => resetRun(squad.id)}
+							onReset={() => resetRun(runKey)}
+							onNewRun={() => openRunDialog(squad.id, null)}
 							onContinue={latestRun && latestRun.status !== "done" ? () => continueRun(squad.id, latestRun) : undefined}
 							onRetryLastStep={
 								latestRun && latestRun.steps.length > 0 ? () => retryLastStep(squad.id, latestRun) : undefined
@@ -210,13 +221,35 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				}
 			>
 				<div className="flex min-h-0 flex-1 flex-col gap-3">
+					{status !== "idle" && runIds.length > 1 && (
+						<div className="flex gap-2 overflow-x-auto pb-1">
+							{runIds.map((runId, index) => {
+								const item = runtimes[runId];
+								const itemStatus = item?.status ?? "idle";
+								const active = runId === squad.runtime.runId;
+								const needsAttention = ATTENTION_RUN_STATUSES.has(itemStatus);
+								return (
+									<Button
+										key={runId}
+										type="button"
+										size="sm"
+										variant={active ? "default" : needsAttention ? "error" : "outline"}
+										className="shrink-0"
+										onClick={() => openRunDialog(squad.id, runId)}
+									>
+										{needsAttention && <AlertTriangle className="size-3.5" />}
+										Execução {runIds.length - index} · {RUN_STATUS_LABEL[itemStatus]}
+									</Button>
+								);
+							})}
+						</div>
+					)}
 					{status === "idle" ? (
 						<div className="flex min-h-0 flex-1 flex-col gap-3">
 							{!canRunOnThisDevice && (
 								<div className="border-warning/30 bg-warning/10 text-foreground rounded-lg border px-4 py-3 text-sm">
-									Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na
-									máquina — só roda no app desktop. Squads que usam apenas providers de API rodam direto no
-									navegador.
+									Este squad usa provider de CLI local (Claude/Codex/GPT), que precisa do binário instalado na máquina —
+									só roda no app desktop. Squads que usam apenas providers de API rodam direto no navegador.
 								</div>
 							)}
 							<FieldWrapper
@@ -260,9 +293,9 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 
 								<RunInteractionPanel
 									squad={squad}
-									onApprove={() => resolveCheckpoint(squad.id, true)}
-									onReject={() => resolveCheckpoint(squad.id, false)}
-									onAnswer={(answer) => answerPrompt(squad.id, answer)}
+									onApprove={() => resolveCheckpoint(runKey, true)}
+									onReject={() => resolveCheckpoint(runKey, false)}
+									onAnswer={(answer) => answerPrompt(runKey, answer)}
 								/>
 							</div>
 						</div>
@@ -277,7 +310,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				description="A execução atual será abortada e registrada no histórico."
 				confirmLabel="Parar"
 				destructive
-				onConfirm={() => stopRun(squad.id)}
+				onConfirm={() => stopRun(runKey)}
 			/>
 
 			<PreviewModal
@@ -285,9 +318,10 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				onOpenChange={setPreviewOpen}
 				title="Arquivos gerados"
 				items={previewItems}
+				archiveName={`${squad.name}-${new Date().toISOString()}-arquivos.zip`.replace(/[^\w.-]+/g, "-").toLowerCase()}
 				// Aprovação só faz sentido quando o run está esperando resposta — vira a resposta do agent.
-				onApprove={status === "awaiting_input" ? () => answerPrompt(squad.id, "Aprovado.") : undefined}
-				onRequestChanges={status === "awaiting_input" ? (feedback) => answerPrompt(squad.id, feedback) : undefined}
+				onApprove={status === "awaiting_input" ? () => answerPrompt(runKey, "Aprovado.") : undefined}
+				onRequestChanges={status === "awaiting_input" ? (feedback) => answerPrompt(runKey, feedback) : undefined}
 			/>
 		</>
 	);
@@ -299,9 +333,7 @@ const RunTab = ({ active, onClick, children }: { active: boolean; onClick: () =>
 		onClick={onClick}
 		className={cn(
 			"flex items-center border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-			active
-				? "border-primary text-foreground"
-				: "text-muted-foreground hover:text-foreground border-transparent",
+			active ? "border-primary text-foreground" : "text-muted-foreground hover:text-foreground border-transparent",
 		)}
 	>
 		{children}

@@ -73,7 +73,11 @@ const squadDetail = (squadId: string, overrides: Partial<SquadDetail> = {}): Squ
 });
 
 /** Cada squadId de teste é único — evita qualquer interferência entre testes no runtime store global. */
-const seedCache = (squadId: string, detail: SquadDetail, providers: ModelProvider[] = [provider("provider-1")]): void => {
+const seedCache = (
+	squadId: string,
+	detail: SquadDetail,
+	providers: ModelProvider[] = [provider("provider-1")],
+): void => {
 	tanStackQueryClient.setQueryData(squadDetailKeys.detail(squadId), detail);
 	tanStackQueryClient.setQueryData(providersKeys.list(), providers);
 };
@@ -202,6 +206,71 @@ describe("orchestrator-runtime — continuar de onde parou (retry/resume)", () =
 		// Só o coordenador foi chamado (respondeu "done" direto) — nenhum agent novo rodou, o passo do
 		// Pesquisador não foi refeito.
 		expect(callAgentStep).toHaveBeenCalledTimes(1);
+	});
+
+	it("respeita REVIEW_CHANGES owner e nao repete o agente escolhido errado pelo coordenador", async () => {
+		const squadId = "squad-review-owner";
+		const researcher = agent({ id: "a1", name: "Researcher" });
+		const copywriter = agent({ id: "a2", name: "Copywriter" });
+		const reviewer = agent({ id: "a3", name: "Reviewer" });
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [researcher, copywriter, reviewer],
+				seats: [seat("s-research", "a1"), seat("s-copy", "a2"), seat("s-review", "a3")],
+			}),
+		);
+		let coordinatorCalls = 0;
+		vi.mocked(callAgentStep).mockImplementation(async ({ systemPrompt, prompt }) => {
+			if (systemPrompt === "COORDINATOR_PROMPT_MARKER") {
+				coordinatorCalls += 1;
+				return {
+					output:
+						coordinatorCalls === 1
+							? JSON.stringify({ next: "s-research", context_steps: [1], reason: "refazer pesquisa" })
+							: JSON.stringify({ next: "done" }),
+					usedFallbackModel: false,
+				};
+			}
+			expect(systemPrompt).toContain("AGENT_PROMPT_MARKER");
+			expect(prompt).toContain("Passo 1:");
+			expect(prompt).toContain("pesquisa pronta");
+			expect(prompt).toContain("Passo 2:");
+			expect(prompt).toContain("REVIEW_CHANGES owner=Copywriter");
+			return { output: "copy corrigida", usedFallbackModel: false };
+		});
+
+		const previousRun = runRecord("run-review-owner", squadId, {
+			steps: [
+				{
+					stepId: "step-1",
+					agentId: "a1",
+					seatId: "s-research",
+					artifact: { stepId: "step-1", kind: "text", content: "pesquisa pronta", createdAt: ISO },
+				},
+				{
+					stepId: "step-2",
+					agentId: "a3",
+					seatId: "s-review",
+					artifact: {
+						stepId: "step-2",
+						kind: "text",
+						content: "REVIEW_CHANGES owner=Copywriter details=Gerar roteiro, legenda e hashtags.",
+						createdAt: ISO,
+					},
+				},
+			],
+		});
+
+		continueRun(squadId, previousRun);
+
+		await vi.waitFor(() => {
+			expect(vi.mocked(notifyOs).mock.calls.some(([title]) => title.includes("conclu"))).toBe(true);
+		});
+		const runtime = useOrchestratorRuntimeStore.getState().getRuntime(squadId);
+		const lastAgentEvent = [...runtime.events].reverse().find((event) => event.kind === "agent");
+		expect(lastAgentEvent?.agentId).toBe("a2");
+		expect(callAgentStep).toHaveBeenCalledTimes(3);
 	});
 
 	it("continueRun restaura um checkpoint pendente sem perguntar ao coordenador de novo", async () => {

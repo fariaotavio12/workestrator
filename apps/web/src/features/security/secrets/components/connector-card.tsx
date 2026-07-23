@@ -38,12 +38,11 @@ export const ConnectorCard = ({ preset, secret, status, testing, onConnect, onEd
 				<ConnectionStatusPill status={status} className="self-start" />
 
 				<div className="flex flex-wrap gap-2">
-					{!secret ? (
-						<Button type="button" size="sm" onClick={onConnect}>
-							<PlugZap />
-							Conectar
-						</Button>
-					) : (
+					<Button type="button" size="sm" onClick={onConnect}>
+						<PlugZap />
+						{secret ? "Adicionar conta" : "Conectar"}
+					</Button>
+					{secret && (
 						<>
 							{!secret.hasValue && (
 								<Button type="button" size="sm" onClick={onSetValue}>

@@ -17,6 +17,7 @@ data class CreateRunRequest(
     @Schema(description = "Questions asked and answers given during the run") val qaLog: JsonNode,
     @Schema(description = "Id of the run this one was resumed from, if any") val resumedFromRunId: UUID? = null,
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode? = null,
+    @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode? = null,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode? = null,
 )
 
@@ -27,6 +28,7 @@ data class UpdateRunRequest(
     @Schema(description = "Steps executed and their artifacts") val steps: JsonNode? = null,
     @Schema(description = "Questions asked and answers given during the run") val qaLog: JsonNode? = null,
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode? = null,
+    @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode? = null,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode? = null,
 )
 
@@ -42,5 +44,6 @@ data class RunResponse(
     @Schema(description = "Questions asked and answers given during the run") val qaLog: JsonNode,
     @Schema(description = "Id of the run this one was resumed from, if any") val resumedFromRunId: UUID?,
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode?,
+    @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode,
 )

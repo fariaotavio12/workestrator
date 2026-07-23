@@ -33,9 +33,13 @@ export const IDLE_RUNTIME: Runtime = idleRuntime();
 
 type RuntimeStoreState = {
 	runtimes: Record<string, Runtime>;
-	getRuntime: (squadId: string) => Runtime;
-	setRuntime: (squadId: string, runtime: Runtime) => void;
-	patchRuntime: (squadId: string, patch: (runtime: Runtime) => Runtime) => void;
+	runIdsBySquad: Record<string, string[]>;
+	selectedRunIdBySquad: Record<string, string>;
+	getRuntime: (runId: string) => Runtime;
+	setRuntime: (runId: string, runtime: Runtime) => void;
+	patchRuntime: (runId: string, patch: (runtime: Runtime) => Runtime) => void;
+	registerRun: (squadId: string, runId: string) => void;
+	selectRun: (squadId: string, runId: string) => void;
 };
 
 /**
@@ -44,10 +48,27 @@ type RuntimeStoreState = {
  */
 export const useOrchestratorRuntimeStore = create<RuntimeStoreState>((set, get) => ({
 	runtimes: {},
-	getRuntime: (squadId) => get().runtimes[squadId] ?? IDLE_RUNTIME,
-	setRuntime: (squadId, runtime) => set((state) => ({ runtimes: { ...state.runtimes, [squadId]: runtime } })),
-	patchRuntime: (squadId, patch) =>
+	runIdsBySquad: {},
+	selectedRunIdBySquad: {},
+	getRuntime: (runIdOrSquadId) => {
+		const state = get();
+		return state.runtimes[runIdOrSquadId]
+			?? state.runtimes[state.selectedRunIdBySquad[runIdOrSquadId] ?? ""]
+			?? IDLE_RUNTIME;
+	},
+	setRuntime: (runId, runtime) => set((state) => ({ runtimes: { ...state.runtimes, [runId]: runtime } })),
+	patchRuntime: (runId, patch) =>
 		set((state) => ({
-			runtimes: { ...state.runtimes, [squadId]: patch(state.runtimes[squadId] ?? IDLE_RUNTIME) },
+			runtimes: { ...state.runtimes, [runId]: patch(state.runtimes[runId] ?? IDLE_RUNTIME) },
 		})),
+	registerRun: (squadId, runId) =>
+		set((state) => ({
+			runIdsBySquad: {
+				...state.runIdsBySquad,
+				[squadId]: [runId, ...(state.runIdsBySquad[squadId] ?? []).filter((id) => id !== runId)],
+			},
+			selectedRunIdBySquad: { ...state.selectedRunIdBySquad, [squadId]: runId },
+		})),
+	selectRun: (squadId, runId) =>
+		set((state) => ({ selectedRunIdBySquad: { ...state.selectedRunIdBySquad, [squadId]: runId } })),
 }));

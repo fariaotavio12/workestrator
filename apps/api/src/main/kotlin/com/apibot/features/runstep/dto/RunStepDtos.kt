@@ -41,6 +41,7 @@ data class RunStepScriptRequest(
  */
 @Schema(description = "Execute a single agent turn against an API-key provider and stream the result as SSE")
 data class RunStepRequest(
+    @Schema(description = "Client-side execution identifier used to isolate local workspaces") val executionId: String? = null,
     @Schema(description = "System prompt for the agent") val systemPrompt: String? = null,
     @Schema(description = "User-facing prompt for this step")
     @field:NotBlank(message = "Prompt is required")

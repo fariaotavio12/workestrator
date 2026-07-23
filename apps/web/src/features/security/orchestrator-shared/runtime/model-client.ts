@@ -17,8 +17,22 @@ declare global {
 			baseUrl: string;
 			token: string;
 			selectPath: () => Promise<string | null>;
+			savePreviewFile?: (input: {
+				rootId: string;
+				relativePath: string;
+				suggestedName: string;
+			}) => Promise<{ saved: boolean; path?: string }>;
+			savePreviewArchive?: (input: {
+				rootId: string;
+				suggestedName: string;
+			}) => Promise<{ saved: boolean; path?: string }>;
 			/** Ausente no navegador (`vite dev` fora do Electron) — só o app empacotado/dev do Electron injeta isso. */
 			connectOAuth?: (input: OAuthConnectInput) => Promise<OAuthConnectResult>;
+			startAuthFlow?: (input: StartAuthFlowInput) => Promise<AuthFlowState>;
+			getAuthFlow?: (id: string) => Promise<AuthFlowState>;
+			resolveAuthFlow?: (id: string, approved: boolean) => Promise<AuthFlowState>;
+			cancelAuthFlow?: (id: string) => Promise<AuthFlowState>;
+			connectInstagram?: (input: InstagramConnectInput) => Promise<Record<string, unknown>>;
 			/** Cacheia/limpa o token de sessão em disco pro MCP server externo usar sozinho (ver session-token-cache). */
 			cacheSessionToken?: (token: string, expiresAt: string) => Promise<void>;
 			clearSessionToken?: () => Promise<void>;
@@ -36,6 +50,43 @@ export type ElectronUpdateStatusPayload = {
 	version?: string;
 	percent?: number;
 	message?: string;
+};
+
+export type AuthFlowState = {
+	id: string;
+	kind: "external_authorization" | "action_approval";
+	label: string;
+	url?: string;
+	status: "pending" | "opened" | "approved" | "rejected" | "cancelled" | "expired";
+	createdAt: string;
+	expiresAt: string;
+	resolvedAt?: string;
+};
+
+export type StartAuthFlowInput = Pick<AuthFlowState, "kind" | "label"> & { url?: string; ttlSeconds?: number };
+
+export const startAuthFlow = (input: StartAuthFlowInput): Promise<AuthFlowState> => {
+	const start = window.__ORCH_API__?.startAuthFlow;
+	if (!start) return Promise.reject(new Error("Fluxos interativos exigem o app desktop."));
+	return start(input);
+};
+
+export const getAuthFlow = (id: string): Promise<AuthFlowState> => {
+	const get = window.__ORCH_API__?.getAuthFlow;
+	if (!get) return Promise.reject(new Error("Fluxos interativos exigem o app desktop."));
+	return get(id);
+};
+
+export const resolveAuthFlow = (id: string, approved: boolean): Promise<AuthFlowState> => {
+	const resolve = window.__ORCH_API__?.resolveAuthFlow;
+	if (!resolve) return Promise.reject(new Error("Fluxos interativos exigem o app desktop."));
+	return resolve(id, approved);
+};
+
+export const cancelAuthFlow = (id: string): Promise<AuthFlowState> => {
+	const cancel = window.__ORCH_API__?.cancelAuthFlow;
+	if (!cancel) return Promise.reject(new Error("Fluxos interativos exigem o app desktop."));
+	return cancel(id);
 };
 
 /** Só o necessário pro middleware materializar/descrever o script — não o `Script` completo. */
@@ -58,12 +109,14 @@ export type ScriptPayload = {
 	url?: string;
 	env?: Record<string, string>;
 	toolAllowlist?: string[];
-	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube";
+	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube" | "instagram";
 	config?: string;
 	authRef?: string;
 };
 
 export type AgentCallInput = {
+	/** Identidade do run; o Electron usa para isolar a workspace de execuções paralelas. */
+	executionId?: string;
 	systemPrompt: string;
 	prompt: string;
 	model: string;
@@ -256,7 +309,7 @@ export type PreviewFileEntry = { path: string; ext: string; isImage: boolean; si
 export const previewAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
 
 /** Execucoes reais dependem do runner local do Electron; na web a area privada e configuracao/consulta. */
-export const runnerAvailable = (): boolean => Boolean(window.__ORCH_API__?.baseUrl);
+export const runnerAvailable = (): boolean => typeof window !== "undefined" && Boolean(window.__ORCH_API__?.baseUrl);
 
 /**
  * `true` quando existe alguém pra atender a chamada de execução de um passo de agent: o servidor local
@@ -281,10 +334,17 @@ const orchHeaders = (): HeadersInit => {
  * Aceita uma string (`dir` — vazia = workspace fixo) ou `{ runId }` para apontar no snapshot do histórico
  * (`.runs/<runId>`), sem o front precisar conhecer o caminho absoluto do workspace.
  */
-export const registerPreviewRoot = async (target: string | { runId: string } = ""): Promise<string | null> => {
+export const registerPreviewRoot = async (
+	target: string | { runId: string } | { executionId?: string } = "",
+): Promise<string | null> => {
 	const orchApi = window.__ORCH_API__;
 	if (!orchApi?.baseUrl) return null;
-	const payload = typeof target === "string" ? { dir: target } : { runId: target.runId };
+	const payload =
+		typeof target === "string"
+			? { dir: target }
+			: "runId" in target
+				? { runId: target.runId }
+				: { executionId: target.executionId };
 	const res = await fetch(`${orchApi.baseUrl}/api/register-preview`, {
 		method: "POST",
 		headers: orchHeaders(),
@@ -300,14 +360,14 @@ export const registerPreviewRoot = async (target: string | { runId: string } = "
  * devolve o manifesto persistível no `RunRecord`. Best-effort: fora do Electron ou em falha, devolve
  * lista vazia e nunca lança — a persistência do run segue sem os arquivos.
  */
-export const snapshotRun = async (runId: string, dir = ""): Promise<PreviewFileEntry[]> => {
+export const snapshotRun = async (runId: string, executionId?: string, dir = ""): Promise<PreviewFileEntry[]> => {
 	const orchApi = typeof window === "undefined" ? undefined : window.__ORCH_API__;
 	if (!orchApi?.baseUrl) return [];
 	try {
 		const res = await fetch(`${orchApi.baseUrl}/api/snapshot-run`, {
 			method: "POST",
 			headers: orchHeaders(),
-			body: JSON.stringify({ runId, dir }),
+			body: JSON.stringify({ runId, executionId, dir }),
 		});
 		if (!res.ok) return [];
 		const body = await res.json().catch(() => ({ files: [] }));
@@ -322,14 +382,14 @@ export const snapshotRun = async (runId: string, dir = ""): Promise<PreviewFileE
  * preview). Best-effort e resiliente: fora do Electron (sem `__ORCH_API__`) ou em falha, não faz nada
  * e nunca lança — o run segue normalmente.
  */
-export const resetWorkspace = async (dir = ""): Promise<void> => {
+export const resetWorkspace = async (executionId?: string, dir = "", sourceRunId?: string): Promise<void> => {
 	const orchApi = typeof window === "undefined" ? undefined : window.__ORCH_API__;
 	if (!orchApi?.baseUrl) return;
 	try {
 		await fetch(`${orchApi.baseUrl}/api/reset-workspace`, {
 			method: "POST",
 			headers: orchHeaders(),
-			body: JSON.stringify({ dir }),
+			body: JSON.stringify({ executionId, dir, sourceRunId }),
 		});
 	} catch {
 		// Reset é best-effort — nunca bloqueia o início do run.
@@ -337,13 +397,17 @@ export const resetWorkspace = async (dir = ""): Promise<void> => {
 };
 
 /** Lista arquivos da pasta (todos, ou só os alterados via git quando `changedOnly`). */
-export const listWorkspaceFiles = async (dir = "", changedOnly = false): Promise<PreviewFileEntry[]> => {
+export const listWorkspaceFiles = async (
+	executionId = "",
+	changedOnly = false,
+	dir = "",
+): Promise<PreviewFileEntry[]> => {
 	const orchApi = window.__ORCH_API__;
 	if (!orchApi?.baseUrl) return [];
 	const res = await fetch(`${orchApi.baseUrl}/api/list-files`, {
 		method: "POST",
 		headers: orchHeaders(),
-		body: JSON.stringify({ dir, changedOnly }),
+		body: JSON.stringify({ executionId, dir, changedOnly }),
 	});
 	if (!res.ok) return [];
 	const body = await res.json().catch(() => ({ files: [] }));
@@ -361,14 +425,48 @@ export const buildPreviewUrl = (rootId: string, relPath: string): string => {
 	return `${orchApi?.baseUrl ?? ""}/preview/${rootId}/${encoded}${query}`;
 };
 
+export type SavePreviewResult = { saved: boolean; path?: string };
+
+export const savePreviewFile = async (input: {
+	rootId: string;
+	relativePath: string;
+	suggestedName: string;
+}): Promise<SavePreviewResult> => {
+	const save = window.__ORCH_API__?.savePreviewFile;
+	if (!save) throw new Error("Download nativo disponivel apenas no app desktop.");
+	return save(input);
+};
+
+export const savePreviewArchive = async (input: {
+	rootId: string;
+	suggestedName: string;
+}): Promise<SavePreviewResult> => {
+	const save = window.__ORCH_API__?.savePreviewArchive;
+	if (!save) throw new Error("Download nativo disponivel apenas no app desktop.");
+	return save(input);
+};
+
 export type OAuthConnectInput = {
+	connectorId?: string;
 	authUrl: string;
 	tokenUrl: string;
-	clientId: string;
+	clientId?: string;
 	clientSecret?: string;
 	scopes?: string;
+	openExternal?: boolean;
 };
-export type OAuthConnectResult = { accessToken: string; refreshToken?: string; expiresIn?: number };
+export type OAuthConnectResult = {
+	accessToken: string;
+	refreshToken?: string;
+	expiresIn?: number;
+	accountExternalId?: string;
+	accountDisplayName?: string;
+};
+
+export type InstagramConnectInput = {
+	backendBaseUrl: string;
+	backendToken: string;
+};
 
 /**
  * Fluxo `authorization_code` + PKCE completo (abre a janela de autorização, captura o callback via
@@ -380,6 +478,12 @@ export const connectOAuth = async (input: OAuthConnectInput): Promise<OAuthConne
 	const connect = window.__ORCH_API__?.connectOAuth;
 	if (!connect) throw new Error("Conectar via OAuth só funciona dentro do app Workestrator (Electron).");
 	return connect(input);
+};
+
+export const connectInstagram = async (input: InstagramConnectInput): Promise<void> => {
+	const connect = window.__ORCH_API__?.connectInstagram;
+	if (!connect) throw new Error("Conectar o Instagram só funciona dentro do app Workestrator (Electron).");
+	await connect(input);
 };
 
 /** Resultado de `/api/test-secret` — só faz verificação de rede de verdade pros esquemas OAuth2. */

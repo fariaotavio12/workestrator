@@ -1,6 +1,7 @@
 package com.apibot.features.secret.dto
 
 import com.apibot.features.secret.model.SecretAuthType
+import com.apibot.features.secret.model.AuthConnectionStatus
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import java.time.Instant
@@ -17,6 +18,12 @@ data class CreateSecretRequest(
     val value: String,
     @Schema(description = "Connector catalog preset id that originated this secret (e.g. \"google\") — informational only")
     val connectorId: String? = null,
+    @Schema(description = "Account identifier returned by the connector") val accountExternalId: String? = null,
+    @Schema(description = "Safe account display name, such as @company") val accountDisplayName: String? = null,
+    @Schema(description = "Granted OAuth scopes") val scopes: List<String> = emptyList(),
+    @Schema(description = "Connection lifecycle status") val status: AuthConnectionStatus = AuthConnectionStatus.CONNECTED,
+    @Schema(description = "Credential expiration, when known") val expiresAt: Instant? = null,
+    @Schema(description = "Last successful validation") val lastValidatedAt: Instant? = null,
 )
 
 @Schema(description = "Request to update a secret's label/authType/metadata — never the value")
@@ -26,6 +33,12 @@ data class UpdateSecretRequest(
     @Schema(description = "Non-sensitive parameters for the auth scheme") val metadata: Map<String, String>? = null,
     @Schema(description = "Connector catalog preset id that originated this secret (e.g. \"google\") — informational only")
     val connectorId: String? = null,
+    @Schema(description = "Account identifier returned by the connector") val accountExternalId: String? = null,
+    @Schema(description = "Safe account display name, such as @company") val accountDisplayName: String? = null,
+    @Schema(description = "Granted OAuth scopes") val scopes: List<String>? = null,
+    @Schema(description = "Connection lifecycle status") val status: AuthConnectionStatus? = null,
+    @Schema(description = "Credential expiration, when known") val expiresAt: Instant? = null,
+    @Schema(description = "Last successful validation") val lastValidatedAt: Instant? = null,
 )
 
 @Schema(description = "Request to rotate a secret's value")
@@ -43,6 +56,12 @@ data class SecretResponse(
     @Schema(description = "Non-sensitive parameters for the auth scheme") val metadata: Map<String, String>?,
     @Schema(description = "Connector catalog preset id that originated this secret (e.g. \"google\") — informational only")
     val connectorId: String?,
+    @Schema(description = "Account identifier returned by the connector") val accountExternalId: String?,
+    @Schema(description = "Safe account display name") val accountDisplayName: String?,
+    @Schema(description = "Granted OAuth scopes") val scopes: List<String>,
+    @Schema(description = "Connection lifecycle status") val status: AuthConnectionStatus,
+    @Schema(description = "Credential expiration, when known") val expiresAt: Instant?,
+    @Schema(description = "Last successful validation") val lastValidatedAt: Instant?,
     @Schema(description = "Whether a value has been set for this secret") val hasValue: Boolean,
     @Schema(description = "Creation date") val createdAt: Instant,
     @Schema(description = "Last update date") val updatedAt: Instant,
@@ -57,4 +76,8 @@ data class SecretValueResponse(
     @Schema(description = "Decrypted credential value") val value: String,
     @Schema(description = "How the value is injected into a request") val authType: SecretAuthType,
     @Schema(description = "Non-sensitive parameters for the auth scheme") val metadata: Map<String, String>?,
+    @Schema(description = "Connector catalog identifier") val connectorId: String?,
+    @Schema(description = "Connected account identifier") val accountExternalId: String?,
+    @Schema(description = "Safe connected account display name") val accountDisplayName: String?,
+    @Schema(description = "Connection lifecycle status") val status: AuthConnectionStatus,
 )

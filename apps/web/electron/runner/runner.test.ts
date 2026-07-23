@@ -1,6 +1,10 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedTool } from "./openai-tools";
+import { connectMcpTools, type ResolvedTool } from "./openai-tools";
 import {
 	buildMcpConfig,
 	buildMcpServerEntry,
@@ -8,10 +12,17 @@ import {
 	callOpenAiCompat,
 	classifyCliFailure,
 	ThinkTagFilter,
+	configureRunnerInstagramProfilesRoot,
+	configureRunnerWorkspace,
+	walkAllRelPaths,
+	workspaceForExecution,
 	type ResolvedSecret,
 	type ScriptPayload,
 	type SecretResolver,
 } from "./runner";
+import { startLocalRunnerServer } from "./server";
+
+const CURRENT_TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const baseScript = (overrides: Partial<ScriptPayload>): ScriptPayload => ({
 	id: "s1",
@@ -45,6 +56,34 @@ describe("buildExecutorPlan", () => {
 		expect(buildExecutorPlan("codex-cli", "cli-default", "", "prompt", true).args).toContain(
 			"--dangerously-bypass-approvals-and-sandbox",
 		);
+	});
+});
+
+describe("isolated execution workspaces", () => {
+	it("resetting one execution never removes files from another execution", async () => {
+		const root = mkdtempSync(path.join(os.tmpdir(), "workestrator-runs-"));
+		configureRunnerWorkspace(root);
+		const runA = workspaceForExecution("run-a");
+		const runB = workspaceForExecution("run-b");
+		mkdirSync(runA, { recursive: true });
+		mkdirSync(runB, { recursive: true });
+		writeFileSync(path.join(runA, "result.md"), "A");
+		writeFileSync(path.join(runB, "result.md"), "B");
+		const server = await startLocalRunnerServer();
+		try {
+			const response = await fetch(`${server.baseUrl}/api/reset-workspace`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-Orchestrator-Token": server.token },
+				body: JSON.stringify({ executionId: "run-a" }),
+			});
+			expect(response.ok).toBe(true);
+			expect(existsSync(path.join(runA, "result.md"))).toBe(false);
+			expect(readFileSync(path.join(runB, "result.md"), "utf8")).toBe("B");
+		} finally {
+			server.close();
+			rmSync(root, { recursive: true, force: true });
+			configureRunnerWorkspace(path.resolve(process.cwd(), "orchestrator-workspace"));
+		}
 	});
 });
 
@@ -119,8 +158,92 @@ describe("buildMcpServerEntry", () => {
 	});
 
 	it("resolves a youtube connector into the local youtube.mjs server without requiring config", async () => {
-		const entry = await buildMcpServerEntry(baseScript({ kind: "connector", connectorProvider: "youtube" }), resolveSecret);
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "youtube" }),
+			resolveSecret,
+		);
 		expect(entry).toMatchObject({ args: [expect.stringContaining("youtube.mjs")], env: { ELECTRON_RUN_AS_NODE: "1" } });
+	});
+
+	it("resolves an instagram connector into the local instagram publisher server", async () => {
+		const entry = await buildMcpServerEntry(
+			baseScript({
+				kind: "connector",
+				connectorProvider: "instagram",
+				env: { INSTAGRAM_ACCESS_TOKEN: "$known-secret", INSTAGRAM_USER_ID: "1789", IMGBB_API_KEY: "imgbb" },
+			}),
+			resolveSecret,
+		);
+		expect(entry).toMatchObject({
+			args: [expect.stringContaining("instagram-publisher.mjs")],
+			env: {
+				ELECTRON_RUN_AS_NODE: "1",
+				INSTAGRAM_ACCESS_TOKEN: "resolved-value",
+				INSTAGRAM_USER_ID: "1789",
+				IMGBB_API_KEY: "imgbb",
+			},
+		});
+	});
+
+	it("injects the account selected by authRef without exposing identity placeholders in the script", async () => {
+		const instagramSecret: SecretResolver = async () => ({
+			value: "account-access-token",
+			authType: "bearer",
+			accountExternalId: "178900000000001",
+			accountDisplayName: "@empresa_a",
+			status: "connected",
+		});
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "instagram-account-a" }),
+			instagramSecret,
+			"D:\\runs\\execution-a",
+		);
+		expect(entry).toMatchObject({
+			env: {
+				INSTAGRAM_ACCESS_TOKEN: "account-access-token",
+				INSTAGRAM_USER_ID: "178900000000001",
+				WORKESTRATOR_WORKSPACE_DIR: "D:\\runs\\execution-a",
+			},
+		});
+	});
+
+	it("injects only the selected local browser profile for a browser-session Instagram account", async () => {
+		const profileId = "41cd95ba-d86a-463a-a282-ee954b75eeca";
+		configureRunnerInstagramProfilesRoot("D:\\instagram-profiles");
+		const instagramSecret: SecretResolver = async () => ({
+			value: JSON.stringify({ mode: "browser_session", profileId }),
+			authType: "raw",
+			accountExternalId: "178900000000001",
+			accountDisplayName: "@empresa_a",
+			status: "connected",
+		});
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "instagram-account-a" }),
+			instagramSecret,
+			"D:\\runs\\execution-a",
+		);
+		expect(entry?.env).toMatchObject({
+			INSTAGRAM_PROFILE_DIR: path.join("D:\\instagram-profiles", profileId, "profile"),
+			INSTAGRAM_PROFILE_ID: profileId,
+			INSTAGRAM_USER_ID: "178900000000001",
+			WORKESTRATOR_WORKSPACE_DIR: "D:\\runs\\execution-a",
+		});
+		expect(entry?.env).not.toHaveProperty("INSTAGRAM_ACCESS_TOKEN");
+	});
+
+	it("blocks an expired Instagram connection before starting the publisher", async () => {
+		const expiredSecret: SecretResolver = async () => ({
+			value: "expired-token",
+			authType: "bearer",
+			accountExternalId: "1789",
+			status: "expired",
+		});
+		await expect(
+			buildMcpServerEntry(
+				baseScript({ kind: "connector", connectorProvider: "instagram", authRef: "expired-account" }),
+				expiredSecret,
+			),
+		).rejects.toThrow("reconecte");
 	});
 
 	it("returns undefined for a composio connector without config.gatewayUrl", async () => {
@@ -148,7 +271,9 @@ describe("buildMcpServerEntry", () => {
 
 	it("ignores command/inline/file kinds — they never become mcp entries", async () => {
 		expect(await buildMcpServerEntry(baseScript({ kind: "command", command: "npm" }), resolveSecret)).toBeUndefined();
-		expect(await buildMcpServerEntry(baseScript({ kind: "inline", content: "echo hi" }), resolveSecret)).toBeUndefined();
+		expect(
+			await buildMcpServerEntry(baseScript({ kind: "inline", content: "echo hi" }), resolveSecret),
+		).toBeUndefined();
 		expect(await buildMcpServerEntry(baseScript({ kind: "file", path: "/tmp/x" }), resolveSecret)).toBeUndefined();
 	});
 
@@ -184,7 +309,9 @@ describe("buildMcpServerEntry", () => {
 			baseScript({ kind: "http", urlTemplate: "https://api.anthropic.com/v1/messages", authRef: "anthropic-key" }),
 			headerResolveSecret,
 		);
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining('"x-api-key":"anthropic-key"') } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining('"x-api-key":"anthropic-key"') },
+		});
 	});
 });
 
@@ -194,10 +321,14 @@ describe("oauth2_refresh token exchange", () => {
 	});
 
 	it("persists a rotated refresh_token back via resolved.rotate() when the provider reissues one", async () => {
-		const fetchMock = vi.fn(async () =>
-			new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600, refresh_token: "rotated-refresh" }), {
-				status: 200,
-			}),
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({ access_token: "new-access-token", expires_in: 3600, refresh_token: "rotated-refresh" }),
+					{
+						status: 200,
+					},
+				),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -215,14 +346,19 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer new-access-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer new-access-token") },
+		});
 		expect(rotate).toHaveBeenCalledWith(JSON.stringify({ refreshToken: "rotated-refresh", clientSecret: "shh" }));
 	});
 
 	it("does not call rotate() when the provider does not reissue a refresh_token", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200 })),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200 }),
+			),
 		);
 
 		const rotate = vi.fn(async () => undefined);
@@ -248,7 +384,10 @@ describe("oauth2_refresh token exchange", () => {
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
-		const fetchAccessToken = vi.fn(async () => ({ accessToken: "backend-access-token", expiresAt: new Date(Date.now() + 3600_000).toISOString() }));
+		const fetchAccessToken = vi.fn(async () => ({
+			accessToken: "backend-access-token",
+			expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+		}));
 		const oauthResolveSecret: SecretResolver = async () => ({
 			id: "oauth-secret-3",
 			value: JSON.stringify({ refreshToken: "old-refresh" }),
@@ -262,7 +401,9 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer backend-access-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer backend-access-token") },
+		});
 		expect(fetchAccessToken).toHaveBeenCalledTimes(1);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -270,7 +411,10 @@ describe("oauth2_refresh token exchange", () => {
 	it("falls back to the local exchange when the backend has no access-token endpoint yet (undefined)", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => new Response(JSON.stringify({ access_token: "local-fallback-token", expires_in: 3600 }), { status: 200 })),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ access_token: "local-fallback-token", expires_in: 3600 }), { status: 200 }),
+			),
 		);
 
 		const fetchAccessToken = vi.fn(async () => undefined);
@@ -287,7 +431,9 @@ describe("oauth2_refresh token exchange", () => {
 			oauthResolveSecret,
 		);
 
-		expect(entry).toMatchObject({ env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer local-fallback-token") } });
+		expect(entry).toMatchObject({
+			env: { WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining("Bearer local-fallback-token") },
+		});
 		expect(fetchAccessToken).toHaveBeenCalledTimes(1);
 	});
 });
@@ -320,7 +466,10 @@ describe("classifyCliFailure", () => {
 	});
 
 	it("gives an actionable message when the Playwright browser is missing", () => {
-		const result = classifyCliFailure("claude", "browserType.launch: Executable doesn't exist. Run npx playwright install");
+		const result = classifyCliFailure(
+			"claude",
+			"browserType.launch: Executable doesn't exist. Run npx playwright install",
+		);
 		expect(result.message).toContain("npx playwright install chromium");
 	});
 
@@ -380,6 +529,11 @@ const searchTool = (execute: ResolvedTool["execute"]): ResolvedTool => ({
 	execute,
 });
 
+const namedTool = (name: string, execute: ResolvedTool["execute"]): ResolvedTool => ({
+	definition: { type: "function", function: { name, description: "", parameters: { type: "object", properties: {} } } },
+	execute,
+});
+
 /** `resolveModel` faz um `GET /models` antes da primeira chamada — responde vazio e segue. */
 const mockChatCalls = (responses: Response[]) => {
 	let call = 0;
@@ -411,7 +565,10 @@ describe("callOpenAiCompat tool loop", () => {
 
 		expect(execute).toHaveBeenCalledWith({ variables: { query: "concursos TI" } });
 		expect(events.find((e) => e.event === "tool_use")?.data).toMatchObject({ name: "buscar" });
-		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true, detail: "resultado da busca" });
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({
+			ok: true,
+			detail: "resultado da busca",
+		});
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "Achei 2 editais." });
 	});
 
@@ -424,6 +581,32 @@ describe("callOpenAiCompat tool loop", () => {
 		const chatCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/chat/completions"));
 		const body = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as { tools?: unknown[] };
 		expect(body.tools).toHaveLength(1);
+	});
+
+	it("recovers a narrated vLLM tool call by retrying with a named tool_choice", async () => {
+		const fetchMock = mockChatCalls([
+			sseResponse([{ content: 'call:workspace__write_file{"path":"output/vllm-result.md","content":"ok"}' }]),
+			sseResponse(toolCallDeltas("workspace__write_file", '{"path":"output/vllm-result.md","content":"ok"}')),
+			sseResponse([{ content: "FILE_READY output/vllm-result.md verified=true" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ path: "output/vllm-result.md", content: "ok" });
+		const chatBodies = fetchMock.mock.calls
+			.filter(([url]) => String(url).includes("/chat/completions"))
+			.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { tool_choice?: unknown });
+		expect(chatBodies[0].tool_choice).toBe("auto");
+		expect(chatBodies[1].tool_choice).toEqual({
+			type: "function",
+			function: { name: "workspace__write_file" },
+		});
+		expect(chatBodies[2].tool_choice).toBe("auto");
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({
+			output: "FILE_READY output/vllm-result.md verified=true",
+		});
 	});
 
 	it("omits tools entirely when the agent has none attached", async () => {
@@ -494,7 +677,12 @@ describe("callOpenAiCompat tool loop", () => {
 			new Response(
 				JSON.stringify({
 					choices: [
-						{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "buscar", arguments: "{}" } }] } },
+						{
+							message: {
+								content: null,
+								tool_calls: [{ id: "c1", type: "function", function: { name: "buscar", arguments: "{}" } }],
+							},
+						},
 					],
 				}),
 				{ status: 200, headers: { "content-type": "application/json" } },
@@ -509,6 +697,178 @@ describe("callOpenAiCompat tool loop", () => {
 		expect(execute).toHaveBeenCalledOnce();
 		expect(events.find((e) => e.event === "done")?.data).toMatchObject({ output: "final" });
 	});
+
+	// Modelos locais mais fracos (ex.: gemma via Ollama) reproduzem nomes compostos "servidor__tool" de
+	// forma inconsistente — observado ao vivo num squad real: "write_file" (sem o prefixo do servidor
+	// MCP) e "workspace.list_files" (ponto em vez de "__"). Sem tolerar isso, a tool nunca executava e o
+	// agent ficava perguntando ao usuário em vez de gravar/ler o arquivo de verdade.
+	it('resolves a tool call missing the MCP server prefix (e.g. "write_file" for "workspace__write_file")', async () => {
+		mockChatCalls([
+			sseResponse(toolCallDeltas("write_file", '{"path":"a.html","content":"<html></html>"}')),
+			sseResponse([{ content: "final" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledWith({ path: "a.html", content: "<html></html>" });
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: true });
+	});
+
+	it('resolves a tool call with a dot instead of the "__" separator', async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("workspace.list_files", "{}")), sseResponse([{ content: "final" }])]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "[]" });
+		const { res } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__list_files", execute)] }, resolveSecret, res);
+
+		expect(execute).toHaveBeenCalledOnce();
+	});
+
+	it("does not guess when the normalized suffix matches more than one tool (stays a real error)", async () => {
+		mockChatCalls([sseResponse(toolCallDeltas("list_files", "{}")), sseResponse([{ content: "final" }])]);
+		const executeA = vi.fn().mockResolvedValue({ ok: true, text: "a" });
+		const executeB = vi.fn().mockResolvedValue({ ok: true, text: "b" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat(
+			{ ...input, tools: [namedTool("workspace__list_files", executeA), namedTool("archive__list_files", executeB)] },
+			resolveSecret,
+			res,
+		);
+
+		expect(executeA).not.toHaveBeenCalled();
+		expect(executeB).not.toHaveBeenCalled();
+		expect(events.find((e) => e.event === "tool_result")?.data).toMatchObject({ ok: false });
+	});
+});
+
+describe("walkAllRelPaths", () => {
+	it("finds real files even without a .git — fallback for handleSnapshotRun/handleListFiles when git is absent", () => {
+		const dir = mkdtempSync(path.join(os.tmpdir(), "workestrator-walk-"));
+		try {
+			mkdirSync(path.join(dir, "output", "slides"), { recursive: true });
+			writeFileSync(path.join(dir, "output", "slides", "slide-01.html"), "<html></html>");
+			mkdirSync(path.join(dir, "node_modules"), { recursive: true });
+			writeFileSync(path.join(dir, "node_modules", "ignored.js"), "//");
+
+			const files = walkAllRelPaths(dir).map((f) => f.split(path.sep).join("/"));
+
+			expect(files).toEqual(["output/slides/slide-01.html"]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("workspace-fs MCP server (built-in filesystem tool)", () => {
+	const serverPath = path.resolve(CURRENT_TEST_DIR, "..", "mcp-servers", "workspace-fs.mjs");
+
+	it("writes, reads and lists files scoped to the workspace, and rejects path traversal", async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-"));
+		const taken = new Set<string>();
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+
+				const write = await byName.get("workspace__write_file")!.execute({
+					path: "output/slides/slide-01.html",
+					content: "<html>oi</html>",
+				});
+				expect(write.ok).toBe(true);
+				expect(existsSync(path.join(workspaceDir, "output", "slides", "slide-01.html"))).toBe(true);
+
+				const read = await byName.get("workspace__read_file")!.execute({ path: "output/slides/slide-01.html" });
+				expect(read.ok).toBe(true);
+				expect(read.text).toBe("<html>oi</html>");
+
+				const list = await byName.get("workspace__list_files")!.execute({});
+				expect(JSON.parse(list.text)).toEqual(["output/slides/slide-01.html"]);
+
+				const escape = await byName.get("workspace__write_file")!.execute({
+					path: "../outside.html",
+					content: "nope",
+				});
+				expect(escape.ok).toBe(false);
+				expect(escape.text).toContain("não permitido");
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
+
+	// Reproduz ao vivo: o modelo chamou `workspace__list_files{directory:"output/slides/"}` — "directory"
+	// não existia no schema antigo (só "path"), então era descartado silenciosamente pela validação e a
+	// tool caía no default (raiz inteira do workspace) sem nenhum erro visível.
+	it("accepts common aliases for the directory/path parameter (dir, directory, folder) instead of silently ignoring them", async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-alias-"));
+		const taken = new Set<string>();
+		try {
+			mkdirSync(path.join(workspaceDir, "output", "slides"), { recursive: true });
+			writeFileSync(path.join(workspaceDir, "output", "slides", "slide-01.html"), "<html></html>");
+			writeFileSync(path.join(workspaceDir, "root-level.txt"), "raiz");
+
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+				const listFiles = byName.get("workspace__list_files")!;
+
+				const viaDirectory = await listFiles.execute({ directory: "output/slides" });
+				expect(JSON.parse(viaDirectory.text)).toEqual(["slide-01.html"]);
+
+				const viaDir = await listFiles.execute({ dir: "output/slides" });
+				expect(JSON.parse(viaDir.text)).toEqual(["slide-01.html"]);
+
+				const viaFolder = await listFiles.execute({ folder: "output/slides" });
+				expect(JSON.parse(viaFolder.text)).toEqual(["slide-01.html"]);
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
+
+	it('accepts "file"/"text" as aliases for write_file\'s path/content parameters', async () => {
+		const workspaceDir = mkdtempSync(path.join(os.tmpdir(), "workestrator-fs-alias2-"));
+		const taken = new Set<string>();
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{ command: process.execPath, args: [serverPath], env: { WORKESTRATOR_WORKSPACE_DIR: workspaceDir } },
+				undefined,
+				taken,
+			);
+			try {
+				const byName = new Map(connection.tools.map((t) => [t.definition.function.name, t]));
+
+				const write = await byName.get("workspace__write_file")!.execute({ file: "a.html", text: "conteudo" });
+				expect(write.ok).toBe(true);
+				expect(readFileSync(path.join(workspaceDir, "a.html"), "utf-8")).toBe("conteudo");
+
+				const read = await byName.get("workspace__read_file")!.execute({ file: "a.html" });
+				expect(read.text).toBe("conteudo");
+			} finally {
+				await connection.close();
+			}
+		} finally {
+			rmSync(workspaceDir, { recursive: true, force: true });
+		}
+	}, 20_000);
 });
 
 describe("ThinkTagFilter", () => {

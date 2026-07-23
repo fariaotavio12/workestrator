@@ -56,6 +56,10 @@ class RunEntity(
     @JdbcTypeCode(SqlTypes.JSON)
     var runtimeSnapshot: JsonNode? = null,
 
+    @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var authBindingsSnapshot: JsonNode = emptyArrayNode,
+
     // `default '[]'::jsonb` é obrigatório: `ddl-auto=update` não adiciona coluna NOT NULL sem default a
     // uma tabela que já tem linhas (mesmo padrão de AgentEntity.knowledgeCollectionIds).
     @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
@@ -74,6 +78,7 @@ class RunEntity(
         qaLog = this.qaLog,
         resumedFromRunId = this.resumedFromRunId,
         runtimeSnapshot = this.runtimeSnapshot,
+        authBindingsSnapshot = this.authBindingsSnapshot,
         files = this.files,
     )
 }
@@ -90,5 +95,6 @@ fun Run.toEntity(): RunEntity = RunEntity(
     qaLog = this.qaLog,
     resumedFromRunId = this.resumedFromRunId,
     runtimeSnapshot = this.runtimeSnapshot,
+    authBindingsSnapshot = this.authBindingsSnapshot,
     files = this.files,
 )

@@ -1,6 +1,11 @@
 import { Rotas } from "@/app/routing/variables";
 import { cn } from "@/app/utils/cn";
 import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuTrigger,
 	SidebarGroup,
 	SidebarGroupLabel,
 	SidebarMenu,
@@ -17,11 +22,10 @@ import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import { SquadFormDialog } from "../squad-form-dialog";
 import { useDeleteSquad, useDuplicateSquad, useSquadsQuery } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
+import { ACTIVE_RUN_STATUSES, ATTENTION_RUN_STATUSES } from "@/features/security/orchestrator-shared/data/constants";
 import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
 
 const squadPath = (id: string) => Rotas.protegidas.orchestrator.squadDetail.replace(":id", id);
-const ACTIVE_STATUSES = new Set(["running", "paused", "checkpoint", "awaiting_input"]);
-const ATTENTION_STATUSES = new Set(["checkpoint", "awaiting_input"]);
 
 export const OrchestratorSquadsSidebar = () => {
 	const { pathname } = useLocation();
@@ -30,18 +34,25 @@ export const OrchestratorSquadsSidebar = () => {
 	const duplicateSquad = useDuplicateSquad();
 	const deleteSquad = useDeleteSquad();
 	const runtimes = useOrchestratorRuntimeStore((s) => s.runtimes);
+	const runIdsBySquad = useOrchestratorRuntimeStore((s) => s.runIdsBySquad);
 	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
 
 	// Indicador global de execuções ao vivo — "precisa de você" tem prioridade sobre "só rodando"
 	// (ver docs/plano-integracoes-e-flow-builder.md, Etapa 4.5). Sem isso, nada no app avisa
-	// persistentemente que um run está esperando resposta fora do dialog.
+	// persistentemente que um run está esperando resposta fora do dialog. Lista achatada (squad + run)
+	// pra permitir acessar qualquer execução ativa, não só a primeira — essencial com runs paralelos.
 	const activity = useMemo(() => {
-		const activeSquads = squads.filter((squad) => ACTIVE_STATUSES.has(runtimes[squad.id]?.status ?? "idle"));
-		const attentionSquads = activeSquads.filter((squad) =>
-			ATTENTION_STATUSES.has(runtimes[squad.id]?.status ?? "idle"),
-		);
-		return { activeSquads, attentionSquads };
-	}, [squads, runtimes]);
+		const squadById = new Map(squads.map((squad) => [squad.id, squad]));
+		const entries = Object.entries(runIdsBySquad).flatMap(([squadId, runIds]) => {
+			const squad = squadById.get(squadId);
+			if (!squad) return [];
+			return runIds
+				.map((runId) => ({ runId, squad, status: runtimes[runId]?.status ?? "idle" }))
+				.filter((entry) => ACTIVE_RUN_STATUSES.has(entry.status));
+		});
+		const attentionEntries = entries.filter((entry) => ATTENTION_RUN_STATUSES.has(entry.status));
+		return { entries, attentionEntries };
+	}, [runIdsBySquad, squads, runtimes]);
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editingSquad, setEditingSquad] = useState<SquadSummary | undefined>(undefined);
@@ -90,34 +101,58 @@ export const OrchestratorSquadsSidebar = () => {
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 
-					{activity.attentionSquads.length > 0 ? (
+					{activity.attentionEntries.length > 0 ? (
 						<SidebarMenuItem>
-							<SidebarMenuButton
-								type="button"
-								tooltip="Precisa de você"
-								className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 mb-1 border"
-								onClick={() => openRunDialog(activity.attentionSquads[0].id)}
-							>
-								<AlertTriangle className="size-4" />
-								<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
-									Precisa de você{activity.attentionSquads.length > 1 ? ` (${activity.attentionSquads.length})` : ""}
-								</Typography>
-							</SidebarMenuButton>
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<SidebarMenuButton
+										type="button"
+										tooltip="Precisa de você"
+										className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 mb-1 border"
+									>
+										<AlertTriangle className="size-4" />
+										<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
+											Precisa de você{activity.attentionEntries.length > 1 ? ` (${activity.attentionEntries.length})` : ""}
+										</Typography>
+									</SidebarMenuButton>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="start" className="w-56">
+									<DropdownMenuLabel>Precisam de você</DropdownMenuLabel>
+									{activity.attentionEntries.map((entry) => (
+										<DropdownMenuItem
+											key={entry.runId}
+											variant="warning"
+											onClick={() => openRunDialog(entry.squad.id, entry.runId)}
+										>
+											<AlertTriangle className="size-3.5" />
+											<span className="truncate">{entry.squad.name}</span>
+										</DropdownMenuItem>
+									))}
+								</DropdownMenuContent>
+							</DropdownMenu>
 						</SidebarMenuItem>
 					) : (
-						activity.activeSquads.length > 0 && (
+						activity.entries.length > 0 && (
 							<SidebarMenuItem>
-								<SidebarMenuButton
-									type="button"
-									tooltip="Execuções rodando"
-									className="text-primary mb-1"
-									onClick={() => openRunDialog(activity.activeSquads[0].id)}
-								>
-									<Play className="size-4" />
-									<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
-										{activity.activeSquads.length} execução(ões) rodando
-									</Typography>
-								</SidebarMenuButton>
+								<DropdownMenu>
+									<DropdownMenuTrigger asChild>
+										<SidebarMenuButton type="button" tooltip="Execuções rodando" className="text-primary mb-1">
+											<Play className="size-4" />
+											<Typography variant="nav-link" as="span" className="group-data-[collapsible=icon]:hidden">
+												{activity.entries.length} execução(ões) rodando
+											</Typography>
+										</SidebarMenuButton>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent align="start" className="w-56">
+										<DropdownMenuLabel>Execuções rodando</DropdownMenuLabel>
+										{activity.entries.map((entry) => (
+											<DropdownMenuItem key={entry.runId} onClick={() => openRunDialog(entry.squad.id, entry.runId)}>
+												<Play className="size-3.5" />
+												<span className="truncate">{entry.squad.name}</span>
+											</DropdownMenuItem>
+										))}
+									</DropdownMenuContent>
+								</DropdownMenu>
 							</SidebarMenuItem>
 						)
 					)}
@@ -134,9 +169,17 @@ export const OrchestratorSquadsSidebar = () => {
 						squads.map((squad) => {
 							const url = squadPath(squad.id);
 							const isActive = pathname === url;
-							const status = runtimes[squad.id]?.status ?? "idle";
-							const isLive = ACTIVE_STATUSES.has(status);
-							const needsAttention = ATTENTION_STATUSES.has(status);
+							const squadRunIds = runIdsBySquad[squad.id] ?? [];
+							const status =
+								squadRunIds
+									.map((runId) => runtimes[runId]?.status ?? "idle")
+									.find((item) => ATTENTION_RUN_STATUSES.has(item)) ??
+								squadRunIds
+									.map((runId) => runtimes[runId]?.status ?? "idle")
+									.find((item) => ACTIVE_RUN_STATUSES.has(item)) ??
+								"idle";
+							const isLive = ACTIVE_RUN_STATUSES.has(status);
+							const needsAttention = ATTENTION_RUN_STATUSES.has(status);
 
 							return (
 								<SidebarMenuItem key={squad.id}>

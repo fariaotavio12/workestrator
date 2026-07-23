@@ -45,14 +45,15 @@ class InstagramTokenStrategy(
         val parsed = runCatching { sharedJsonMapper.readValue(context.secretValue, InstagramSecretValue::class.java) }
             .getOrElse { InstagramSecretValue(refreshToken = context.secretValue) }
         val currentToken = parsed.refreshToken ?: context.secretValue
-        val clientSecret = parsed.clientSecret
-            ?: throw OAuthTokenExchangeException("Instagram precisa do client secret pra trocar/renovar o token")
-
         val response = runCatching { selfRefresh(currentToken) }
-            .getOrElse { exchangeShortForLong(currentToken, clientSecret) }
+            .getOrElse {
+                val clientSecret = parsed.clientSecret
+                    ?: throw OAuthTokenExchangeException("Instagram precisa ser reconectado para renovar o acesso")
+                exchangeShortForLong(currentToken, clientSecret)
+            }
 
         val rotatedValue = sharedJsonMapper.writeValueAsString(
-            InstagramSecretValue(refreshToken = response.accessToken, clientSecret = clientSecret),
+            InstagramSecretValue(refreshToken = response.accessToken, clientSecret = parsed.clientSecret),
         )
 
         return TokenExchangeResult(

@@ -1,13 +1,8 @@
 // Catálogo de templates do wizard de ferramentas — data-driven: adicionar uma integração nova é
 // adicionar 1 objeto aqui, sem tocar no resto do wizard. `kind`/`defaults` mapeiam pro modelo de
 // dados `Script` já existente (nenhuma migração); o wizard só monta a UI em cima dele.
-import type {
-	ConnectorProvider,
-	HttpMethod,
-	McpTransport,
-	ScriptKind,
-} from "../../orchestrator-shared/types";
-import { Bot, FileText, Github, Globe, Server, Slack, Terminal, Youtube } from "lucide-react";
+import type { ConnectorProvider, HttpMethod, McpTransport, ScriptKind } from "../../orchestrator-shared/types";
+import { Bot, FileText, Github, Globe, Instagram, Server, Slack, Terminal, Youtube } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Forma "achatada" do formulário do wizard — headers/env/config viram `Record` (KeyValueEditor), não JSON cru. */
@@ -92,6 +87,27 @@ export const TOOL_TEMPLATES: ToolTemplate[] = [
 			note:
 				'Roda 100% local via "yt-dlp" (precisa estar no PATH da máquina do runner). O modo "oficial" ' +
 				"(Data API v3) é opcional e configurado por variável de ambiente do app, não por aqui.",
+		},
+	},
+	{
+		id: "instagram-publisher",
+		label: "Instagram Publisher",
+		description: "Publicar carrossel aprovado pela sessão local do Instagram",
+		icon: Instagram,
+		category: "ready",
+		featured: true,
+		kind: "connector",
+		defaults: {
+			connectorProvider: "instagram",
+			name: "Instagram Publisher",
+			description: "Valida e publica carrossel usando a conta Instagram conectada no navegador local.",
+			toolAllowlist: "publish_carousel",
+		},
+		requiresAuth: true,
+		help: {
+			note:
+				"Conecte uma conta em Conexões pelo Chrome/Edge e escolha essa conta no agente que usar a ferramenta. " +
+				"Rode primeiro com dryRun:true e aprove o checkpoint antes da publicação real.",
 		},
 	},
 	{

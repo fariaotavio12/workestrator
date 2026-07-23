@@ -27,7 +27,7 @@ import { Boxes, Clock, Copy, Link2, MoreVertical, Play, Plus, Search, Trash2 } f
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const ACTIVE_STATUSES = new Set(["running", "paused", "checkpoint", "awaiting_input"]);
+const ACTIVE_STATUSES = new Set(["queued", "running", "paused", "checkpoint", "awaiting_input", "awaiting_auth", "awaiting_approval"]);
 
 const triggerLabel = (trigger: Trigger): string => {
 	if (trigger.type === "manual") return "Manual";
@@ -130,6 +130,7 @@ export const PageSquads = () => {
 	const duplicateSquad = useDuplicateSquad();
 	const deleteSquad = useDeleteSquad();
 	const runtimes = useOrchestratorRuntimeStore((s) => s.runtimes);
+	const runIdsBySquad = useOrchestratorRuntimeStore((s) => s.runIdsBySquad);
 	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
 	const navigate = useNavigate();
 
@@ -148,11 +149,11 @@ export const PageSquads = () => {
 		const activeSquads: SquadSummary[] = [];
 		const idleSquads: SquadSummary[] = [];
 		for (const squad of filteredSquads) {
-			const status = runtimes[squad.id]?.status ?? "idle";
-			(ACTIVE_STATUSES.has(status) ? activeSquads : idleSquads).push(squad);
+			const active = (runIdsBySquad[squad.id] ?? []).some((runId) => ACTIVE_STATUSES.has(runtimes[runId]?.status ?? "idle"));
+			(active ? activeSquads : idleSquads).push(squad);
 		}
 		return { activeSquads, idleSquads };
-	}, [filteredSquads, runtimes]);
+	}, [filteredSquads, runIdsBySquad, runtimes]);
 
 	const openSquad = (squad: SquadSummary) =>
 		navigate(Rotas.protegidas.orchestrator.squadDetail.replace(":id", squad.id));

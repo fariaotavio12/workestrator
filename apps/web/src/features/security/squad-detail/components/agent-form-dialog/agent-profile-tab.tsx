@@ -17,11 +17,13 @@ type Props = {
 	accentColor: string;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
+	canExecute: boolean;
 	errors: FieldErrors<AgentFormValues>;
 	register: UseFormRegister<AgentFormValues>;
 	setValue: UseFormSetValue<AgentFormValues>;
 	setRequiresCheckpoint: (value: boolean) => void;
 	setRequiresCheckpointAfter: (value: boolean) => void;
+	setCanExecute: (value: boolean) => void;
 };
 
 export const AgentProfileTab = ({
@@ -33,11 +35,13 @@ export const AgentProfileTab = ({
 	accentColor,
 	requiresCheckpoint,
 	requiresCheckpointAfter,
+	canExecute,
 	errors,
 	register,
 	setValue,
 	setRequiresCheckpoint,
 	setRequiresCheckpointAfter,
+	setCanExecute,
 }: Props) => (
 	<div className="flex flex-col gap-6">
 		<section className="flex flex-col gap-4">
@@ -71,6 +75,19 @@ export const AgentProfileTab = ({
 					setValue("model", next.model, { shouldValidate: true });
 				}}
 			/>
+		</section>
+
+		<section className="flex flex-col gap-3">
+			<SectionHeading icon={<ShieldCheck className="size-4" />}>Execução</SectionHeading>
+
+			<div className="border-border rounded-lg border">
+				<SwitchRow
+					label="Permitir acesso ao workspace"
+					description="Libera leitura e gravação de arquivos para este agent, mesmo sem scripts anexados."
+					checked={canExecute}
+					onChange={setCanExecute}
+				/>
+			</div>
 		</section>
 
 		<section className="flex flex-col gap-3">

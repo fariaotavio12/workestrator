@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 
 /**
  * Teto de custo (USD) por invocação de agente, passado ao Claude CLI via `--max-budget-usd`. É um
@@ -25,6 +26,13 @@ import { fileURLToPath } from "node:url";
  * num único contexto Opus passa fácil de 0.5) — subido pra 2.0 como padrão mais folgado.
  */
 const DEFAULT_MAX_BUDGET_USD = 2.0;
+
+/**
+ * Agentes executores podem produzir vários artefatos numa única etapa. Dez minutos interrompiam
+ * carrosséis completos depois de os arquivos já terem sido gravados, mas antes do marcador final.
+ */
+const EXECUTION_TIMEOUT_MS = 20 * 60_000;
+const READ_ONLY_TIMEOUT_MS = 90_000;
 
 // Orquestrador: alias de modelo interno -> alias aceito pelo Claude Code CLI (só modelos Claude).
 const CLAUDE_MODEL_ALIAS: Record<string, string> = {
@@ -181,10 +189,27 @@ export const buildExecutorPlan = (
 
 // Fase B (M9): execução real. Pasta de trabalho fixa e escopada — só onde o comando *começa*,
 // não é sandbox de verdade (um Bash pode navegar pra fora). Só ligar `canExecute` em agent confiável.
-const WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+let WORKSPACE_DIR = path.resolve(process.cwd(), "orchestrator-workspace");
+let INSTAGRAM_PROFILES_ROOT = path.resolve(process.cwd(), "instagram-profiles");
+
+/**
+ * Define a raiz persistente usada pelo runner. O Electron chama isto depois de `app.whenReady()`,
+ * quando `app.getPath("userData")` já está disponível. Manter a configuração injetável evita que o
+ * módulo do runner dependa de Electron e deixa os handlers testáveis em Node puro.
+ */
+export const configureRunnerWorkspace = (workspaceDir: string): void => {
+	WORKSPACE_DIR = path.resolve(workspaceDir);
+};
+
+export const configureRunnerInstagramProfilesRoot = (profilesRoot: string): void => {
+	INSTAGRAM_PROFILES_ROOT = path.resolve(profilesRoot);
+};
 const SCRIPTS_SUBDIR = "scripts";
 /** Snapshots por run em `.runs/<runId>` — preservados pelo reset; servem o preview do histórico. */
 const RUNS_SUBDIR = ".runs";
+const ACTIVE_RUNS_SUBDIR = ".active";
+export const workspaceForExecution = (executionId?: string): string =>
+	executionId?.trim() ? path.join(WORKSPACE_DIR, ACTIVE_RUNS_SUBDIR, safeFileName(executionId.trim())) : WORKSPACE_DIR;
 const LANGUAGE_EXTENSION: Record<string, string> = { bash: "sh", node: "js", python: "py" };
 
 export type ScriptPayload = {
@@ -206,7 +231,7 @@ export type ScriptPayload = {
 	url?: string;
 	env?: Record<string, string>;
 	toolAllowlist?: string[];
-	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube";
+	connectorProvider?: "composio" | "zapier" | "n8n" | "youtube" | "instagram";
 	config?: string;
 	authRef?: string;
 };
@@ -231,6 +256,10 @@ export type ResolvedSecret = {
 	value: string;
 	authType: SecretAuthType;
 	metadata?: Record<string, string>;
+	connectorId?: string;
+	accountExternalId?: string;
+	accountDisplayName?: string;
+	status?: "connected" | "expired" | "revoked" | "error";
 	/** Id do secret — usado como chave de cache do token OAuth2 (não vem do backend, é anexado pelo resolver). */
 	id?: string;
 	/**
@@ -453,7 +482,15 @@ export const createBackendSecretResolver = (
 				});
 				if (res.ok) {
 					const body = (await res.json()) as ResolvedSecret;
-					cache?.set(id, { value: body.value, authType: body.authType, metadata: body.metadata });
+					cache?.set(id, {
+						value: body.value,
+						authType: body.authType,
+						metadata: body.metadata,
+						connectorId: body.connectorId,
+						accountExternalId: body.accountExternalId,
+						accountDisplayName: body.accountDisplayName,
+						status: body.status,
+					});
 					return {
 						...body,
 						id,
@@ -497,12 +534,14 @@ export const createBackendSecretResolver = (
 // não existe em ESM de verdade. `__dirname` é ambient global via @types/node, daí o `typeof`.
 const CURRENT_DIR = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 // Empacotado: `main.ts`/`runner.ts` são bundlados por esbuild em `dist-electron/main.cjs`, então
-// `CURRENT_DIR` aponta pra `dist-electron/` ali — o build precisa copiar `electron/mcp-servers/`
-// pra `dist-electron/mcp-servers/` (ou `resources/`) pra este caminho existir de verdade num app
-// empacotado. Em dev (`vite dev`), `CURRENT_DIR` é o `electron/runner/` fonte, então `../mcp-servers`
-// resolve certo sem precisar de nenhum passo extra.
+// `CURRENT_DIR` aponta pra `dist-electron/` ali — `scripts/build-electron.mjs` copia
+// `electron/mcp-servers/` pra `dist-electron/mcp-servers/` pra este caminho existir de verdade tanto
+// no app empacotado quanto no `electron:dev` local. Em dev (`vite dev`, sem Electron), `CURRENT_DIR`
+// é o `electron/runner/` fonte, então `../mcp-servers` resolve certo sem precisar desse passo.
 const HTTP_TOOL_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "http-tool.mjs");
 const YOUTUBE_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "youtube.mjs");
+const INSTAGRAM_PUBLISHER_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "instagram-publisher.mjs");
+const WORKSPACE_FS_SERVER_PATH = path.resolve(CURRENT_DIR, "..", "mcp-servers", "workspace-fs.mjs");
 
 /**
  * Resolve um script `kind: "http"` na definição declarativa da tool, com a auth já aplicada em
@@ -537,6 +576,7 @@ export const buildHttpToolDef = async (
 export const buildMcpServerEntry = async (
 	script: ScriptPayload,
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<McpServerConfig | undefined> => {
 	if (script.kind === "mcp") {
 		if (script.transport === "http") {
@@ -578,6 +618,40 @@ export const buildMcpServerEntry = async (
 		if (script.connectorProvider === "youtube") {
 			return { command: process.execPath, args: [YOUTUBE_SERVER_PATH], env: { ELECTRON_RUN_AS_NODE: "1" } };
 		}
+		if (script.connectorProvider === "instagram") {
+			const env = await resolveMapPlaceholders(script.env, resolveSecret);
+			if (workspaceDir) env.WORKESTRATOR_WORKSPACE_DIR = workspaceDir;
+			if (script.authRef) {
+				const resolved = await resolveSecret(script.authRef);
+				if (resolved) {
+					if (resolved.status && resolved.status !== "connected") {
+						throw new Error(`A conexão Instagram está ${resolved.status}; reconecte a conta antes de publicar.`);
+					}
+					let browserProfileId: string | undefined;
+					try {
+						const value = JSON.parse(resolved.value) as { mode?: string; profileId?: string };
+						if (value.mode === "browser_session") browserProfileId = value.profileId;
+					} catch {
+						// Legacy Graph API secrets remain supported below.
+					}
+					if (browserProfileId) {
+						if (!/^[a-f0-9-]{36}$/i.test(browserProfileId)) {
+							throw new Error("A referência do perfil local do Instagram é inválida; reconecte a conta.");
+						}
+						env.INSTAGRAM_PROFILE_DIR = path.join(INSTAGRAM_PROFILES_ROOT, browserProfileId, "profile");
+						env.INSTAGRAM_PROFILE_ID = browserProfileId;
+					} else {
+						env.INSTAGRAM_ACCESS_TOKEN = await resolveAuthToken(resolved);
+					}
+					if (resolved.accountExternalId) env.INSTAGRAM_USER_ID = resolved.accountExternalId;
+				}
+			}
+			return {
+				command: process.execPath,
+				args: [INSTAGRAM_PUBLISHER_SERVER_PATH],
+				env: { ELECTRON_RUN_AS_NODE: "1", ...env },
+			};
+		}
 
 		// Composio/Zapier/n8n: cada gateway real tem sua própria URL por conta/toolkit — não dá pra
 		// advinhar com confiança sem uma conta real pra verificar contra. `config` (JSON) pode informar
@@ -606,11 +680,12 @@ export const buildMcpServerEntry = async (
 export const buildMcpConfig = async (
 	scripts: ScriptPayload[],
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<{ mcpServers: Record<string, McpServerConfig> } | undefined> => {
 	const entries: Record<string, McpServerConfig> = {};
 	for (const script of scripts) {
 		if (script.kind !== "mcp" && script.kind !== "http" && script.kind !== "connector") continue;
-		const entry = await buildMcpServerEntry(script, resolveSecret);
+		const entry = await buildMcpServerEntry(script, resolveSecret, workspaceDir);
 		if (!entry) continue;
 		entries[safeFileName(script.name) || script.id] = entry;
 	}
@@ -760,6 +835,13 @@ export const classifyCliFailure = (command: string, detail: string): { code: Cla
 	return { code: "unknown", message: detail || `${command} não retornou saída.` };
 };
 
+const classifyToolSetupFailure = (error: unknown): { code: ClaudeFailureCode; message: string } => {
+	const message = error instanceof Error ? error.message : String(error);
+	return /reconect|autentic|expired|revoked|conexão/i.test(message)
+		? { code: "unauthenticated", message }
+		: { code: "unknown", message: `Falha ao preparar ferramentas: ${message}` };
+};
+
 /** Headers + sufixo de query já resolvidos pro `apiKeyRef` do provider — ver §8.3/§8.4 do plano. */
 type ProviderAuth = { headers: Record<string, string>; querySuffix: string };
 
@@ -849,6 +931,7 @@ export const handleListModels = async (
 		apiKeyRef?: string;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	const resolvedBaseUrl = baseUrl.trim();
 	if (!resolvedBaseUrl) {
@@ -906,6 +989,7 @@ export const handleTestSecret = async (
 		secretId?: string;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	res.setHeader("Content-Type", "application/json");
 	if (!secretId) {
@@ -953,6 +1037,7 @@ const classifyHttpFailure = (status: number, detail: string): { code: ClaudeFail
 const MAX_TOOL_ITERATIONS = 8;
 
 type OpenAiToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+type OpenAiToolChoice = "auto" | { type: "function"; function: { name: string } };
 
 type ChatMessage =
 	| { role: "system" | "user"; content: string }
@@ -1155,6 +1240,46 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 	return { text, reasoning, toolCalls };
 };
 
+/** Reduz um nome de tool a letras/números com "_" como único separador — pra casar variações que
+ * modelos locais mais fracos reproduzem de forma inconsistente (ponto, espaço, hífen, "__" duplo). */
+const normalizeToolName = (name: string): string =>
+	name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+
+/**
+ * Resolve o nome de tool que o modelo chamou contra as tools de verdade registradas. Tools de servers
+ * MCP recebem nome composto `servidor__tool` (`connectMcpTools`) — na prática, modelos locais mais
+ * fracos reproduzem esse nome de forma inconsistente: já vimos `write_file` (sem o prefixo do server)
+ * e `workspace.list_files` (ponto em vez de "__"). Em vez de só falhar e torcer pro modelo se corrigir
+ * sozinho na rodada seguinte (nem sempre acontece antes do teto de iterações — era o que travava o
+ * squad de carrossel), tenta casar por nome normalizado antes de desistir. Só resolve quando a busca
+ * por sufixo é inequívoca (exatamente uma tool bate) — ambiguidade continua caindo no erro explícito.
+ */
+const resolveToolCall = (byName: Map<string, ResolvedTool>, rawName: string): ResolvedTool | undefined => {
+	const exact = byName.get(rawName);
+	if (exact) return exact;
+	const target = normalizeToolName(rawName);
+	const candidates = [...byName.entries()].filter(([name]) => {
+		const normalized = normalizeToolName(name);
+		return normalized === target || normalized.endsWith(`_${target}`);
+	});
+	return candidates.length === 1 ? candidates[0][1] : undefined;
+};
+
+const extractNarratedToolName = (text: string): string | undefined => {
+	const trimmed = text.trim();
+	const match =
+		trimmed.match(/^call:\s*([a-zA-Z0-9_.-]{1,128})\s*\{/s) ??
+		trimmed.match(/^tool_call\s*:?\s*([a-zA-Z0-9_.-]{1,128})\s*\{/is) ??
+		trimmed.match(/^<tool_call>\s*([a-zA-Z0-9_.-]{1,128})\s*\{/is);
+	return match?.[1];
+};
+
+const buildOpenAiToolChoice = (toolName: string | undefined): OpenAiToolChoice =>
+	toolName ? { type: "function", function: { name: toolName } } : "auto";
+
 /**
  * Chama um endpoint compatível com a API de chat completions da OpenAI (Ollama, vLLM, LM Studio,
  * groq, a própria OpenAI...) rodando o loop de function calling quando o agent tem ferramentas de
@@ -1191,8 +1316,10 @@ export const callOpenAiCompat = async (
 
 	let output = "";
 	let lastReasoning = "";
+	let forcedToolName: string | undefined;
 
 	for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+		const toolChoice = buildOpenAiToolChoice(forcedToolName);
 		let response: Response;
 		try {
 			response = await fetch(url, {
@@ -1202,7 +1329,7 @@ export const callOpenAiCompat = async (
 					model,
 					stream: true,
 					messages,
-					...(toolDefinitions.length > 0 ? { tools: toolDefinitions, tool_choice: "auto" } : {}),
+					...(toolDefinitions.length > 0 ? { tools: toolDefinitions, tool_choice: toolChoice } : {}),
 				}),
 			});
 		} catch (err) {
@@ -1251,14 +1378,42 @@ export const callOpenAiCompat = async (
 					: [];
 
 		if (toolCalls.length === 0) {
+			const narratedToolName = toolDefinitions.length > 0 ? extractNarratedToolName(turn.text) : undefined;
+			if (narratedToolName) {
+				const tool = resolveToolCall(byName, narratedToolName);
+				if (tool && !forcedToolName) {
+					forcedToolName = tool.definition.function.name;
+					continue;
+				}
+				const errorMessage =
+					tool && forcedToolName
+						? `O modelo "${model}" descreveu a ferramenta "${narratedToolName}" como texto mesmo depois do retry estruturado com tool_choice nomeado. Nenhum argumento textual foi executado.`
+						: `O modelo "${model}" descreveu uma chamada de ferramenta como texto, mas a ferramenta "${narratedToolName}" nao existe neste run. Nenhum argumento textual foi executado.`;
+				writeSseEvent(res, "error", {
+					code: "unknown",
+					message: errorMessage,
+				});
+				res.end();
+				return;
+			}
+			if (forcedToolName) {
+				writeSseEvent(res, "error", {
+					code: "unknown",
+					message: `O modelo "${model}" nao retornou tool_call estruturado para "${forcedToolName}" mesmo com tool_choice nomeado. Nenhum texto foi tratado como execucao de ferramenta.`,
+				});
+				res.end();
+				return;
+			}
+			forcedToolName = undefined;
 			output = turn.text;
 			break;
 		}
 
+		forcedToolName = undefined;
 		messages.push({ role: "assistant", content: turn.text || null, tool_calls: toolCalls });
 
 		for (const call of toolCalls) {
-			const tool = byName.get(call.function.name);
+			const tool = resolveToolCall(byName, call.function.name);
 			writeSseEvent(res, "tool_use", {
 				id: call.id,
 				name: call.function.name,
@@ -1327,16 +1482,44 @@ export const callOpenAiCompat = async (
  * stdio ou HTTP). Os kinds `command`/`inline`/`file` executam processo arbitrário na máquina e
  * ficam fora — no caminho da Claude CLI quem concede isso é o próprio CLI, com as guardas dele.
  *
+ * Quando `workspaceDir` é passado (agent `canExecute`), injeta incondicionalmente o server built-in
+ * `workspace-fs.mjs` (write_file/read_file/list_files/render_slides) — providers openai-compat não
+ * ganham Bash/Read/Write nativo como a Claude CLI, então sem isso o agent só descrevia arquivos em
+ * texto e nunca os gravava de verdade, independente de o usuário ter anexado algum script `mcp`.
+ *
  * Nunca lança: um server MCP que não sobe vira aviso no log e as demais tools seguem disponíveis —
  * derrubar o passo inteiro por causa de uma integração quebrada seria pior que rodar sem ela.
  */
 const resolveOpenAiTools = async (
 	scripts: ScriptPayload[],
 	resolveSecret: SecretResolver,
+	workspaceDir?: string,
 ): Promise<{ tools: ResolvedTool[]; close: () => Promise<void> }> => {
 	const tools: ResolvedTool[] = [];
 	const connections: McpConnection[] = [];
 	const taken = new Set<string>();
+
+	if (workspaceDir) {
+		try {
+			const connection = await connectMcpTools(
+				"workspace",
+				{
+					command: process.execPath,
+					args: [WORKSPACE_FS_SERVER_PATH],
+					env: { ELECTRON_RUN_AS_NODE: "1", WORKESTRATOR_WORKSPACE_DIR: workspaceDir },
+				},
+				undefined,
+				taken,
+			);
+			connections.push(connection);
+			tools.push(...connection.tools);
+		} catch (err) {
+			console.error(
+				"[tools] Falha ao subir o server built-in de filesystem:",
+				err instanceof Error ? err.message : err,
+			);
+		}
+	}
 
 	for (const script of scripts) {
 		try {
@@ -1422,6 +1605,153 @@ const previewRoots = new Map<string, string>();
 
 const rootIdFor = (dir: string): string => createHash("sha1").update(path.resolve(dir)).digest("hex").slice(0, 12);
 
+type ZipEntry = { absolutePath: string; relativePath: string };
+
+const ZIP_EXCLUDED_NAMES = new Set([".git", SCRIPTS_SUBDIR, RUNS_SUBDIR, "node_modules"]);
+
+const normalizePreviewRelativePath = (relPath: string): string =>
+	relPath
+		.replace(/\\/g, "/")
+		.split("/")
+		.filter((segment) => segment && segment !== ".")
+		.join("/");
+
+const isInsideRoot = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
+
+const resolvePreviewRoot = (rootId: string): string => {
+	const root = previewRoots.get(rootId);
+	if (!root) throw new Error("Raiz de preview nao registrada ou expirada.");
+	return root;
+};
+
+const resolvePreviewFilePath = (rootId: string, relativePath: string): { filePath: string; normalizedPath: string } => {
+	const root = resolvePreviewRoot(rootId);
+	const normalizedPath = normalizePreviewRelativePath(relativePath);
+	if (!normalizedPath || path.isAbsolute(normalizedPath) || normalizedPath.split("/").includes("..")) {
+		throw new Error("Caminho de arquivo invalido.");
+	}
+	const filePath = path.resolve(root, normalizedPath);
+	if (!isInsideRoot(root, filePath)) throw new Error("Arquivo fora da raiz permitida.");
+	const stat = fs.statSync(filePath);
+	if (!stat.isFile()) throw new Error("Arquivo inexistente ou invalido.");
+	return { filePath, normalizedPath };
+};
+
+const collectZipEntries = (root: string): ZipEntry[] => {
+	const entries: ZipEntry[] = [];
+	const walk = (current: string): void => {
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			if (ZIP_EXCLUDED_NAMES.has(entry.name)) continue;
+			const absolutePath = path.join(current, entry.name);
+			const realPath = fs.realpathSync.native(absolutePath);
+			if (!isInsideRoot(root, realPath)) continue;
+			if (entry.isDirectory()) {
+				walk(absolutePath);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			entries.push({ absolutePath, relativePath: path.relative(root, absolutePath).replace(/\\/g, "/") });
+		}
+	};
+	walk(root);
+	return entries.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+};
+
+let crcTable: number[] | undefined;
+
+const crc32 = (input: Buffer): number => {
+	if (!crcTable) {
+		crcTable = Array.from({ length: 256 }, (_, index) => {
+			let crc = index;
+			for (let bit = 0; bit < 8; bit += 1) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+			return crc >>> 0;
+		});
+	}
+	let crc = 0xffffffff;
+	for (const byte of input) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
+	return (crc ^ 0xffffffff) >>> 0;
+};
+
+const dosDateTime = (date: Date): { date: number; time: number } => {
+	const year = Math.max(1980, date.getFullYear());
+	return {
+		time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+		date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+	};
+};
+
+const writeZipArchive = (entries: ZipEntry[], destinationPath: string): void => {
+	const localParts: Buffer[] = [];
+	const centralParts: Buffer[] = [];
+	let offset = 0;
+
+	for (const entry of entries) {
+		if (!fs.existsSync(entry.absolutePath)) throw new Error(`Arquivo removido durante o ZIP: ${entry.relativePath}`);
+		const stat = fs.statSync(entry.absolutePath);
+		if (!stat.isFile()) throw new Error(`Entrada invalida durante o ZIP: ${entry.relativePath}`);
+		const data = fs.readFileSync(entry.absolutePath);
+		const compressed = zlib.deflateRawSync(data);
+		const name = Buffer.from(entry.relativePath, "utf-8");
+		const checksum = crc32(data);
+		const { date, time } = dosDateTime(stat.mtime);
+
+		const localHeader = Buffer.alloc(30);
+		localHeader.writeUInt32LE(0x04034b50, 0);
+		localHeader.writeUInt16LE(20, 4);
+		localHeader.writeUInt16LE(0x0800, 6);
+		localHeader.writeUInt16LE(8, 8);
+		localHeader.writeUInt16LE(time, 10);
+		localHeader.writeUInt16LE(date, 12);
+		localHeader.writeUInt32LE(checksum, 14);
+		localHeader.writeUInt32LE(compressed.length, 18);
+		localHeader.writeUInt32LE(data.length, 22);
+		localHeader.writeUInt16LE(name.length, 26);
+
+		localParts.push(localHeader, name, compressed);
+
+		const centralHeader = Buffer.alloc(46);
+		centralHeader.writeUInt32LE(0x02014b50, 0);
+		centralHeader.writeUInt16LE(20, 4);
+		centralHeader.writeUInt16LE(20, 6);
+		centralHeader.writeUInt16LE(0x0800, 8);
+		centralHeader.writeUInt16LE(8, 10);
+		centralHeader.writeUInt16LE(time, 12);
+		centralHeader.writeUInt16LE(date, 14);
+		centralHeader.writeUInt32LE(checksum, 16);
+		centralHeader.writeUInt32LE(compressed.length, 20);
+		centralHeader.writeUInt32LE(data.length, 24);
+		centralHeader.writeUInt16LE(name.length, 28);
+		centralHeader.writeUInt32LE(offset, 42);
+		centralParts.push(centralHeader, name);
+
+		offset += localHeader.length + name.length + compressed.length;
+	}
+
+	const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+	const end = Buffer.alloc(22);
+	end.writeUInt32LE(0x06054b50, 0);
+	end.writeUInt16LE(entries.length, 8);
+	end.writeUInt16LE(entries.length, 10);
+	end.writeUInt32LE(centralSize, 12);
+	end.writeUInt32LE(offset, 16);
+
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+	fs.writeFileSync(destinationPath, Buffer.concat([...localParts, ...centralParts, end]));
+};
+
+export const copyPreviewFileTo = (rootId: string, relativePath: string, destinationPath: string): void => {
+	const { filePath } = resolvePreviewFilePath(rootId, relativePath);
+	fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+	fs.copyFileSync(filePath, destinationPath);
+};
+
+export const savePreviewRootZipTo = (rootId: string, destinationPath: string): void => {
+	const root = resolvePreviewRoot(rootId);
+	const entries = collectZipEntries(root);
+	if (entries.length === 0) throw new Error("Nao ha arquivos para compactar.");
+	writeZipArchive(entries, destinationPath);
+};
+
 const jsonResponse = (res: ServerResponse, status: number, body: unknown): void => {
 	res.statusCode = status;
 	res.setHeader("Content-Type", "application/json");
@@ -1434,13 +1764,14 @@ export const handleRegisterPreview = async (req: IncomingMessage, res: ServerRes
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
 	const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
 	// `runId` → snapshot do run no histórico; `dir` explícito → pasta escolhida; vazio → workspace fixo
 	// do runner (execução de squad, que não expõe o path ao front).
 	const dir = runId
 		? path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(runId))
 		: raw
 			? path.resolve(raw)
-			: WORKSPACE_DIR;
+			: workspaceForExecution(executionId);
 	if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		return jsonResponse(res, 400, { message: "Diretório inexistente." });
 	}
@@ -1483,14 +1814,41 @@ const listChangedRelPaths = (dir: string): string[] => {
 	}
 };
 
+/**
+ * Lista TODOS os arquivos de `dir` (respeitando `MAX_PREVIEW_FILES`/`PREVIEW_IGNORE`) — fallback usado
+ * quando não há como (ou não teve o que) listar via `listChangedRelPaths`, pra nunca depender só do
+ * git existir/funcionar na máquina do usuário (sem `.git` ou sem o binário `git` no PATH, o diff fica
+ * vazio mesmo com arquivos reais em disco).
+ */
+export const walkAllRelPaths = (dir: string): string[] => {
+	const relPaths: string[] = [];
+	const walk = (current: string): void => {
+		if (relPaths.length >= MAX_PREVIEW_FILES) return;
+		for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+			if (relPaths.length >= MAX_PREVIEW_FILES) return;
+			if (entry.name.startsWith(".") || PREVIEW_IGNORE.has(entry.name)) continue;
+			const abs = path.join(current, entry.name);
+			if (entry.isDirectory()) walk(abs);
+			else relPaths.push(path.relative(dir, abs));
+		}
+	};
+	try {
+		walk(dir);
+	} catch {
+		// pasta ilegível — devolve o que já coletou
+	}
+	return relPaths;
+};
+
 /** `POST /api/list-files {dir, changedOnly?}` — lista arquivos da pasta (ou só os alterados via git). */
 export const handleListFiles = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 	if (req.method !== "POST") return jsonResponse(res, 405, { message: "Método não permitido." });
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
 	const changedOnly = Boolean(body.changedOnly);
 	// `dir` vazio → workspace fixo do runner (execução de squad).
-	const dir = raw ? path.resolve(raw) : WORKSPACE_DIR;
+	const dir = raw ? path.resolve(raw) : workspaceForExecution(executionId);
 	if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
 		return jsonResponse(res, 400, { message: "Diretório inexistente." });
 	}
@@ -1506,25 +1864,8 @@ export const handleListFiles = async (req: IncomingMessage, res: ServerResponse)
 		return { path: rel.replace(/\\/g, "/"), ext, isImage: IMAGE_EXTS.has(ext), size };
 	};
 
-	const relPaths: string[] = changedOnly ? listChangedRelPaths(dir) : [];
-
-	if (relPaths.length === 0) {
-		const walk = (current: string): void => {
-			if (relPaths.length >= MAX_PREVIEW_FILES) return;
-			for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-				if (relPaths.length >= MAX_PREVIEW_FILES) return;
-				if (entry.name.startsWith(".") || PREVIEW_IGNORE.has(entry.name)) continue;
-				const abs = path.join(current, entry.name);
-				if (entry.isDirectory()) walk(abs);
-				else relPaths.push(path.relative(dir, abs));
-			}
-		};
-		try {
-			walk(dir);
-		} catch {
-			// pasta ilegível — devolve o que já coletou
-		}
-	}
+	let relPaths: string[] = changedOnly ? listChangedRelPaths(dir) : [];
+	if (relPaths.length === 0) relPaths = walkAllRelPaths(dir);
 
 	const files = [...new Set(relPaths)].sort().map(toEntry);
 	jsonResponse(res, 200, { files });
@@ -1542,12 +1883,17 @@ export const handleSnapshotRun = async (req: IncomingMessage, res: ServerRespons
 	const runId = typeof body.runId === "string" ? body.runId.trim() : "";
 	if (!runId) return jsonResponse(res, 400, { message: "runId obrigatório." });
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
-	const source = raw ? path.resolve(raw) : WORKSPACE_DIR;
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
+	const source = raw ? path.resolve(raw) : workspaceForExecution(executionId);
 	if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
 		return jsonResponse(res, 200, { files: [], rootId: null });
 	}
 
-	const relPaths = [...new Set(listChangedRelPaths(source))].sort();
+	let relPaths = [...new Set(listChangedRelPaths(source))].sort();
+	// Sem `.git` (ou `git` ausente do PATH), `listChangedRelPaths` sempre volta vazio mesmo com arquivos
+	// reais em disco — sem este fallback, o run perdia o snapshot inteiro (histórico "Ver arquivos" vazio)
+	// mesmo quando os agents geraram tudo certinho.
+	if (relPaths.length === 0) relPaths = [...new Set(walkAllRelPaths(source))].sort();
 	if (relPaths.length === 0) return jsonResponse(res, 200, { files: [], rootId: null });
 
 	const destRoot = path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(runId));
@@ -1583,13 +1929,27 @@ export const handleResetWorkspace = async (req: IncomingMessage, res: ServerResp
 	if (req.method !== "POST") return jsonResponse(res, 405, { message: "Método não permitido." });
 	const body = await readJsonBody(req).catch((): Record<string, unknown> => ({}));
 	const raw = typeof body.dir === "string" ? body.dir.trim() : "";
-	const dir = raw ? path.resolve(raw) : WORKSPACE_DIR;
-	if (dir !== WORKSPACE_DIR) return jsonResponse(res, 200, { ok: true, skipped: true });
+	const executionId = typeof body.executionId === "string" ? body.executionId.trim() : "";
+	const sourceRunId = typeof body.sourceRunId === "string" ? body.sourceRunId.trim() : "";
+	const dir = raw ? path.resolve(raw) : workspaceForExecution(executionId);
+	const activeRoot = path.resolve(WORKSPACE_DIR, ACTIVE_RUNS_SUBDIR);
+	const insideActiveRoot = dir.startsWith(`${activeRoot}${path.sep}`);
+	if (dir !== WORKSPACE_DIR && !insideActiveRoot) return jsonResponse(res, 200, { ok: true, skipped: true });
 	try {
 		if (fs.existsSync(dir)) {
 			for (const entry of fs.readdirSync(dir)) {
-				if (entry === ".git" || entry === SCRIPTS_SUBDIR || entry === RUNS_SUBDIR) continue;
+				if (entry === ".git" || entry === SCRIPTS_SUBDIR || entry === RUNS_SUBDIR || entry === ACTIVE_RUNS_SUBDIR)
+					continue;
 				fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+			}
+		}
+		fs.mkdirSync(dir, { recursive: true });
+		if (sourceRunId) {
+			const sourceRoot = path.join(WORKSPACE_DIR, RUNS_SUBDIR, safeFileName(sourceRunId));
+			if (fs.existsSync(sourceRoot) && fs.statSync(sourceRoot).isDirectory()) {
+				for (const entry of fs.readdirSync(sourceRoot)) {
+					fs.cpSync(path.join(sourceRoot, entry), path.join(dir, entry), { recursive: true });
+				}
 			}
 		}
 		jsonResponse(res, 200, { ok: true });
@@ -1683,6 +2043,7 @@ export const handleRunStep = async (
 		maxBudgetUsd?: number;
 		backendBaseUrl?: string;
 		backendToken?: string;
+		executionId?: string;
 	};
 	const {
 		systemPrompt = "",
@@ -1697,6 +2058,7 @@ export const handleRunStep = async (
 		maxBudgetUsd,
 		backendBaseUrl,
 		backendToken,
+		executionId,
 	} = body;
 	// Só aceita um valor positivo finito vindo do corpo — qualquer coisa fora disso cai no default.
 	const budgetUsd =
@@ -1705,8 +2067,9 @@ export const handleRunStep = async (
 			: DEFAULT_MAX_BUDGET_USD;
 	// Pasta de trabalho efetiva: a escolhida pelo usuário (só quando executa de verdade) ou o workspace
 	// fixo. Nunca deixa o cwd cair fora do que o usuário selecionou — `path.resolve` normaliza o caminho.
-	const workspaceDir = canExecute && workingDir?.trim() ? path.resolve(workingDir.trim()) : WORKSPACE_DIR;
-	const isCustomWorkspace = workspaceDir !== WORKSPACE_DIR;
+	const defaultWorkspaceDir = workspaceForExecution(executionId);
+	const workspaceDir = canExecute && workingDir?.trim() ? path.resolve(workingDir.trim()) : defaultWorkspaceDir;
+	const isCustomWorkspace = Boolean(canExecute && workingDir?.trim());
 	const resolveSecret = createBackendSecretResolver(backendBaseUrl, backendToken, cache);
 
 	// Sem isso, agents que precisam montar `file://` ou caminhos de arquivo (ex.: Playwright navegando
@@ -1745,17 +2108,33 @@ export const handleRunStep = async (
 			res.end();
 			return;
 		}
-		// As ferramentas de rede do agent viram function tools de verdade aqui — independente de
-		// `canExecute` (que governa execução LOCAL, não integração de rede). `resolveOpenAiTools` só
-		// monta http/mcp/connector e ignora command/inline/file, então isto nunca expõe execução local.
-		const resolved = await resolveOpenAiTools(scripts, resolveSecret);
+		// As ferramentas de rede do agent viram function tools de verdade aqui — sem isso o modelo
+		// recebia um prompt anunciando integrações que nunca chegavam no payload. `workspaceDir` injeta
+		// incondicionalmente o server built-in de filesystem (ver `resolveOpenAiTools`).
+		let resolved: Awaited<ReturnType<typeof resolveOpenAiTools>>;
+		try {
+			resolved = canExecute
+				? await resolveOpenAiTools(scripts, resolveSecret, workspaceDir)
+				: { tools: [], close: async () => {} };
+		} catch (error) {
+			writeSseEvent(res, "error", classifyToolSetupFailure(error));
+			res.end();
+			return;
+		}
+		// Só este branch (openai-compat) ganha o server built-in de filesystem — precisa dizer o nome
+		// exato das tools e deixar explícito que é uma CHAMADA de tool, não só descrever em texto, porque
+		// modelos locais mais fracos tendem a "narrar" que salvaram/renderizaram algo sem de fato chamar
+		// a tool (era exatamente o bug: Slide Author só devolvia o HTML como texto, nunca gravava nada).
+		const openAiSystemPrompt = canExecute
+			? `${effectiveSystemPrompt}\n\nFerramentas de arquivo SEMPRE disponíveis nesta execução — CHAME como tool de verdade, nunca apenas diga em texto que gravou/leu/renderizou algo: "workspace__write_file" (path, content) grava um arquivo; "workspace__read_file" (path) lê um arquivo; "workspace__list_files" (path?) lista o que já existe de verdade na pasta de trabalho; "workspace__render_slides" (inputDir?, outputDir?) renderiza sozinho todo HTML de output/slides/ em JPEG de output/images/, sem precisar montar URL file:// nem navegar manualmente.`
+			: effectiveSystemPrompt;
 		try {
 			await callOpenAiCompat(
 				{
 					baseUrl: resolvedBaseUrl,
 					apiKeyRef,
 					model,
-					systemPrompt: effectiveSystemPrompt,
+					systemPrompt: openAiSystemPrompt,
 					prompt,
 					tools: resolved.tools,
 				},
@@ -1776,7 +2155,14 @@ export const handleRunStep = async (
 
 		// MCP só se aplica à Claude CLI (única com `--mcp-config` nativo hoje — ver plano, Etapa 3).
 		if (providerKind === "claude-cli") {
-			const mcpConfig = await buildMcpConfig(scripts, resolveSecret);
+			let mcpConfig: Awaited<ReturnType<typeof buildMcpConfig>>;
+			try {
+				mcpConfig = await buildMcpConfig(scripts, resolveSecret, workspaceDir);
+			} catch (error) {
+				writeSseEvent(res, "error", classifyToolSetupFailure(error));
+				res.end();
+				return;
+			}
 			if (mcpConfig) {
 				const configPath = writeMcpConfig(mcpConfig, workspaceDir);
 				const allowedTools = scripts
@@ -1903,7 +2289,7 @@ export const handleRunStep = async (
 
 	// Execução real (rodar testes, build, render de imagem via Playwright, etc.) pode demorar bem mais
 	// que uma resposta de texto simples — daí o timeout maior no modo execução.
-	const timeoutMs = canExecute ? 600_000 : 90_000;
+	const timeoutMs = canExecute ? EXECUTION_TIMEOUT_MS : READ_ONLY_TIMEOUT_MS;
 	// Quando o spawn falha (ex.: binário fora do PATH), o Node emite `error` E `close` para o mesmo
 	// child — sem essa trava, os dois handlers abaixo tentam responder a mesma request.
 	let settled = false;
