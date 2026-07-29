@@ -145,8 +145,14 @@ export type Agent = {
 	role: string;
 	systemPrompt: string;
 	modelRef: ModelRef;
-	/** Referências à biblioteca de scripts (`PersistedRoot.scripts`) — não guarda cópia, só o id. */
+	/** Referências à biblioteca de scripts — usadas nas escritas (formulário do agent) e na UI. */
 	scriptIds: string[];
+	/**
+	 * Ferramentas já resolvidas pelo backend (`AgentResponse.scripts`). O runtime lê daqui, nunca de um
+	 * cache separado de scripts: um agente que chega sem as próprias tools executaria em silêncio, com o
+	 * prompt certo e nenhuma ferramenta plugada.
+	 */
+	scripts: Script[];
 	/**
 	 * Bases de conhecimento (RAG) que este agente consulta durante o run — só os ids das coleções
 	 * (feature `knowledge`). Vazio = sem RAG. O runtime recupera top-K trechos dessas bases e injeta

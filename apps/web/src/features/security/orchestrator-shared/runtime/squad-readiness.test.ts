@@ -17,6 +17,7 @@ const agent = (overrides: Partial<Agent> & Pick<Agent, "id" | "name">): Agent =>
 	systemPrompt: "faz coisas",
 	modelRef: { providerId: "provider-1", model: "model-1" },
 	scriptIds: [],
+	scripts: [],
 	canExecute: false,
 	requiresCheckpoint: false,
 	requiresCheckpointAfter: false,

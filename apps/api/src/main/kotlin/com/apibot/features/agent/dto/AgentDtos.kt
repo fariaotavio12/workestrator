@@ -1,6 +1,7 @@
 package com.apibot.features.agent.dto
 
 import com.apibot.features.agent.model.AgentAuthBinding
+import com.apibot.features.script.dto.ScriptResponse
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import java.time.Instant
@@ -52,6 +53,8 @@ data class AgentResponse(
     @Schema(description = "Model provider ID") val providerId: UUID?,
     @Schema(description = "Model name") val model: String?,
     @Schema(description = "Referenced script IDs") val scriptIds: List<UUID>,
+    @Schema(description = "Referenced scripts, fully resolved — the agent always carries its own tools")
+    val scripts: List<ScriptResponse>,
     @Schema(description = "Knowledge collection IDs this agent retrieves from (RAG)") val knowledgeCollectionIds: List<UUID>,
     @Schema(description = "Authentication connections allowed for each agent tool slot") val authBindings: List<AgentAuthBinding>,
     @Schema(description = "Whether the agent can run scripts for real") val canExecute: Boolean,

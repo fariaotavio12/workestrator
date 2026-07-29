@@ -1,4 +1,4 @@
-import type { Agent, ModelRef, Seat, Squad } from "../types";
+import type { Agent, ModelRef, Script, Seat, Squad } from "../types";
 
 // Dados de demonstração — criados na primeira vez que o app abre (ou após reset).
 // IDs fixos pra manter as referências (seat -> agent) consistentes.
@@ -21,6 +21,7 @@ const agent = (
 	systemPrompt: string,
 	options: {
 		scriptIds?: string[];
+		scripts?: Script[];
 		canExecute?: boolean;
 		requiresCheckpoint?: boolean;
 		requiresCheckpointAfter?: boolean;
@@ -35,6 +36,7 @@ const agent = (
 	accentColor,
 	systemPrompt,
 	scriptIds: options.scriptIds ?? [],
+	scripts: options.scripts ?? [],
 	canExecute: options.canExecute ?? false,
 	requiresCheckpoint: options.requiresCheckpoint ?? false,
 	requiresCheckpointAfter: options.requiresCheckpointAfter ?? false,
