@@ -187,7 +187,11 @@ export type HttpToolDef = {
  * valores vão url-encoded (uma query com espaço/`&` quebraria a URL); em header vão crus — um
  * `Bearer <token>` url-encoded viraria um token inválido.
  */
-const substituteTemplate = (template: string, variables: Record<string, unknown> | undefined, encode: boolean): string =>
+const substituteTemplate = (
+	template: string,
+	variables: Record<string, unknown> | undefined,
+	encode: boolean,
+): string =>
 	template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) => {
 		const value = variables?.[key];
 		if (value == null) return "";
@@ -202,7 +206,9 @@ export const applyHeaderTemplate = (
 	headers: Record<string, string> | undefined,
 	variables: Record<string, unknown> | undefined,
 ): Record<string, string> =>
-	Object.fromEntries(Object.entries(headers ?? {}).map(([key, value]) => [key, substituteTemplate(value, variables, false)]));
+	Object.fromEntries(
+		Object.entries(headers ?? {}).map(([key, value]) => [key, substituteTemplate(value, variables, false)]),
+	);
 
 /**
  * Extrai um caminho tipo "data.items" de um objeto — melhor esforço, sem dependência externa.
