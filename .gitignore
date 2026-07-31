@@ -45,3 +45,7 @@ apps/*/.claude/settings.local.json
 .turbo/
 .vite/
 .DS_Store
+
+# Local Obsidian editor state if .specs/ is ever opened directly as a vault — the real vault lives
+# outside the repo (OneDrive), this folder holds only this machine's window layout/plugin list.
+.specs/.obsidian/
