@@ -32,6 +32,8 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 		providers,
 		scripts,
 		collections,
+		approvers,
+		notificationChannels,
 		createAgent,
 		updateAgent,
 		createScript,
@@ -58,6 +60,10 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 		authBindings,
 		requiresCheckpoint,
 		requiresCheckpointAfter,
+		notifyEnabled,
+		notifyChannelId,
+		approverUserIds,
+		ownerCanDecide,
 		customName,
 		customCommand,
 		customArgs,
@@ -77,6 +83,10 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 		setCanExecute,
 		setRequiresCheckpoint,
 		setRequiresCheckpointAfter,
+		setNotifyEnabled,
+		setNotifyChannelId,
+		setApproverUserIds,
+		setOwnerCanDecide,
 		setCustomName,
 		setCustomCommand,
 		setCustomArgs,
@@ -188,12 +198,22 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 									requiresCheckpoint={requiresCheckpoint}
 									requiresCheckpointAfter={requiresCheckpointAfter}
 									canExecute={state.canExecute}
+									notifyEnabled={notifyEnabled}
+									notifyChannelId={notifyChannelId}
+									notificationChannels={notificationChannels}
+									approvers={approvers}
+									approverUserIds={approverUserIds}
+									ownerCanDecide={ownerCanDecide}
 									errors={errors}
 									register={register}
 									setValue={setValue}
 									setRequiresCheckpoint={setRequiresCheckpoint}
 									setRequiresCheckpointAfter={setRequiresCheckpointAfter}
 									setCanExecute={setCanExecute}
+									setNotifyEnabled={setNotifyEnabled}
+									setNotifyChannelId={setNotifyChannelId}
+									setApproverUserIds={setApproverUserIds}
+									setOwnerCanDecide={setOwnerCanDecide}
 								/>
 							</TabsContent>
 

@@ -1,6 +1,8 @@
 import type {
 	Agent,
+	AgentApprovalPolicy,
 	AgentAuthBinding,
+	AgentNotifyPolicy,
 	OrchestratorConfig,
 	Script,
 	Seat,
@@ -26,6 +28,8 @@ export type AgentResponseDto = {
 	canExecute: boolean;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
+	notifyPolicy?: AgentNotifyPolicy | null;
+	approvalPolicy?: AgentApprovalPolicy | null;
 	character: string;
 	gender: string;
 	accentColor: string;
@@ -93,6 +97,8 @@ export type AgentPayload = {
 	canExecute?: boolean;
 	requiresCheckpoint?: boolean;
 	requiresCheckpointAfter?: boolean;
+	notifyPolicy?: AgentNotifyPolicy | null;
+	approvalPolicy?: AgentApprovalPolicy | null;
 	character?: string;
 	gender?: string;
 	accentColor?: string;
@@ -110,6 +116,8 @@ export const agentDraftToPayload = (draft: {
 	canExecute: boolean;
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
+	notifyPolicy?: AgentNotifyPolicy | null;
+	approvalPolicy?: AgentApprovalPolicy | null;
 	character: string;
 	gender: string;
 	accentColor: string;
@@ -125,6 +133,8 @@ export const agentDraftToPayload = (draft: {
 	canExecute: draft.canExecute,
 	requiresCheckpoint: draft.requiresCheckpoint,
 	requiresCheckpointAfter: draft.requiresCheckpointAfter,
+	notifyPolicy: draft.notifyPolicy ?? null,
+	approvalPolicy: draft.approvalPolicy ?? null,
 	character: draft.character,
 	gender: draft.gender,
 	accentColor: draft.accentColor,
@@ -145,6 +155,8 @@ export const mapAgentDto = (dto: AgentResponseDto): Agent => ({
 	canExecute: dto.canExecute,
 	requiresCheckpoint: dto.requiresCheckpoint,
 	requiresCheckpointAfter: dto.requiresCheckpointAfter,
+	notifyPolicy: dto.notifyPolicy ?? null,
+	approvalPolicy: dto.approvalPolicy ?? null,
 	character: dto.character as Agent["character"],
 	gender: dto.gender as Agent["gender"],
 	accentColor: dto.accentColor,

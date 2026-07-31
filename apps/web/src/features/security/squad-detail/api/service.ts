@@ -1,6 +1,7 @@
 import { api } from "@/app/api/clients";
 import { getApiErrorMessage } from "@/app/utils/getApiErrorMessage";
 import { notify } from "@/components";
+import type { SquadApprover } from "@/features/security/orchestrator-shared/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { squadDetailKeys } from "./keys";
 import type { AgentPayload, SquadDetail, SquadDetailResponseDto, UpdateSquadPayload } from "./types";
@@ -90,5 +91,38 @@ export const useRemoveSeat = (squadId: string) => {
 		mutationFn: (seatId: string) => api.delete(`/squads/${squadId}/seats/${seatId}`),
 		onSuccess: invalidate,
 		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível remover a cadeira.")),
+	});
+};
+
+// --- Pool de aprovadores (ver .specs/001-aprovacoes-externas-teams) ---
+
+export const fetchSquadApprovers = async (squadId: string): Promise<SquadApprover[]> => {
+	const { data } = await api.get<SquadApprover[]>(`/squads/${squadId}/approvers`);
+	return data;
+};
+
+export const useSquadApproversQuery = (squadId: string) =>
+	useQuery({
+		queryKey: [...squadDetailKeys.detail(squadId), "approvers"] as const,
+		queryFn: () => fetchSquadApprovers(squadId),
+		enabled: Boolean(squadId),
+	});
+
+export const useInviteApprover = (squadId: string) => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (email: string) =>
+			api.post<SquadApprover>(`/squads/${squadId}/approvers`, { email }).then((r) => r.data),
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: [...squadDetailKeys.detail(squadId), "approvers"] }),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível convidar este aprovador.")),
+	});
+};
+
+export const useRemoveApprover = (squadId: string) => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (approverUserId: string) => api.delete(`/squads/${squadId}/approvers/${approverUserId}`),
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: [...squadDetailKeys.detail(squadId), "approvers"] }),
+		onError: (error) => notify.error(getApiErrorMessage(error, "Não foi possível remover este aprovador.")),
 	});
 };

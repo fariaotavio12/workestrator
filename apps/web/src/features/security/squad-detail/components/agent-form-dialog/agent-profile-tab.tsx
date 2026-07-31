@@ -1,7 +1,13 @@
 import { cn } from "@/app/utils/cn";
-import { FieldWrapper, Input, ModelCombobox, Switch, Typography } from "@/components";
+import { FieldWrapper, Input, ModelCombobox, MultiCombobox, Switch, Typography } from "@/components";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
 import { ACCENT_COLORS } from "@/features/security/orchestrator-shared/data/constants";
-import type { CharacterName, ModelProvider } from "@/features/security/orchestrator-shared/types";
+import type {
+	CharacterName,
+	ModelProvider,
+	NotificationChannel,
+	SquadApprover,
+} from "@/features/security/orchestrator-shared/types";
 import { Palette, ShieldCheck, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import type { FieldErrors, UseFormRegister, UseFormSetValue } from "react-hook-form";
@@ -18,13 +24,25 @@ type Props = {
 	requiresCheckpoint: boolean;
 	requiresCheckpointAfter: boolean;
 	canExecute: boolean;
+	notifyEnabled: boolean;
+	notifyChannelId: string | null;
+	notificationChannels: NotificationChannel[];
+	approvers: SquadApprover[];
+	approverUserIds: string[];
+	ownerCanDecide: boolean;
 	errors: FieldErrors<AgentFormValues>;
 	register: UseFormRegister<AgentFormValues>;
 	setValue: UseFormSetValue<AgentFormValues>;
 	setRequiresCheckpoint: (value: boolean) => void;
 	setRequiresCheckpointAfter: (value: boolean) => void;
 	setCanExecute: (value: boolean) => void;
+	setNotifyEnabled: (value: boolean) => void;
+	setNotifyChannelId: (value: string | null) => void;
+	setApproverUserIds: (ids: string[]) => void;
+	setOwnerCanDecide: (value: boolean) => void;
 };
+
+const NONE_CHANNEL = "__none__";
 
 export const AgentProfileTab = ({
 	providers,
@@ -36,12 +54,22 @@ export const AgentProfileTab = ({
 	requiresCheckpoint,
 	requiresCheckpointAfter,
 	canExecute,
+	notifyEnabled,
+	notifyChannelId,
+	notificationChannels,
+	approvers,
+	approverUserIds,
+	ownerCanDecide,
 	errors,
 	register,
 	setValue,
 	setRequiresCheckpoint,
 	setRequiresCheckpointAfter,
 	setCanExecute,
+	setNotifyEnabled,
+	setNotifyChannelId,
+	setApproverUserIds,
+	setOwnerCanDecide,
 }: Props) => (
 	<div className="flex flex-col gap-6">
 		<section className="flex flex-col gap-4">
@@ -107,6 +135,68 @@ export const AgentProfileTab = ({
 					onChange={setRequiresCheckpointAfter}
 				/>
 			</div>
+
+			{(requiresCheckpoint || requiresCheckpointAfter) && (
+				<>
+					<div className="border-border divide-border divide-y rounded-lg border">
+						<SwitchRow
+							label="Avisar externamente (n8n)"
+							description="Dispara um webhook quando o checkpoint abre — a decisão continua sempre dentro do Workestrator."
+							checked={notifyEnabled}
+							onChange={setNotifyEnabled}
+						/>
+						{notifyEnabled && (
+							<div className="p-3">
+								<FieldWrapper label="Conexão de notificação">
+									<Select
+										value={notifyChannelId ?? NONE_CHANNEL}
+										onValueChange={(value) => setNotifyChannelId(value === NONE_CHANNEL ? null : value)}
+									>
+										<SelectTrigger>
+											<SelectValue placeholder="Selecione uma conexão" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value={NONE_CHANNEL}>Nenhuma</SelectItem>
+											{notificationChannels.map((channel) => (
+												<SelectItem key={channel.id} value={channel.id}>
+													{channel.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</FieldWrapper>
+							</div>
+						)}
+					</div>
+
+					<div className="border-border divide-border flex flex-col divide-y rounded-lg border">
+						<div className="p-3">
+							<MultiCombobox
+								label="Quem, além de você, pode decidir"
+								description="Aprovadores do pool do squad atribuídos aos checkpoints deste agent."
+								options={approvers}
+								getOptionKey={(approver) => approver.approverUserId}
+								getOptionLabel={(approver) => approver.displayName || approver.email}
+								values={approvers.filter((approver) => approverUserIds.includes(approver.approverUserId))}
+								onChange={(next) => setApproverUserIds(next.map((approver) => approver.approverUserId))}
+								placeholder={approvers.length === 0 ? "Nenhum aprovador no pool do squad" : "Selecione aprovadores"}
+								disabled={approvers.length === 0}
+							/>
+						</div>
+						<SwitchRow
+							label="Eu também posso decidir"
+							description={
+								approverUserIds.length === 0
+									? "Desabilitado: atribua ao menos um aprovador para poder se retirar da decisão."
+									: "Desligar retira você da decisão deste agent — só quem está na lista acima decide."
+							}
+							checked={ownerCanDecide}
+							onChange={setOwnerCanDecide}
+							disabled={approverUserIds.length === 0}
+						/>
+					</div>
+				</>
+			)}
 		</section>
 
 		<section className="flex flex-col gap-4">
@@ -157,9 +247,10 @@ type SwitchRowProps = {
 	description: string;
 	checked: boolean;
 	onChange: (value: boolean) => void;
+	disabled?: boolean;
 };
 
-const SwitchRow = ({ label, description, checked, onChange }: SwitchRowProps) => (
+const SwitchRow = ({ label, description, checked, onChange, disabled }: SwitchRowProps) => (
 	<div className="flex items-center justify-between gap-4 p-3">
 		<div className="min-w-0">
 			<Typography variant="body-sm" className="font-medium">
@@ -169,6 +260,6 @@ const SwitchRow = ({ label, description, checked, onChange }: SwitchRowProps) =>
 				{description}
 			</Typography>
 		</div>
-		<Switch checked={checked} onCheckedChange={onChange} />
+		<Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
 	</div>
 );

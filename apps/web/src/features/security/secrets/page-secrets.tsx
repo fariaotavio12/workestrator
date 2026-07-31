@@ -11,10 +11,16 @@ import {
 } from "@/components";
 import { useDeleteSecret, useSecretsQuery } from "@/features/security/secrets/api";
 import { testSecretConnection } from "@/features/security/orchestrator-shared/runtime/model-client";
-import type { Secret, SecretAuthType } from "@/features/security/orchestrator-shared/types";
+import type { NotificationChannel, Secret, SecretAuthType } from "@/features/security/orchestrator-shared/types";
+import { NotificationChannelFormDialog } from "@/features/security/notification-channels/components/notification-channel-form-dialog";
+import {
+	useDeleteNotificationChannel,
+	useNotificationChannelsQuery,
+	useTestNotificationChannel,
+} from "@/features/security/notification-channels/api";
 import type { ConnectorPreset } from "@/features/security/secrets/connectors-catalog";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { KeyRound, Pencil, PlugZap, Plus, SquareAsterisk, Trash2 } from "lucide-react";
+import { Bell, KeyRound, Loader2, Pencil, PlugZap, Plus, SquareAsterisk, TestTube2, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ConnectionStatus } from "./components/connection-status-pill";
 import { ConnectOAuthDialog } from "./components/connect-oauth-dialog";
@@ -48,6 +54,39 @@ export const PageSecrets = () => {
 	const [testingId, setTestingId] = useState<string | null>(null);
 	const [testResults, setTestResults] = useState<Record<string, boolean>>({});
 	const [catalogOpen, setCatalogOpen] = useState(false);
+
+	// --- Notificações (n8n) — ver .specs/001-aprovacoes-externas-teams ---
+	const { data: channels = [], isLoading: channelsLoading } = useNotificationChannelsQuery();
+	const deleteChannel = useDeleteNotificationChannel();
+	const testChannel = useTestNotificationChannel();
+	const [channelFormOpen, setChannelFormOpen] = useState(false);
+	const [editingChannel, setEditingChannel] = useState<NotificationChannel | undefined>(undefined);
+	const [channelToDelete, setChannelToDelete] = useState<NotificationChannel | null>(null);
+	const [testingChannelId, setTestingChannelId] = useState<string | null>(null);
+
+	const openCreateChannel = () => {
+		setEditingChannel(undefined);
+		setChannelFormOpen(true);
+	};
+
+	const openEditChannel = (channel: NotificationChannel) => {
+		setEditingChannel(channel);
+		setChannelFormOpen(true);
+	};
+
+	const handleTestChannel = async (channel: NotificationChannel) => {
+		setTestingChannelId(channel.id);
+		try {
+			const result = await testChannel.mutateAsync(channel.id);
+			if (result.success) notify.success("Aviso de teste entregue.");
+			else notify.error(result.error || "Falha ao entregar o aviso de teste.");
+		} catch {
+			// useTestNotificationChannel mutation não mostra toast de erro por padrão aqui — cobre a falha da chamada.
+			notify.error("Falha ao entregar o aviso de teste.");
+		} finally {
+			setTestingChannelId(null);
+		}
+	};
 
 	const secretByConnectorId = useMemo(() => {
 		const map = new Map<string, Secret>();
@@ -263,6 +302,82 @@ export const PageSecrets = () => {
 				)}
 			</section>
 
+			<section className="flex flex-col gap-3 px-4">
+				<div className="flex items-center justify-between gap-3">
+					<Typography variant="title-sm" as="h2">
+						Notificações (n8n)
+					</Typography>
+					<Button variant="outline" size="sm" onClick={openCreateChannel}>
+						<Plus />
+						Nova conexão
+					</Button>
+				</div>
+				<Typography variant="body-sm" className="text-muted-foreground">
+					Aviso externo quando um checkpoint abre — o Workestrator dispara um webhook (ex.: um fluxo do n8n que
+					entrega no Teams). A decisão continua sempre dentro do Workestrator.
+				</Typography>
+
+				{!channelsLoading && channels.length === 0 ? (
+					<EmptyState
+						icon={Bell}
+						title="Nenhuma conexão de notificação"
+						message="Cadastre a URL de um webhook para avisar externamente quando um checkpoint abrir."
+						onAction={openCreateChannel}
+						actionLabel="Nova conexão"
+						actionIcon={<Plus />}
+					/>
+				) : (
+					<div className="flex flex-col gap-2">
+						{channels.map((channel) => (
+							<div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+								<div className="min-w-0 flex-1">
+									<div className="flex items-center gap-2">
+										<Typography variant="body-sm" className="truncate font-medium">
+											{channel.label}
+										</Typography>
+										<Badge variant={channel.status === "error" ? "destructive" : "secondary"}>
+											{channel.status === "active" ? "ativa" : channel.status === "error" ? "erro" : "desligada"}
+										</Badge>
+									</div>
+									<Typography variant="caption" className="text-muted-foreground">
+										{channel.hasUrl ? (channel.urlHost ?? "URL configurada") : "Sem URL"}
+										{channel.lastError && ` · último erro: ${channel.lastError}`}
+									</Typography>
+								</div>
+								<div className="flex shrink-0 gap-1">
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										aria-label={`Testar ${channel.label}`}
+										disabled={testingChannelId === channel.id}
+										onClick={() => handleTestChannel(channel)}
+									>
+										{testingChannelId === channel.id ? <Loader2 className="animate-spin" /> : <TestTube2 />}
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										aria-label={`Editar ${channel.label}`}
+										onClick={() => openEditChannel(channel)}
+									>
+										<Pencil />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										className="text-destructive"
+										aria-label={`Excluir ${channel.label}`}
+										onClick={() => setChannelToDelete(channel)}
+									>
+										<Trash2 />
+									</Button>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+			</section>
+
 			<ConnectorsCatalogSheet
 				open={catalogOpen}
 				onOpenChange={setCatalogOpen}
@@ -287,6 +402,35 @@ export const PageSecrets = () => {
 				open={Boolean(valueTarget)}
 				onOpenChange={(next) => !next && setValueTarget(null)}
 				secret={valueTarget}
+			/>
+
+			<NotificationChannelFormDialog
+				open={channelFormOpen}
+				onOpenChange={setChannelFormOpen}
+				channel={editingChannel}
+			/>
+
+			<ConfirmDialog
+				open={Boolean(channelToDelete)}
+				onOpenChange={(next) => !next && setChannelToDelete(null)}
+				title="Excluir conexão de notificação?"
+				description={
+					channelToDelete
+						? `"${channelToDelete.label}" será removida. Agentes que a usam param de avisar externamente.`
+						: undefined
+				}
+				confirmLabel="Excluir"
+				destructive
+				onConfirm={async () => {
+					if (!channelToDelete) return;
+					try {
+						await deleteChannel.mutateAsync(channelToDelete.id);
+						notify.success("Conexão excluída.");
+						setChannelToDelete(null);
+					} catch {
+						// useDeleteNotificationChannel already shows the API error toast.
+					}
+				}}
 			/>
 
 			<ConfirmDialog

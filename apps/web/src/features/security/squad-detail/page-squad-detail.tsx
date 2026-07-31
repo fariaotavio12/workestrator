@@ -20,6 +20,7 @@ import { AgentFormDialog } from "./components/agent-form-dialog";
 import { OrchestratorConfigDialog } from "./components/orchestrator-config-dialog";
 import { SeatAssignDialog } from "./components/seat-assign-dialog";
 import { ShareLinkDialog } from "./components/share-link-dialog";
+import { SquadApproversDialog } from "./components/squad-approvers-dialog";
 import { SquadDetailHeader, SquadDetailHeaderSkeleton } from "./components/squad-detail-header";
 import { OfficeCanvas, type OfficeSeatView } from "./office/office-canvas";
 
@@ -65,6 +66,7 @@ export const PageSquadDetail = () => {
 	const [seatDialog, setSeatDialog] = useState<{ seatId: string; agentId: string | null } | null>(null);
 	const [orchestratorOpen, setOrchestratorOpen] = useState(false);
 	const [shareOpen, setShareOpen] = useState(false);
+	const [approversOpen, setApproversOpen] = useState(false);
 	const openRunDialog = useRunDialogStore((s) => s.openRunDialog);
 	const openHistoryDialog = useSquadHistoryDialogStore((s) => s.openHistoryDialog);
 
@@ -177,6 +179,7 @@ export const PageSquadDetail = () => {
 				onNewAgent={() => setAgentForm({})}
 				onOpenHistory={() => openHistoryDialog(squad.id)}
 				onShare={() => setShareOpen(true)}
+				onManageApprovers={() => setApproversOpen(true)}
 				onRun={(runId) => openRunDialog(squad.id, runId)}
 			/>
 
@@ -254,7 +257,9 @@ export const PageSquadDetail = () => {
 					onSeatClick={openSeat}
 					onAnswerQuestion={(answer) => answerPrompt(squad.id, answer)}
 					onApproveCheckpoint={() => resolveCheckpoint(squad.id, true)}
-					onRejectCheckpoint={() => resolveCheckpoint(squad.id, false)}
+					// Reprovar exige justificativa (treinamento de agente) — sem espaço pra isso na bolha
+					// compacta do escritório, então abre o painel completo em vez de rejeitar em silêncio.
+					onRejectCheckpoint={() => openRunDialog(squad.id, squad.runtime.runId ?? null)}
 				/>
 			</div>
 
@@ -275,6 +280,7 @@ export const PageSquadDetail = () => {
 			/>
 			<OrchestratorConfigDialog open={orchestratorOpen} onOpenChange={setOrchestratorOpen} squad={squad} />
 			<ShareLinkDialog open={shareOpen} onOpenChange={setShareOpen} squadId={squad.id} squadName={squad.name} />
+			<SquadApproversDialog open={approversOpen} onOpenChange={setApproversOpen} squadId={squad.id} />
 		</div>
 	);
 };
