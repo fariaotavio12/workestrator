@@ -65,6 +65,13 @@ class RunEntity(
     @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     var files: JsonNode = emptyArrayNode,
+
+    // `{seatId, agentId?, blamedStepId?, checkpointKind, reason, category?, severity?, decidedBy?,
+    // decidedByRole?, createdAt}[]` — opaque passthrough, owned by the frontend contract (ver
+    // .specs/002-treinamento-pos-reprovacao). Mesmo motivo de default de `files`.
+    @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var rejections: JsonNode = emptyArrayNode,
 ) {
     fun toDomain(): Run = Run(
         id = this.id,
@@ -80,6 +87,7 @@ class RunEntity(
         runtimeSnapshot = this.runtimeSnapshot,
         authBindingsSnapshot = this.authBindingsSnapshot,
         files = this.files,
+        rejections = this.rejections,
     )
 }
 
@@ -97,4 +105,5 @@ fun Run.toEntity(): RunEntity = RunEntity(
     runtimeSnapshot = this.runtimeSnapshot,
     authBindingsSnapshot = this.authBindingsSnapshot,
     files = this.files,
+    rejections = this.rejections,
 )

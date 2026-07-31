@@ -51,6 +51,12 @@ data class Run(
     val authBindingsSnapshot: JsonNode = emptyArrayNode,
     /** `{path, ext, isImage, size}[]` — opaque passthrough, owned by the frontend contract. Arquivos gerados no run. */
     val files: JsonNode = emptyArrayNode,
+    /**
+     * `{id, seatId, agentId?, blamedStepId?, checkpointKind, reason, category?, severity?, decidedBy?,
+     * decidedByRole?, createdAt}[]` — opaque passthrough, owned by the frontend contract. Reprovações de
+     * checkpoint deste run — ver .specs/002-treinamento-pos-reprovacao.
+     */
+    val rejections: JsonNode = emptyArrayNode,
 )
 
 fun Run.toResponse(): RunResponse = RunResponse(
@@ -66,4 +72,5 @@ fun Run.toResponse(): RunResponse = RunResponse(
     runtimeSnapshot = this.runtimeSnapshot,
     authBindingsSnapshot = this.authBindingsSnapshot,
     files = this.files,
+    rejections = this.rejections,
 )
