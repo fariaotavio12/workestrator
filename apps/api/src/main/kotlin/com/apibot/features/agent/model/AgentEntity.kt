@@ -69,6 +69,16 @@ class AgentEntity(
     @Column(nullable = false, columnDefinition = "boolean default false")
     var requiresCheckpointAfter: Boolean = false,
 
+    // Nullable — não precisa de default: ausente já significa "sem aviso"/"só o dono decide" (ver
+    // `Agent.notifyPolicy`/`Agent.approvalPolicy`), mesmo padrão de `RunEntity.runtimeSnapshot`.
+    @Column(nullable = true, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var notifyPolicy: JsonNode? = null,
+
+    @Column(nullable = true, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var approvalPolicy: JsonNode? = null,
+
     @Column(nullable = false)
     var character: String = "Male1",
 
@@ -111,6 +121,8 @@ class AgentEntity(
         canExecute = this.canExecute,
         requiresCheckpoint = this.requiresCheckpoint,
         requiresCheckpointAfter = this.requiresCheckpointAfter,
+        notifyPolicy = this.notifyPolicy?.toObject(),
+        approvalPolicy = this.approvalPolicy?.toObject(),
         character = this.character,
         gender = this.gender,
         accentColor = this.accentColor,
@@ -134,6 +146,8 @@ fun Agent.toEntity(): AgentEntity = AgentEntity(
     canExecute = this.canExecute,
     requiresCheckpoint = this.requiresCheckpoint,
     requiresCheckpointAfter = this.requiresCheckpointAfter,
+    notifyPolicy = this.notifyPolicy?.toJsonNode(),
+    approvalPolicy = this.approvalPolicy?.toJsonNode(),
     character = this.character,
     gender = this.gender,
     accentColor = this.accentColor,

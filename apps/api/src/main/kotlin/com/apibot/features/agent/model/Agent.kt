@@ -13,6 +13,27 @@ data class AgentAuthBinding(
     val isDefault: Boolean = true,
 )
 
+/**
+ * Aviso externo de checkpoint (n8n → Teams — ver .specs/001-aprovacoes-externas-teams). `channelId`
+ * referencia um `NotificationChannel` do dono. Ausente/`enabled=false` ⇒ comportamento atual (sem aviso).
+ */
+data class AgentNotifyPolicy(
+    val enabled: Boolean = false,
+    val channelId: UUID? = null,
+)
+
+/**
+ * Quem, além do dono, pode decidir os checkpoints deste agente (ver .specs/001-aprovacoes-externas-teams,
+ * "Aprovador delegado"). `approverUserIds` é um subconjunto do pool do squad (`SquadApprover`), validado
+ * em `AgentService`. `ownerCanDecide = false` exige `approverUserIds` não vazio — invariante D13,
+ * também validada em `AgentService`, não só na UI. Ausente ⇒ `{ approverUserIds: [], ownerCanDecide: true }`,
+ * o comportamento atual.
+ */
+data class AgentApprovalPolicy(
+    val approverUserIds: List<UUID> = emptyList(),
+    val ownerCanDecide: Boolean = true,
+)
+
 data class Agent(
     val id: UUID = UUID.randomUUID(),
     val squadId: UUID,
@@ -29,6 +50,8 @@ data class Agent(
     val canExecute: Boolean = false,
     val requiresCheckpoint: Boolean = false,
     val requiresCheckpointAfter: Boolean = false,
+    val notifyPolicy: AgentNotifyPolicy? = null,
+    val approvalPolicy: AgentApprovalPolicy? = null,
     val character: String = "Male1",
     val gender: String = "male",
     val accentColor: String = "",
@@ -56,6 +79,8 @@ fun Agent.toResponse(scriptsById: Map<UUID, ScriptResponse> = emptyMap()): Agent
     canExecute = this.canExecute,
     requiresCheckpoint = this.requiresCheckpoint,
     requiresCheckpointAfter = this.requiresCheckpointAfter,
+    notifyPolicy = this.notifyPolicy,
+    approvalPolicy = this.approvalPolicy,
     character = this.character,
     gender = this.gender,
     accentColor = this.accentColor,
