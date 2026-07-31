@@ -20,10 +20,12 @@ import {
 	agentDraftToPayload,
 	mapAgentDto,
 	useAddAgent,
+	useSquadApproversQuery,
 	useSquadQuery,
 	useUpdateAgent,
 } from "@/features/security/squad-detail/api";
 import type { AgentResponseDto } from "@/features/security/squad-detail/api";
+import { useNotificationChannelsQuery } from "@/features/security/notification-channels/api";
 import {
 	buildFinalSystemPrompt,
 	buildFinalUserPrompt,
@@ -50,6 +52,8 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	const { data: scripts = [] } = useScriptsQuery();
 	const { data: collections = [] } = useCollectionsQuery();
 	const { data: squad } = useSquadQuery(squadId);
+	const { data: approvers = [] } = useSquadApproversQuery(squadId);
+	const { data: notificationChannels = [] } = useNotificationChannelsQuery();
 	const createAgent = useAddAgent(squadId);
 	const updateAgent = useUpdateAgent(squadId);
 	const createScript = useCreateScript();
@@ -95,6 +99,17 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 	const [authBindings, setAuthBindings] = useState<AgentAuthBinding[]>(agent?.authBindings ?? []);
 	const [requiresCheckpoint, setRequiresCheckpoint] = useState(agent?.requiresCheckpoint ?? false);
 	const [requiresCheckpointAfter, setRequiresCheckpointAfter] = useState(agent?.requiresCheckpointAfter ?? false);
+	const [notifyEnabled, setNotifyEnabled] = useState(agent?.notifyPolicy?.enabled ?? false);
+	const [notifyChannelId, setNotifyChannelId] = useState<string | null>(agent?.notifyPolicy?.channelId ?? null);
+	const [approverUserIds, setApproverUserIdsRaw] = useState<string[]>(agent?.approvalPolicy?.approverUserIds ?? []);
+	const [ownerCanDecide, setOwnerCanDecide] = useState(agent?.approvalPolicy?.ownerCanDecide ?? true);
+	// Sem aprovador atribuído, "eu também decido" não pode ficar desligado — voltaria um agente sem
+	// ninguém apto a decidir (invariante D13, validada de novo no backend). Não é um `useEffect`
+	// reativo de propósito: o encoding fica só no ponto que muda a lista.
+	const setApproverUserIds = (ids: string[]) => {
+		setApproverUserIdsRaw(ids);
+		if (ids.length === 0) setOwnerCanDecide(true);
+	};
 	const [customName, setCustomName] = useState("");
 	const [customCommand, setCustomCommand] = useState("");
 	const [customArgs, setCustomArgs] = useState("");
@@ -334,6 +349,8 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 			canExecute,
 			requiresCheckpoint,
 			requiresCheckpointAfter,
+			notifyPolicy: { enabled: notifyEnabled, channelId: notifyChannelId },
+			approvalPolicy: { approverUserIds, ownerCanDecide },
 		};
 		const payload = agentDraftToPayload(draft);
 
@@ -357,6 +374,8 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 		providers,
 		scripts,
 		collections,
+		approvers,
+		notificationChannels,
 		createAgent,
 		updateAgent,
 		createScript,
@@ -370,6 +389,10 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 			canExecute,
 			requiresCheckpoint,
 			requiresCheckpointAfter,
+			notifyEnabled,
+			notifyChannelId,
+			approverUserIds,
+			ownerCanDecide,
 			customName,
 			customCommand,
 			customArgs,
@@ -389,6 +412,10 @@ export const useAgentFormDialog = ({ squadId, onOpenChange, onSaved, agent }: Pa
 			setCanExecute,
 			setRequiresCheckpoint,
 			setRequiresCheckpointAfter,
+			setNotifyEnabled,
+			setNotifyChannelId,
+			setApproverUserIds,
+			setOwnerCanDecide,
 			setCustomName,
 			setCustomCommand,
 			setCustomArgs,

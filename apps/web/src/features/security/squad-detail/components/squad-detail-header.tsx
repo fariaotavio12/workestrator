@@ -13,7 +13,7 @@ import {
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
 import { RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
 import type { Squad } from "@/features/security/orchestrator-shared/types";
-import { ArrowLeft, Bot, ChevronDown, History, Pencil, Play, Plus, Share2, Users } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, History, Pencil, Play, Plus, Share2, ShieldCheck, Users } from "lucide-react";
 
 const STATUS: Record<Squad["runtime"]["status"], { label: string; dot: string; pill: string }> = {
 	idle: { label: "Ocioso", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
@@ -61,6 +61,7 @@ type SquadDetailHeaderProps = {
 	onNewAgent: () => void;
 	onOpenHistory: () => void;
 	onShare: () => void;
+	onManageApprovers: () => void;
 	/** Abre o dialog na execução (existente ou nova, quando `runId` é omitido/null). */
 	onRun: (runId?: string | null) => void;
 };
@@ -80,6 +81,7 @@ export const SquadDetailHeader = ({
 	onNewAgent,
 	onOpenHistory,
 	onShare,
+	onManageApprovers,
 	onRun,
 }: SquadDetailHeaderProps) => (
 	<header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 pt-6 sm:px-6">
@@ -148,6 +150,15 @@ export const SquadDetailHeader = ({
 				onClick={onShare}
 			>
 				<Share2 />
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				aria-label="Aprovadores do squad"
+				title="Aprovadores do squad"
+				onClick={onManageApprovers}
+			>
+				<ShieldCheck />
 			</Button>
 			{activeRuns.length > 0 ? (
 				<DropdownMenu>

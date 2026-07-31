@@ -69,6 +69,7 @@ const idleRuntime = (): Squad["runtime"] => ({
 	liveTerminal: "",
 	coordinatorThinking: false,
 	stepStartedAt: null,
+	pendingApprovalId: null,
 });
 
 export const seedSquads = (): Squad[] => {

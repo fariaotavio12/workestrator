@@ -34,8 +34,10 @@ class RunService(
             runtimeSnapshot = request.runtimeSnapshot,
             authBindingsSnapshot = request.authBindingsSnapshot ?: jacksonObjectMapper().createArrayNode(),
         )
-        // `files` é opcional no POST (o front preenche depois, no PUT final) — só sobrescreve o default se veio.
-        return runRepository.save(if (request.files != null) run.copy(files = request.files) else run)
+        // `files`/`rejections` são opcionais no POST — só sobrescreve o default se vieram.
+        val withFiles = if (request.files != null) run.copy(files = request.files) else run
+        val withRejections = if (request.rejections != null) withFiles.copy(rejections = request.rejections) else withFiles
+        return runRepository.save(withRejections)
     }
 
     fun listRuns(userId: UUID, squadId: UUID): List<Run> {
@@ -63,6 +65,7 @@ class RunService(
             runtimeSnapshot = request.runtimeSnapshot ?: current.runtimeSnapshot,
 			authBindingsSnapshot = request.authBindingsSnapshot ?: current.authBindingsSnapshot,
             files = request.files ?: current.files,
+            rejections = request.rejections ?: current.rejections,
         )
         return runRepository.save(updated)
     }

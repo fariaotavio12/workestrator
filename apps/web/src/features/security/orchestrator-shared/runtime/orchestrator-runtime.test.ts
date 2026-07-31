@@ -13,16 +13,30 @@ vi.mock("@/features/security/executions/api", () => ({
 	updateRunApi: vi.fn().mockResolvedValue({ id: "run-persisted" }),
 	executionsKeys: { bySquad: (id: string) => ["runs", id] },
 }));
+vi.mock("@/features/security/approvals/api", () => ({
+	createApprovalApi: vi.fn(),
+	decideApprovalApi: vi.fn(),
+	cancelApprovalApi: vi.fn(),
+	getApprovalApi: vi.fn(),
+	extractApprovalFromConflict: () => undefined,
+}));
 
 import { tanStackQueryClient } from "@/app/api/clients";
 import { notify } from "@/components/toast/notify";
+import {
+	cancelApprovalApi,
+	createApprovalApi,
+	decideApprovalApi,
+	getApprovalApi,
+} from "@/features/security/approvals/api";
+import { updateRunApi } from "@/features/security/executions/api";
 import { providersKeys } from "@/features/security/models/api";
 import { squadDetailKeys, type SquadDetail } from "@/features/security/squad-detail/api";
-import type { Agent, ModelProvider, RunRecord, Script, Seat } from "../types";
+import type { Agent, ApprovalRequest, ModelProvider, RunRecord, Script, Seat } from "../types";
 import { useOrchestratorRuntimeStore } from "../model/use-orchestrator-runtime-store";
 import { callAgentStep, type AgentCallInput } from "./model-client";
 import { notifyOs } from "./os-notify";
-import { continueRun, retryLastStep, startRun } from "./orchestrator-runtime";
+import { continueRun, resolveCheckpoint, retryLastStep, startRun, stopRun } from "./orchestrator-runtime";
 
 const ISO = "2026-01-01T00:00:00.000Z";
 
@@ -404,5 +418,190 @@ describe("orchestrator-runtime — continuar de onde parou (retry/resume)", () =
 		await vi.waitFor(() => {
 			expect(notifyOs).toHaveBeenCalledWith("Execução concluída", `Squad ${squadId}`, expect.any(Function));
 		});
+	});
+});
+
+const approvalRequest = (overrides: Partial<ApprovalRequest> & Pick<ApprovalRequest, "id">): ApprovalRequest => ({
+	squadId: "squad",
+	runId: "run-persisted",
+	seatId: "s1",
+	agentId: "a1",
+	checkpointKind: "before",
+	status: "pending",
+	title: "Aprovação necessária antes de acionar Beto",
+	summary: "",
+	canDecide: true,
+	canCancel: true,
+	createdAt: ISO,
+	updatedAt: ISO,
+	...overrides,
+});
+
+describe("orchestrator-runtime — checkpoint com aprovação externa (n8n/aprovador delegado)", () => {
+	it("enterCheckpoint não bloqueia a transição pro estado checkpoint enquanto o POST /approvals está em voo", async () => {
+		const squadId = "squad-approval-nonblocking";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		let resolveCreate: (approval: ApprovalRequest) => void = () => undefined;
+		vi.mocked(createApprovalApi).mockReturnValue(
+			new Promise((resolve) => {
+				resolveCreate = resolve;
+			}),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("checkpoint");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBeNull();
+
+		resolveCreate(approvalRequest({ id: "appr-1", squadId, seatId: "s1", agentId: "a1" }));
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-1");
+		});
+	});
+
+	it("resolveCheckpoint bloqueia reprovar sem justificativa e não chama o backend", async () => {
+		const squadId = "squad-approval-no-reason";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-2", squadId, seatId: "s1", agentId: "a1" }),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-2");
+		});
+		const runId = useOrchestratorRuntimeStore.getState().getRuntime(squadId).runId as string;
+
+		resolveCheckpoint(runId, false);
+
+		expect(notify.error).toHaveBeenCalledWith("Justificativa obrigatória para reprovar um checkpoint.");
+		expect(decideApprovalApi).not.toHaveBeenCalled();
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("checkpoint");
+	});
+
+	it("resolveCheckpoint com justificativa decide via backend, grava a rejeição e aborta o run", async () => {
+		const squadId = "squad-approval-reject";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-3", squadId, seatId: "s1", agentId: "a1" }),
+		);
+		vi.mocked(decideApprovalApi).mockResolvedValue(
+			approvalRequest({
+				id: "appr-3",
+				squadId,
+				seatId: "s1",
+				agentId: "a1",
+				status: "rejected",
+				feedback: "faltou revisar o tom",
+				decidedByRole: "owner",
+			}),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-3");
+		});
+		const runId = useOrchestratorRuntimeStore.getState().getRuntime(squadId).runId as string;
+
+		resolveCheckpoint(runId, false, { reason: "faltou revisar o tom" });
+
+		await vi.waitFor(() => {
+			expect(decideApprovalApi).toHaveBeenCalledWith("appr-3", { approved: false, feedback: "faltou revisar o tom" });
+		});
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("aborted");
+		});
+		await vi.waitFor(() => {
+			const rejectionCall = vi.mocked(updateRunApi).mock.calls.find((call) =>
+				call[2]?.rejections?.some((r) => r.reason === "faltou revisar o tom"),
+			);
+			expect(rejectionCall).toBeDefined();
+		});
+	});
+
+	it("stopRun cancela o pedido de aprovação pendente no backend", async () => {
+		const squadId = "squad-approval-stop";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-4", squadId, seatId: "s1", agentId: "a1" }),
+		);
+		vi.mocked(cancelApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-4", squadId, seatId: "s1", agentId: "a1", status: "canceled" }),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-4");
+		});
+		const runId = useOrchestratorRuntimeStore.getState().getRuntime(squadId).runId as string;
+
+		stopRun(runId);
+
+		expect(cancelApprovalApi).toHaveBeenCalledWith("appr-4");
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("aborted");
+	});
+
+	it("continueRun não duplica o pedido de aprovação — restaura pendingApprovalId do snapshot sem recriar", async () => {
+		const squadId = "squad-approval-resume";
+		seedCache(
+			squadId,
+			squadDetail(squadId, { agents: [agent({ id: "a1", name: "Beto" })], seats: [seat("s1", "a1")] }),
+		);
+		vi.mocked(callAgentStep).mockRejectedValue(new Error("não deveria ser chamado nesse caminho"));
+		vi.mocked(createApprovalApi).mockRejectedValue(new Error("não deveria criar um novo pedido"));
+		vi.mocked(getApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-5", squadId, seatId: "s1", agentId: "a1", status: "pending" }),
+		);
+
+		const previousRun = runRecord("run-approval-resume", squadId, {
+			runtimeSnapshot: {
+				currentStep: 0,
+				pendingSeatId: "s1",
+				pendingCheckpointKind: "before",
+				pendingQuestion: null,
+				pendingApprovalId: "appr-5",
+			},
+		});
+
+		continueRun(squadId, previousRun);
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("checkpoint");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-5");
+		expect(createApprovalApi).not.toHaveBeenCalled();
 	});
 });

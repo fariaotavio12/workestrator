@@ -1,6 +1,8 @@
 package com.apibot.features.agent.dto
 
+import com.apibot.features.agent.model.AgentApprovalPolicy
 import com.apibot.features.agent.model.AgentAuthBinding
+import com.apibot.features.agent.model.AgentNotifyPolicy
 import com.apibot.features.script.dto.ScriptResponse
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
@@ -20,6 +22,8 @@ data class CreateAgentRequest(
     @Schema(description = "Whether the agent can run scripts for real") val canExecute: Boolean = false,
     @Schema(description = "Whether the run pauses for approval before this agent") val requiresCheckpoint: Boolean = false,
     @Schema(description = "Whether the run pauses for approval after this agent produces output") val requiresCheckpointAfter: Boolean = false,
+    @Schema(description = "External checkpoint notification policy (n8n webhook)") val notifyPolicy: AgentNotifyPolicy? = null,
+    @Schema(description = "Who besides the owner can decide this agent's checkpoints") val approvalPolicy: AgentApprovalPolicy? = null,
     @Schema(description = "Character sprite name") val character: String = "Male1",
     @Schema(description = "Character gender") val gender: String = "male",
     @Schema(description = "Accent color") val accentColor: String = "",
@@ -38,6 +42,10 @@ data class UpdateAgentRequest(
     @Schema(description = "Whether the agent can run scripts for real") val canExecute: Boolean? = null,
     @Schema(description = "Whether the run pauses for approval before this agent") val requiresCheckpoint: Boolean? = null,
     @Schema(description = "Whether the run pauses for approval after this agent produces output") val requiresCheckpointAfter: Boolean? = null,
+    @Schema(description = "External checkpoint notification policy (n8n webhook) — send the full object to replace it")
+    val notifyPolicy: AgentNotifyPolicy? = null,
+    @Schema(description = "Who besides the owner can decide this agent's checkpoints — send the full object to replace it")
+    val approvalPolicy: AgentApprovalPolicy? = null,
     @Schema(description = "Character sprite name") val character: String? = null,
     @Schema(description = "Character gender") val gender: String? = null,
     @Schema(description = "Accent color") val accentColor: String? = null,
@@ -64,6 +72,8 @@ data class AgentResponse(
     @Schema(description = "Whether the agent can run scripts for real") val canExecute: Boolean,
     @Schema(description = "Whether the run pauses for approval before this agent") val requiresCheckpoint: Boolean,
     @Schema(description = "Whether the run pauses for approval after this agent produces output") val requiresCheckpointAfter: Boolean,
+    @Schema(description = "External checkpoint notification policy (n8n webhook)") val notifyPolicy: AgentNotifyPolicy?,
+    @Schema(description = "Who besides the owner can decide this agent's checkpoints") val approvalPolicy: AgentApprovalPolicy?,
     @Schema(description = "Character sprite name") val character: String,
     @Schema(description = "Character gender") val gender: String,
     @Schema(description = "Accent color") val accentColor: String,

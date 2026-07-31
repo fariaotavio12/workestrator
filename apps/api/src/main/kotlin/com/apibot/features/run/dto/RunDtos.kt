@@ -19,6 +19,7 @@ data class CreateRunRequest(
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode? = null,
     @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode? = null,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode? = null,
+    @Schema(description = "Checkpoint rejections recorded during the run") val rejections: JsonNode? = null,
 )
 
 @Schema(description = "Request to update an in-flight or finished run")
@@ -30,6 +31,7 @@ data class UpdateRunRequest(
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode? = null,
     @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode? = null,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode? = null,
+    @Schema(description = "Checkpoint rejections recorded during the run") val rejections: JsonNode? = null,
 )
 
 @Schema(description = "Run response")
@@ -46,4 +48,5 @@ data class RunResponse(
     @Schema(description = "Snapshot of pending checkpoint/question state, for resuming after a crash") val runtimeSnapshot: JsonNode?,
     @Schema(description = "Safe authentication binding selections captured at run start") val authBindingsSnapshot: JsonNode,
     @Schema(description = "Files generated/changed during the run") val files: JsonNode,
+    @Schema(description = "Checkpoint rejections recorded during the run") val rejections: JsonNode,
 )

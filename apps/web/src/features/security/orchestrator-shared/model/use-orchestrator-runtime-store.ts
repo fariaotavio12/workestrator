@@ -22,6 +22,7 @@ export const idleRuntime = (): Runtime => ({
 	liveTerminal: "",
 	coordinatorThinking: false,
 	stepStartedAt: null,
+	pendingApprovalId: null,
 });
 
 /**

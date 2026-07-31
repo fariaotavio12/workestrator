@@ -13,6 +13,7 @@ import { PageDownload } from "@/features/public/download";
 import { PageExplore } from "@/features/public/explore";
 import { HomePage } from "@/features/public/landing-pages/home";
 import { LayoutLandingPages, LayoutLandingPagesNoHeader } from "@/features/public/landing-pages/layout";
+import { PageApprovalDecide, PageApprovalsAssigned } from "@/features/security/approvals";
 import { PageCommands } from "@/features/security/commands";
 import { PageCommunityAssets } from "@/features/security/community-assets";
 import { PageConfigAssistant } from "@/features/security/config-assistant";
@@ -88,6 +89,8 @@ export const AppRouter = () => (
 					<Route path={Rotas.protegidas.orchestrator.commands} element={<PageCommands />} />
 					<Route path={Rotas.protegidas.orchestrator.skills} element={<PageSkills />} />
 					<Route path={Rotas.protegidas.orchestrator.communityAssets} element={<PageCommunityAssets />} />
+					<Route path={Rotas.protegidas.orchestrator.approvals} element={<PageApprovalsAssigned />} />
+					<Route path={Rotas.protegidas.orchestrator.approvalDecide} element={<PageApprovalDecide />} />
 					<Route
 						path={Rotas.protegidas.orchestrator.mcp}
 						element={<Navigate to={Rotas.protegidas.orchestrator.tools} replace />}

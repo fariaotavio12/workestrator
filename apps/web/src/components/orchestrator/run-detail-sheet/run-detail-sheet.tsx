@@ -1,4 +1,5 @@
 import { AppSheet, Badge, Button, notify, PreviewModal, type PreviewModalItem, Typography } from "@/components";
+import { useApprovalsByRunQuery } from "@/features/security/approvals/api";
 import {
 	buildPreviewUrl,
 	previewAvailable,
@@ -12,7 +13,15 @@ import { useState } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import { AgentTurn, formatAgentArtifactContent } from "../run-transcript";
 import { ScriptFormDialog } from "../script-form-dialog";
-import { BUSY_STATUSES, formatFileSize, formatRunDuration, runStatusLabel, runStatusVariant } from "./run-meta";
+import {
+	approvalStatusLabel,
+	approvalStatusVariant,
+	BUSY_STATUSES,
+	formatFileSize,
+	formatRunDuration,
+	runStatusLabel,
+	runStatusVariant,
+} from "./run-meta";
 
 type Props = {
 	open: boolean;
@@ -30,6 +39,9 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 
 	const isSquadBusy = BUSY_STATUSES.has(squad.runtime.status);
 	const files = run.files ?? [];
+	// Trilha de aprovações deste run (ver .specs/001-aprovacoes-externas-teams) — quem decidiu, quando,
+	// e se foi o dono ou um aprovador do pool.
+	const { data: approvals = [] } = useApprovalsByRunQuery(run.id);
 
 	const openHtmlPreview = (html: string) => {
 		setPreviewItems([{ id: "inline", name: "preview.html", ext: ".html", srcDoc: html }]);
@@ -177,6 +189,43 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 										</Typography>
 									</button>
 								))}
+							</div>
+						</section>
+					)}
+
+					{approvals.length > 0 && (
+						<section className="flex flex-col gap-2 rounded-lg border p-4">
+							<div className="flex items-center gap-2">
+								<Typography variant="ui-header">Aprovações</Typography>
+								<Badge variant="secondary">{approvals.length}</Badge>
+							</div>
+							<div className="flex flex-col gap-2">
+								{approvals.map((approval) => {
+									const agent = approval.agentId ? squad.agents.find((a) => a.id === approval.agentId) : undefined;
+									return (
+										<div key={approval.id} className="flex items-start justify-between gap-3 rounded-md border p-2.5">
+											<div className="min-w-0 flex-1">
+												<Typography variant="body-sm" className="truncate">
+													{approval.title || agent?.name || "Checkpoint"}
+												</Typography>
+												{approval.decidedAt && (
+													<Typography variant="caption" className="text-muted-foreground">
+														{approval.decidedByRole === "approver" ? "Decidido por um aprovador" : "Decidido pelo dono"} em{" "}
+														{new Date(approval.decidedAt).toLocaleString()}
+													</Typography>
+												)}
+												{approval.feedback && (
+													<Typography variant="caption" className="text-muted-foreground mt-1 block">
+														"{approval.feedback}"
+													</Typography>
+												)}
+											</div>
+											<Badge variant={approvalStatusVariant[approval.status]}>
+												{approvalStatusLabel[approval.status]}
+											</Badge>
+										</div>
+									);
+								})}
 							</div>
 						</section>
 					)}

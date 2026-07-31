@@ -59,6 +59,8 @@ export const Rotas = {
 			skills: "/dashboard/skills",
 			communityAssets: "/dashboard/recursos",
 			mcp: "/dashboard/mcp",
+			approvals: "/dashboard/aprovacoes",
+			approvalDecide: "/dashboard/aprovacoes/:approvalId",
 		},
 		legacyOrchestrator: {
 			squads: "/orquestrador/squads",
