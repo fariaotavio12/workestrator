@@ -3,25 +3,27 @@
 A fase 1 é a mesma captura de justificativa da fase 1 da [001](../001-aprovacoes-externas-teams/tasks.md) —
 fazer **uma vez**, nas duas specs, não duas.
 
-> Fases 2 e 3 implementadas no worktree `feat/002-treinamento-pos-reprovacao`
-> (`.claude/worktrees/002-treinamento`), a partir do HEAD de `feat/improve-squads`. A fase 1 ficou com a 001,
-> por decisão de escopo — as fases 2 e 3 só ligam de verdade quando `RunRecord.rejections[]` for populado.
+> Fases 2 e 3 foram implementadas no worktree `feat/002-treinamento-pos-reprovacao` e **mergeadas em
+> `feat/improve-squads`** depois que a 001 fechou (fast-forward, commits `bd90007` + `8d81a56`). A fase 1
+> ficou com a 001 e já está entregue, então o circuito de treinamento está vivo de ponta a ponta.
 
-## Fase 1 — Captura da reprovação — **fica com a [001](../001-aprovacoes-externas-teams/tasks.md)**
+## Fase 1 — Captura da reprovação — **entregue pela [001](../001-aprovacoes-externas-teams/tasks.md)** ✅
 
 - [x] `types/index.ts`: `RunRejectionCategory`, `RunRejectionSeverity`, `RunRejection`,
-      `RunRecord.rejections?` — feito no worktree da 002, para as fases 2/3 compilarem.
-- [ ] `resolveCheckpoint(squadId, approved, rejection?)`: com `approved: false` exige justificativa não
+      `RunRecord.rejections?`. As duas specs declararam `RunRejection`; no merge ficou a versão da 001
+      (usa `ApprovalDecidedByRole` em vez do literal inline) acrescida de `RunRejectionTraining`.
+- [x] `resolveCheckpoint(squadId, approved, rejection?)`: com `approved: false` exige justificativa não
       vazia, grava a reprovação no `RunRecord` e só então aborta.
-- [ ] `persistRunProgress` leva `rejections` no PUT.
-      ⚠️ **a confirmar corrigido:** o design dizia "`jsonb` passthrough — sem mudança no backend", mas
-      `RunEntity` tem **coluna explícita por campo** (`steps`, `qaLog`, `files`, …), não um `jsonb` genérico.
-      `rejections` vai exigir coluna `jsonb default '[]'::jsonb` + campo no domínio/DTO, como `files`.
-- [ ] Diálogo de reprovação em `run-interaction-panel.tsx`: justificativa (`FieldWrapper`, erro de campo, não
-      toast), seletor do passo culpado com default no passo do checkpoint, categoria e gravidade opcionais.
-- [x] `run-detail-sheet`: seção de reprovações do run (`training/components/run-rejections-section.tsx`) —
-      já lê `run.rejections` e oferece "Treinar o agente"; fica inerte até a captura existir.
-- [ ] Vitest: reprovação gravada; reprovação vazia barrada no runtime; snapshot inclui `rejections`.
+- [x] `persistRunProgress` leva `rejections` no PUT.
+      ✅ **confirmado:** o design dizia "`jsonb` passthrough — sem mudança no backend" e **estava errado** —
+      `RunEntity` tem coluna explícita por campo. A 001 chegou à mesma conclusão e adicionou a coluna
+      `rejections jsonb` + campo no domínio/DTO, como `files`.
+- [x] Diálogo de reprovação em `run-interaction-panel.tsx`: justificativa, seletor do passo culpado,
+      categoria e gravidade opcionais.
+- [x] `run-detail-sheet`: seção de reprovações do run (`training/components/run-rejections-section.tsx`).
+      Convive com a seção "Aprovações" da 001 (trilha de auditoria dos `ApprovalRequest`) — a justificativa
+      aparece nas duas. **Vale unificar** numa próxima passada de UI.
+- [x] Vitest: reprovação gravada; reprovação vazia barrada no runtime; snapshot inclui `rejections`.
 
 ## Fase 2 — Treinador e lição aprendida ✅ implementada
 
@@ -58,9 +60,9 @@ fazer **uma vez**, nas duas specs, não duas.
       aplicada **no parser**, não só na UI: veredito não-agente descarta o `promptPatch` mesmo se o modelo
       desobedecer.
 - [x] Botão "Treinar o agente" no `run-detail-sheet` (treinar depois).
-- [ ] ~~Botão no painel de interação após reprovar~~ — **deixado para a 001**: `run-interaction-panel.tsx` é
-      reescrito pela fase 1 (diálogo de reprovação estruturado), e o run já abortou quando a reprovação
-      acontece. Tocar nele agora só criaria conflito de merge.
+- [ ] ~~Botão no painel de interação após reprovar~~ — **não aplicável**: reprovar aborta o run, então o
+      painel de interação já saiu de cena quando o botão faria sentido. A entrada real é o `run-detail-sheet`,
+      que a 001 deixou acessível pelo histórico do squad.
 - [x] Estados: gerando, falha com retry (`ErrorState`), saída inválida com a saída crua colapsável.
 
 ### Testes da fase 2
@@ -69,7 +71,7 @@ fazer **uma vez**, nas duas specs, não duas.
       parse nos três casos; `blameVerdict` não-agente; `applyLesson` criando/reusando coleção e vinculando
       ao agente; `resolveBlamedAgent`; procedência no fim do markdown.
 - [ ] Manual: 5 reprovações reais de naturezas diferentes, avaliando a qualidade da lição.
-      **Bloqueado pela fase 1** — sem captura não há reprovação para treinar.
+      **Desbloqueado** pela fase 1 da 001 — é o próximo passo, e o único teste que diz se a feature vale.
 
 ## Fase 3 — Prompt versionado e refazer o passo ✅ implementada
 
@@ -101,10 +103,11 @@ fazer **uma vez**, nas duas specs, não duas.
 - [x] Histórico de versões no `agent-form-dialog` (aba Prompt), com motivo, run de origem, texto da versão e
       reverter.
 - [x] "Refazer o passo" no `training-sheet` chamando `retryLastStep`.
-- [ ] ~~gravando `retriedRunId` na reprovação de origem~~ — **adiado para depois da fase 1**: o id do run
-      novo só existe depois que `ensureRunPersisted` resolve, e escrever na reprovação depende da
-      persistência de `rejections`, que é da fase 1. O run refeito já aponta para o run de origem via
-      `resumedFromRunId` (`seedRunFromHistory`).
+- [ ] Gravar `retriedRunId` na reprovação de origem — **pendente, agora possível**. A persistência de
+      `rejections` chegou com a 001, mas o id do run novo só existe depois que `ensureRunPersisted` resolve,
+      e `retryLastStep` não devolve nada. Precisa expor o id persistido (ou fazer `retryLastStep` devolver o
+      `executionId`) antes de escrever o vínculo. Hoje o run refeito já aponta para o run de origem via
+      `resumedFromRunId` (`seedRunFromHistory`), só não para a reprovação específica.
 - [x] Vitest: guarda de tamanho (teto absoluto, crescimento relativo, reescrita de tamanho semelhante).
 
 ## Fase 4 — Export de dataset (opcional, sem data)
@@ -114,14 +117,16 @@ fazer **uma vez**, nas duas specs, não duas.
 
 ## Fechamento
 
-- [ ] Atualizar `apps/web/CLAUDE.md` e `apps/api/CLAUDE.md` — depois da fase 1, com o circuito completo.
+- [ ] Atualizar `apps/web/CLAUDE.md` e `apps/api/CLAUDE.md` com o circuito de treinamento completo.
 - [x] Atualizar o status desta feature em [`.specs/README.md`](../README.md).
-- [x] `npx tsc --noEmit -p tsconfig.app.json` + `npm run lint` (0 erros; 3 warnings pré-existentes de
-      `useReactTable`) + `npm run test` em `apps/web`: 233 passam. As 2 falhas restantes
-      (`asset-manifest`, `ldtk-round-trip`) são **pré-existentes e ambientais** — reproduzidas idênticas na
-      árvore principal, sem relação com esta feature.
-- [x] `gradlew.bat compileKotlin` e `gradlew.bat test --tests "com.apibot.features.agentpromptversion.*"`
-      em terminal normal: BUILD SUCCESSFUL.
-- [ ] `npm run verify` na raiz + `gradlew.bat build` completo — depois do merge com a 001.
-- [ ] Mergear o worktree só depois de a 001 fechar. Conflitos esperados: `AgentService.kt`, `AgentDtos.kt`
-      (as duas specs mexem lá) e `types/index.ts`.
+- [x] Mergeado em `feat/improve-squads` (fast-forward). Os conflitos previstos aconteceram e foram
+      resolvidos: `AgentService.kt` e `types/index.ts`. `AgentDtos.kt` deu auto-merge.
+- [x] Pós-merge, na árvore principal: `tsc` limpo; `gradlew.bat test` **BUILD SUCCESSFUL** (46/46,
+      `contextLoads` incluído — o que confirma na prática que não há ciclo de bean entre `AgentService`,
+      `AgentPromptVersionService` e `SquadApproverService`); Vitest 244 passando.
+- [ ] Duas pendências herdadas, **nenhuma causada por esta feature**:
+  - `asset-manifest.test.ts` falha por drift real (um PNG de prop fora do manifesto) e
+    `ldtk-round-trip.test.ts` não carrega (depende de um caminho de instalação do LDtk).
+  - `npm run lint` acusa 2 erros em `apps/web/dist-electron/main.cjs` — artefato de build, gitignorado mas
+    **não ignorado pelo ESLint**. Sobre código-fonte o lint está limpo.
+- [ ] `npm run verify` na raiz.

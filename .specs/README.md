@@ -27,6 +27,6 @@ Numeração é sequencial por ordem de criação, nunca reaproveitada.
 | # | Feature | Status |
 |---|---|---|
 | [001](001-aprovacoes-externas-teams/spec.md) | Notificação externa (n8n → Teams) + aprovador delegado — decisão sempre autenticada, pode ser outra conta | 🚧 em implementação (backend + web da fase 1 implementados e testados; falta rodar `gradlew.bat build` fora do sandbox e importar o workflow do n8n — ver `tasks.md`) |
-| [002](002-treinamento-pos-reprovacao/spec.md) | Treinamento do agente após reprovação | 🚧 em implementação (fases 2 e 3 no worktree `feat/002-treinamento-pos-reprovacao`; fase 1 com a 001) |
+| [002](002-treinamento-pos-reprovacao/spec.md) | Treinamento do agente após reprovação | 🚧 em implementação (fases 1–3 mergeadas em `feat/improve-squads`; falta a avaliação manual da qualidade da lição e o vínculo `retriedRunId` — ver `tasks.md`) |
 
 Status: `📝 especificado` → `🚧 em implementação` → `✅ entregue` → `🗄️ superado por NNN`.
