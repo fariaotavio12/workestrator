@@ -120,6 +120,26 @@ export type AgentAuthBinding = {
 	isDefault: boolean;
 };
 
+/**
+ * Aviso externo de checkpoint (n8n → Teams — ver .specs/001-aprovacoes-externas-teams). `channelId`
+ * referencia um `NotificationChannel` do dono. Ausente/`enabled: false` = comportamento atual (sem aviso).
+ */
+export type AgentNotifyPolicy = {
+	enabled: boolean;
+	channelId: string | null;
+};
+
+/**
+ * Quem, além do dono, pode decidir os checkpoints deste agente. `approverUserIds` é um subconjunto do
+ * pool do squad (`SquadApprover`). `ownerCanDecide: false` exige `approverUserIds` não vazio — invariante
+ * validada no backend (D13), não só aqui. Ausente = `{ approverUserIds: [], ownerCanDecide: true }`, o
+ * comportamento atual (só o dono decide).
+ */
+export type AgentApprovalPolicy = {
+	approverUserIds: string[];
+	ownerCanDecide: boolean;
+};
+
 /** Provider de modelo cadastrado (CLI local já autenticado na máquina ou API externa com key própria). */
 export type ProviderKind = "claude-cli" | "codex-cli" | "gpt-cli" | "anthropic-api" | "openai" | "openai-compat";
 
@@ -177,6 +197,10 @@ export type Agent = {
 	requiresCheckpoint: boolean;
 	/** Pausa o run pedindo aprovação depois que este agent produz a saída, antes do coordenador seguir. */
 	requiresCheckpointAfter: boolean;
+	/** Aviso externo (n8n) quando este agent entra em checkpoint. */
+	notifyPolicy?: AgentNotifyPolicy | null;
+	/** Quem, além do dono, pode decidir os checkpoints deste agent. */
+	approvalPolicy?: AgentApprovalPolicy | null;
 	character: CharacterName;
 	gender: Gender;
 	accentColor: string;
@@ -214,6 +238,66 @@ export type Trigger =
 	| { type: "manual" }
 	| { type: "schedule"; every: "5m" | "1h" | "daily"; enabled: boolean }
 	| { type: "onComplete"; squadId: string };
+
+/** Conexão de saída para avisar um checkpoint externamente (n8n → Teams, no v1). */
+export type NotificationChannel = {
+	id: string;
+	label: string;
+	kind: "webhook";
+	hasUrl: boolean;
+	urlHost?: string | null;
+	authHeaderName?: string | null;
+	status: "active" | "error" | "disabled";
+	lastTestedAt?: string | null;
+	lastError?: string | null;
+	createdAt: string;
+	updatedAt: string;
+};
+
+/** Aprovador do pool de um squad — conta já existente no Workestrator, convidada por e-mail. */
+export type SquadApprover = {
+	id: string;
+	approverUserId: string;
+	email: string;
+	displayName: string;
+	invitedAt: string;
+};
+
+export type ApprovalCheckpointKind = "before" | "after";
+
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "canceled";
+
+export type ApprovalDecidedByRole = "owner" | "approver";
+
+/**
+ * Pedido de aprovação de um checkpoint (ver .specs/001-aprovacoes-externas-teams). Espelha
+ * `ApprovalResponse` do backend — a autorização (quem pode decidir) é resolvida e validada lá, nunca
+ * aqui: esta tela só reflete o resultado de `GET /approvals/{id}` e chama `decide`/`cancel`.
+ */
+export type ApprovalRequest = {
+	id: string;
+	squadId: string;
+	runId: string;
+	seatId: string;
+	agentId?: string | null;
+	checkpointKind: ApprovalCheckpointKind;
+	status: ApprovalStatus;
+	title: string;
+	summary: string;
+	channelId?: string | null;
+	notifiedAt?: string | null;
+	notifyError?: string | null;
+	decidedByUserId?: string | null;
+	decidedByRole?: ApprovalDecidedByRole | null;
+	decidedAt?: string | null;
+	feedback?: string | null;
+	/** Calculado pelo backend por requester — a tela de decisão usa isto, não reimplementa a regra. */
+	canDecide: boolean;
+	/** Só o dono, mesmo com `ownerCanDecide: false` (D12) — abortar não é decidir. */
+	canCancel: boolean;
+	createdAt: string;
+	updatedAt: string;
+};
 
 export type SquadRuntimeStatus =
 	| "idle"
@@ -290,6 +374,14 @@ export type Runtime = {
 	coordinatorThinking: boolean;
 	/** Início (ISO) do passo/agente atual — alimenta o cronômetro ao vivo por agente. `null` fora de um passo. */
 	stepStartedAt: string | null;
+	/**
+	 * Id do `ApprovalRequest` do checkpoint pendente (ver .specs/001-aprovacoes-externas-teams). Todo
+	 * checkpoint cria um pedido — com ou sem `notifyPolicy`/`approvalPolicy` configurada no agente (a
+	 * diferença fica só no snapshot de quem pode decidir, resolvido no backend). `null` fora do status
+	 * "checkpoint", ou se `POST /approvals` falhou (o checkpoint continua funcionando só pelo app nesse
+	 * caso). Alimenta o `approval-watcher` (poll incondicional, D7) e a tela de decisão dedicada.
+	 */
+	pendingApprovalId: string | null;
 };
 
 /**
@@ -359,6 +451,8 @@ export type RuntimeSnapshot = {
 	pendingSeatId: string | null;
 	pendingCheckpointKind: "before" | "after" | null;
 	pendingQuestion: PendingQuestion | null;
+	/** Id do `ApprovalRequest` pendente, se houver — permite retomar sem criar pedido duplicado. */
+	pendingApprovalId?: string | null;
 };
 
 /** Arquivo gerado/alterado por um run, capturado no snapshot do workspace ao final da execução. */
@@ -370,6 +464,37 @@ export type RunFile = {
 	isImage: boolean;
 	/** Tamanho em bytes. */
 	size: number;
+};
+
+export type RunRejectionCategory =
+	| "instruction"
+	| "wrong_info"
+	| "format"
+	| "tone"
+	| "missing_step"
+	| "out_of_scope"
+	| "other";
+
+export type RunRejectionSeverity = "low" | "medium" | "high";
+
+/**
+ * Reprovação de um checkpoint (ver .specs/002-treinamento-pos-reprovacao). Entrada do treinamento de
+ * agente — `blamedStepId` aponta pro passo culpado (default: o passo do checkpoint), não necessariamente
+ * o mesmo agente que estava no checkpoint quando a reprovação aconteceu.
+ */
+export type RunRejection = {
+	id: string;
+	seatId: string;
+	agentId?: string;
+	/** Passo (stepId) responsável pelo erro, se diferente do passo do checkpoint. */
+	blamedStepId?: string;
+	checkpointKind: "before" | "after";
+	reason: string;
+	category?: RunRejectionCategory;
+	severity?: RunRejectionSeverity;
+	decidedBy?: string;
+	decidedByRole?: ApprovalDecidedByRole;
+	createdAt: string;
 };
 
 /** Histórico de uma execução — "o que rodou e o que não". */
@@ -392,4 +517,6 @@ export type RunRecord = {
 	authBindingsSnapshot?: (AgentAuthBinding & { agentId: string })[] | null;
 	/** Arquivos gerados/alterados, copiados para `.runs/<id>` ao final do run. Ausente em runs antigos/sem arquivos. */
 	files?: RunFile[] | null;
+	/** Reprovações de checkpoint deste run — ausente em runs antigos. */
+	rejections?: RunRejection[] | null;
 };
