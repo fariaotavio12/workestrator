@@ -1,5 +1,7 @@
 import type { RunRecord } from "@/features/security/orchestrator-shared/types";
 
+export { approvalStatusLabel, approvalStatusVariant } from "@/features/security/approvals/constants";
+
 /** Squad já rodando algo — "Continuar"/"Refazer último passo" ficam escondidos pra não colidir com o run ativo. */
 export const BUSY_STATUSES = new Set(["running", "checkpoint", "awaiting_input", "paused"]);
 

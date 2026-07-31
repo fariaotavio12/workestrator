@@ -294,7 +294,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 								<RunInteractionPanel
 									squad={squad}
 									onApprove={() => resolveCheckpoint(runKey, true)}
-									onReject={() => resolveCheckpoint(runKey, false)}
+									onReject={(rejection) => resolveCheckpoint(runKey, false, rejection)}
 									onAnswer={(answer) => answerPrompt(runKey, answer)}
 								/>
 							</div>
