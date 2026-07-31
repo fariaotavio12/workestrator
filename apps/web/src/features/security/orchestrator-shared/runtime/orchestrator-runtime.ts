@@ -9,6 +9,13 @@
 // que iniciou o run.
 import { tanStackQueryClient } from "@/app/api/clients";
 import { notify } from "@/components/toast/notify";
+import {
+	cancelApprovalApi,
+	createApprovalApi,
+	decideApprovalApi,
+	extractApprovalFromConflict,
+	getApprovalApi,
+} from "@/features/security/approvals/api";
 import { executionsKeys, fetchRunsApi, saveRunApi, updateRunApi } from "@/features/security/executions/api";
 import type { ModelProvider } from "@/features/security/orchestrator-shared/types";
 import { providersKeys } from "@/features/security/models/api";
@@ -18,11 +25,14 @@ import { newId, nowIso } from "../data/constants";
 import type {
 	Agent,
 	AgentStatus,
+	ApprovalCheckpointKind,
+	ApprovalRequest,
 	LiveActivityItem,
 	ProviderKind,
 	Runtime,
 	RunEvent,
 	RunRecord,
+	RunRejection,
 	RuntimeSnapshot,
 	Script,
 	SquadRuntimeStatus,
@@ -43,6 +53,7 @@ import {
 } from "./model-client";
 import { isApiOnlySquad } from "./squad-readiness";
 import { notifyOs } from "./os-notify";
+import { startApprovalWatch, stopApprovalWatch } from "./approval-watcher";
 import { parseCoordinatorDecision, UNPARSEABLE_DECISION_REASON } from "./orchestrator-decision";
 import { cancelAdvance, runAbortable } from "./runner-controllers";
 import { idleRuntime, useOrchestratorRuntimeStore } from "../model/use-orchestrator-runtime-store";
@@ -184,6 +195,17 @@ const patchRun = (squadId: string, patch: (run: RunRecord) => RunRecord): void =
 	activeRuns.set(squadId, patch(existing));
 };
 
+/**
+ * Registra uma reprovação de checkpoint no `RunRecord` ativo (ver .specs/002-treinamento-pos-reprovacao).
+ * Entrada do treinamento de agente — nunca bloqueia nem impede o abort que sempre acompanha a reprovação.
+ */
+const recordRejection = (squadId: string, rejection: Omit<RunRejection, "id" | "createdAt">): void => {
+	patchRun(squadId, (run) => ({
+		...run,
+		rejections: [...(run.rejections ?? []), { ...rejection, id: newId(), createdAt: nowIso() }],
+	}));
+};
+
 /** Id real do run no backend, por squad — só existe enquanto o run está ativo (mesmo ciclo de vida de
  * `activeRuns`). Necessário porque o backend gera seu próprio id (diferente do `newId()` local). */
 const persistedRunIds = new Map<string, string>();
@@ -214,6 +236,7 @@ const ensureRunPersisted = (squadId: string): Promise<string | undefined> => {
 		resumedFromRunId: run.resumedFromRunId,
 		runtimeSnapshot: run.runtimeSnapshot,
 		authBindingsSnapshot: run.authBindingsSnapshot,
+		rejections: run.rejections ?? [],
 	})
 		.then((saved) => {
 			persistedRunIds.set(squadId, saved.id);
@@ -248,6 +271,7 @@ const persistRunProgress = (squadId: string, snapshot: RuntimeSnapshot | null): 
 				steps: latest.steps,
 				qaLog: latest.qaLog,
 				runtimeSnapshot: snapshot,
+				rejections: latest.rejections ?? [],
 			});
 		} catch {
 			// Best-effort — falha de rede aqui não deve travar/abortar a execução em andamento.
@@ -281,6 +305,7 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 					resumedFromRunId: run.resumedFromRunId,
 					runtimeSnapshot: null,
 					authBindingsSnapshot: run.authBindingsSnapshot,
+					rejections: run.rejections ?? [],
 				});
 				runId = saved.id;
 			} catch {
@@ -301,6 +326,7 @@ const persistFinishedRun = (squadId: string, status: "done" | "aborted"): void =
 				qaLog: run.qaLog,
 				runtimeSnapshot: null,
 				files: files.length > 0 ? files : null,
+				rejections: run.rejections ?? [],
 			});
 			await tanStackQueryClient.invalidateQueries({ queryKey: executionsKeys.bySquad(realSquadId) });
 		} catch {
@@ -392,6 +418,8 @@ const setCoordinatorThinking = (squadId: string, thinking: boolean): void => {
 
 /** Fecha o run ativo do squad e resolve o `runtime.status` final. */
 const finishRun = (squadId: string, status: "done" | "aborted"): void => {
+	const pendingApprovalId = getRuntime(squadId).pendingApprovalId;
+	if (pendingApprovalId) stopApprovalWatch(pendingApprovalId);
 	persistFinishedRun(squadId, status);
 	patchRuntime(squadId, (runtime) => ({
 		...runtime,
@@ -401,6 +429,7 @@ const finishRun = (squadId: string, status: "done" | "aborted"): void => {
 		pendingQaHistory: [],
 		coordinatorThinking: false,
 		stepStartedAt: null,
+		pendingApprovalId: null,
 	}));
 
 	// Só notifica conclusão com sucesso aqui — os caminhos de "aborted" já notificam no ponto exato da
@@ -689,6 +718,158 @@ const buildCoordinatorPrompt = (squad: SquadDetail, run: RunRecord, briefing: st
 	].join("\n");
 };
 
+/**
+ * Ponto único de entrada em checkpoint — antes ou depois de acionar um agent (ver
+ * .specs/001-aprovacoes-externas-teams). Registra o pedido de aprovação no backend (`POST /approvals`)
+ * sem bloquear a transição pro estado "checkpoint": a UI já reflete a pausa na hora, e o `pendingApprovalId`
+ * chega em seguida, quando o POST resolver — cai para aprovação só-app se ele falhar (NFR "nunca bloqueia
+ * o run"). Chamada pelos dois pontos de pausa (`advanceOrchestrated` e `completeOrchestratedStep`), que
+ * antes duplicavam esta lógica.
+ */
+const enterCheckpoint = (
+	squadId: string,
+	seatId: string,
+	agent: Agent,
+	kind: ApprovalCheckpointKind,
+	title: string,
+	/** Corpo curto da notificação de SO (ex.: "Antes de acionar Beto") — `title` já embute "Aprovação
+	 * necessária", repeti-lo no corpo da notificação seria redundante. */
+	notifyBody: string,
+	summary: string,
+): void => {
+	patchRuntime(squadId, (r) => ({
+		...r,
+		status: "checkpoint",
+		pendingSeatId: seatId,
+		pendingCheckpointKind: kind,
+		coordinatorThinking: false,
+	}));
+	appendEvent(squadId, { kind: "checkpoint", seatId, agentId: agent.id, title });
+	// Só via SO (sem toast in-app): o banner de checkpoint no `RunDialog` já cobre quem está olhando.
+	notifyOs("Aprovação necessária", notifyBody, () => openRunDialog(squadId));
+	persistRunProgress(squadId, {
+		currentStep: getRuntime(squadId).currentStep,
+		pendingSeatId: seatId,
+		pendingCheckpointKind: kind,
+		pendingQuestion: null,
+		pendingApprovalId: null,
+	});
+	queueMicrotask(drainRunQueue);
+
+	void (async () => {
+		const runId = await ensureRunPersisted(squadId);
+		if (!runId) {
+			appendLog(squadId, "Aviso externo indisponível (sem conexão com o backend) — decida pelo app.");
+			return;
+		}
+		try {
+			const approval = await createApprovalApi({
+				squadId: resolveSquadId(squadId),
+				runId,
+				seatId,
+				agentId: agent.id,
+				checkpointKind: kind,
+				title,
+				summary: truncate(summary, 2000),
+			});
+			// O checkpoint pode já ter sido resolvido (ou trocado de cadeira) enquanto o POST estava em
+			// voo — não pisar num estado que já seguiu adiante.
+			const current = getRuntime(squadId);
+			if (current.status !== "checkpoint" || current.pendingSeatId !== seatId) return;
+			patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: approval.id }));
+			persistRunProgress(squadId, {
+				currentStep: getRuntime(squadId).currentStep,
+				pendingSeatId: seatId,
+				pendingCheckpointKind: kind,
+				pendingQuestion: null,
+				pendingApprovalId: approval.id,
+			});
+			startApprovalWatch(approval.id, (settled) => settleCheckpoint(squadId, settled));
+		} catch {
+			appendLog(squadId, "Não foi possível registrar o pedido de aprovação externamente — decida pelo app.");
+		}
+	})();
+};
+
+/**
+ * Aplica um `ApprovalRequest` já num estado terminal (aprovado/rejeitado/cancelado) ao runtime — ponto de
+ * convergência entre decidir no app (`resolveCheckpoint`) e descobrir uma decisão externa
+ * (`approval-watcher`: aprovador delegado, ou o próprio dono em outra sessão). Ignora silenciosamente se
+ * o run já seguiu adiante — evita duplo avanço numa corrida entre duas decisões quase simultâneas.
+ */
+const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
+	stopApprovalWatch(approval.id);
+	const runtime = getRuntime(squadId);
+	if (runtime.status !== "checkpoint" || runtime.pendingApprovalId !== approval.id) return;
+
+	const squad = getSquadConfig(squadId);
+	const seatId = runtime.pendingSeatId;
+	const checkpointKind = runtime.pendingCheckpointKind;
+	const seat = seatId ? squad?.seats.find((item) => item.id === seatId) : undefined;
+	const agent = seat?.agentId ? squad?.agents.find((item) => item.id === seat.agentId) : undefined;
+	const byApprover = approval.decidedByRole === "approver";
+
+	if (approval.status === "rejected") {
+		recordRejection(squadId, {
+			seatId: seatId ?? "",
+			agentId: agent?.id,
+			checkpointKind: checkpointKind ?? "before",
+			reason: approval.feedback ?? "",
+			decidedBy: approval.decidedByUserId ?? undefined,
+			decidedByRole: approval.decidedByRole ?? undefined,
+		});
+		appendLog(squadId, `Checkpoint rejeitado${byApprover ? " por um aprovador" : ""}.`);
+		patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
+		finishRun(squadId, "aborted");
+		return;
+	}
+
+	if (approval.status === "canceled") {
+		appendLog(squadId, "Checkpoint cancelado.");
+		patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
+		finishRun(squadId, "aborted");
+		return;
+	}
+
+	appendLog(squadId, `Checkpoint aprovado${byApprover ? " por um aprovador" : ""}.`);
+	patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
+
+	if (checkpointKind === "after") {
+		runOrQueueContinuation(squadId, () => {
+			patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+			const hasInstagramPublisher = agent?.scripts.some((script) => script.connectorProvider === "instagram");
+			if (seat && agent && hasInstagramPublisher) {
+				approvedPublishExecutionIds.add(squadId);
+				const run = activeRun(squadId);
+				runOrchestratedAgentStep(
+					squadId,
+					seat.id,
+					agent,
+					run?.input ?? "",
+					[],
+					run?.steps.length ? [run.steps.length] : [],
+				);
+				return;
+			}
+			advanceOrchestrated(squadId);
+		});
+		return;
+	}
+
+	if (!seat || !agent) {
+		appendLog(squadId, "Checkpoint aprovado, mas a cadeira não existe mais — encerrando.");
+		notify.error("A cadeira aprovada não existe mais — execução encerrada.");
+		finishRun(squadId, "aborted");
+		return;
+	}
+
+	const run = activeRun(squadId);
+	runOrQueueContinuation(squadId, () => {
+		patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
+	});
+};
+
 /** Registra o artefato do agent escolhido pelo coordenador e volta a perguntar o próximo passo. */
 const completeOrchestratedStep = (
 	squadId: string,
@@ -719,27 +900,16 @@ const completeOrchestratedStep = (
 	const requiresPublicationApproval =
 		!publicationAlreadyApproved && agent?.scripts.some((script) => script.connectorProvider === "instagram");
 	if (agent && ((!publicationAlreadyApproved && agent.requiresCheckpointAfter) || requiresPublicationApproval)) {
-		patchRuntime(squadId, (r) => ({
-			...r,
-			status: "checkpoint",
-			pendingSeatId: seatId,
-			pendingCheckpointKind: "after",
-		}));
 		appendLog(squadId, `Checkpoint: aprovação necessária antes de seguir depois de ${agent.name}.`);
-		appendEvent(squadId, {
-			kind: "checkpoint",
+		enterCheckpoint(
+			squadId,
 			seatId,
-			agentId: agent.id,
-			title: `Aprovação necessária antes de seguir depois de ${agent.name}`,
-		});
-		notifyOs("Aprovação necessária", `Antes de seguir depois de ${agent.name}`, () => openRunDialog(squadId));
-		persistRunProgress(squadId, {
-			currentStep: getRuntime(squadId).currentStep,
-			pendingSeatId: seatId,
-			pendingCheckpointKind: "after",
-			pendingQuestion: null,
-		});
-		queueMicrotask(drainRunQueue);
+			agent,
+			"after",
+			`Aprovação necessária antes de seguir depois de ${agent.name}`,
+			`Antes de seguir depois de ${agent.name}`,
+			content,
+		);
 		return;
 	}
 
@@ -1154,29 +1324,16 @@ const advanceOrchestrated = (squadId: string): void => {
 			});
 
 			if (nextAgent.requiresCheckpoint) {
-				patchRuntime(squadId, (r) => ({
-					...r,
-					status: "checkpoint",
-					pendingSeatId: seat.id,
-					pendingCheckpointKind: "before",
-					coordinatorThinking: false,
-				}));
 				appendLog(squadId, `Checkpoint: aprovação necessária antes de acionar ${nextAgent.name}.`);
-				appendEvent(squadId, {
-					kind: "checkpoint",
-					seatId: seat.id,
-					agentId: nextAgent.id,
-					title: `Aprovação necessária antes de acionar ${nextAgent.name}`,
-				});
-				// Só via SO (sem toast in-app): o banner de checkpoint no `RunDialog` já cobre quem está olhando.
-				notifyOs("Aprovação necessária", `Antes de acionar ${nextAgent.name}`, () => openRunDialog(squadId));
-				persistRunProgress(squadId, {
-					currentStep: getRuntime(squadId).currentStep,
-					pendingSeatId: seat.id,
-					pendingCheckpointKind: "before",
-					pendingQuestion: null,
-				});
-				queueMicrotask(drainRunQueue);
+				enterCheckpoint(
+					squadId,
+					seat.id,
+					nextAgent,
+					"before",
+					`Aprovação necessária antes de acionar ${nextAgent.name}`,
+					`Antes de acionar ${nextAgent.name}`,
+					run.steps.at(-1)?.artifact?.content ?? briefing,
+				);
 				return;
 			}
 
@@ -1343,6 +1500,9 @@ export const stopRun = (squadId: string): void => {
 	const runtime = getRuntime(squadId);
 	if (!ACTIVE_RUNTIME_STATUSES.has(runtime.status) && runtime.status !== "paused") return;
 	cancelAdvance(squadId);
+	// Best-effort — cancela o pedido no backend pra ele não ficar "pending" pra sempre (visível na tela
+	// de decisão/lista de um aprovador). Falha aqui não impede o run de encerrar localmente.
+	if (runtime.pendingApprovalId) void cancelApprovalApi(runtime.pendingApprovalId).catch(() => undefined);
 	finishRun(squadId, "aborted");
 };
 
@@ -1353,17 +1513,40 @@ export const resetRun = (squadId: string): void => {
 	setRuntime(squadId, idleRuntime());
 };
 
-/** Aprova ou rejeita o agent pendente (`runtime.pendingSeatId`) que exige checkpoint. */
-export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
+export type CheckpointRejectionInput = {
+	reason: string;
+	blamedStepId?: string;
+	category?: RunRejection["category"];
+	severity?: RunRejection["severity"];
+};
+
+/**
+ * Fallback local — usado só quando o checkpoint atual não tem `pendingApprovalId` (o `POST /approvals`
+ * falhou ao entrar no checkpoint, ver `enterCheckpoint`). Decide sem passar pelo backend; mesma lógica de
+ * continuação de `settleCheckpoint`, mas a partir de um `approved: boolean` local em vez de um
+ * `ApprovalRequest` resolvido no servidor.
+ */
+const settleCheckpointLocally = (squadId: string, approved: boolean, rejection?: CheckpointRejectionInput): void => {
 	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
-	if (!squad || runtime.status !== "checkpoint" || !runtime.pendingSeatId) return;
 	const seatId = runtime.pendingSeatId;
 	const checkpointKind = runtime.pendingCheckpointKind;
-	const seat = squad.seats.find((item) => item.id === seatId);
-	const agent = seat?.agentId ? squad.agents.find((item) => item.id === seat.agentId) : undefined;
+	const seat = seatId ? squad?.seats.find((item) => item.id === seatId) : undefined;
+	const agent = seat?.agentId ? squad?.agents.find((item) => item.id === seat.agentId) : undefined;
 
 	if (!approved) {
+		if (rejection) {
+			recordRejection(squadId, {
+				seatId: seatId ?? "",
+				agentId: agent?.id,
+				checkpointKind: checkpointKind ?? "before",
+				reason: rejection.reason,
+				blamedStepId: rejection.blamedStepId,
+				category: rejection.category,
+				severity: rejection.severity,
+				decidedByRole: "owner",
+			});
+		}
 		appendLog(squadId, "Checkpoint rejeitado.");
 		finishRun(squadId, "aborted");
 		return;
@@ -1405,6 +1588,41 @@ export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
 		patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
 		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
 	});
+};
+
+/**
+ * Aprova ou rejeita o agent pendente (`runtime.pendingSeatId`) que exige checkpoint. Reprovar exige
+ * `rejection.reason` — é a entrada do treinamento de agente (.specs/002-treinamento-pos-reprovacao), e o
+ * runtime barra a chamada sem justificativa, não só a UI. Com `pendingApprovalId` registrado, decide via
+ * backend (`POST /approvals/{id}/decide`) e converge em `settleCheckpoint` — a mesma função que o
+ * `approval-watcher` chama quando a decisão vem de outra sessão (design D10: primeira decisão vence, e o
+ * 409 devolve a decisão original, que também é aplicada aqui, não descartada como erro).
+ */
+export const resolveCheckpoint = (squadId: string, approved: boolean, rejection?: CheckpointRejectionInput): void => {
+	const runtime = getRuntime(squadId);
+	if (runtime.status !== "checkpoint" || !runtime.pendingSeatId) return;
+	if (!approved && !rejection?.reason.trim()) {
+		notify.error("Justificativa obrigatória para reprovar um checkpoint.");
+		return;
+	}
+
+	const approvalId = runtime.pendingApprovalId;
+	if (!approvalId) {
+		settleCheckpointLocally(squadId, approved, rejection);
+		return;
+	}
+
+	void decideApprovalApi(approvalId, { approved, feedback: rejection?.reason })
+		.then((result) => settleCheckpoint(squadId, result))
+		.catch((error) => {
+			const conflicting = extractApprovalFromConflict(error);
+			if (conflicting) {
+				notify.warning("Este checkpoint já tinha sido decidido.");
+				settleCheckpoint(squadId, conflicting);
+				return;
+			}
+			notify.error("Não foi possível registrar a decisão — tente de novo.");
+		});
 };
 
 /** Responde a pergunta que um agent fez no meio do turno (`runtime.pendingQuestion`) e ele continua. */
@@ -1535,6 +1753,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 		pendingCheckpointKind: snapshot?.pendingCheckpointKind ?? null,
 		pendingQuestion: snapshot?.pendingQuestion ?? null,
 		pendingQaHistory: [],
+		pendingApprovalId: snapshot?.pendingApprovalId ?? null,
 	});
 
 	openRunDialog(executionId);
@@ -1554,6 +1773,22 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 	}
 	if (initialStatus === "checkpoint") {
 		appendLog(executionId, "Checkpoint restaurado — aprovação necessária para continuar.");
+		const pendingApprovalId = snapshot?.pendingApprovalId;
+		// Decisão pode ter acontecido enquanto este cliente estava fechado (aprovador delegado, ou o
+		// dono em outra sessão) — confere o estado atual em vez de reabrir uma pergunta já respondida.
+		if (pendingApprovalId) {
+			void getApprovalApi(pendingApprovalId)
+				.then((approval) => {
+					if (approval.status === "pending") {
+						startApprovalWatch(pendingApprovalId, (settled) => settleCheckpoint(executionId, settled));
+					} else {
+						settleCheckpoint(executionId, approval);
+					}
+				})
+				.catch(() => {
+					// Sem conexão com o backend — segue aguardando decisão local; nada a fazer aqui.
+				});
+		}
 		return;
 	}
 	runOrQueueContinuation(executionId, () => {

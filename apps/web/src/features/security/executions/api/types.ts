@@ -7,5 +7,8 @@ export type SaveRunPayload = Omit<RunRecord, "id" | "squadId">;
 
 /** Patch parcial — só os campos que mudam a cada persistência incremental (passo/checkpoint/pause). */
 export type UpdateRunPayload = Partial<
-	Pick<RunRecord, "status" | "endedAt" | "steps" | "qaLog" | "runtimeSnapshot" | "authBindingsSnapshot" | "files">
+	Pick<
+		RunRecord,
+		"status" | "endedAt" | "steps" | "qaLog" | "runtimeSnapshot" | "authBindingsSnapshot" | "files" | "rejections"
+	>
 >;
