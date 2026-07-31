@@ -18,7 +18,7 @@ import {
 } from "@/features/security/orchestrator-shared/runtime/model-client";
 import { ATTENTION_RUN_STATUSES, RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
 import { AlertTriangle, MonitorDown, Play, Save } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import {
 	answerPrompt,
@@ -42,7 +42,9 @@ import { useRunsQuery } from "@/features/security/executions/api";
 import { useUpdateSquad } from "@/features/security/squad-detail/api";
 import { RunActivityMap } from "../run-activity-map";
 import { RunInteractionPanel, RunStatusBar, RunTranscript } from "../run-transcript";
+import { RunToolLog } from "../run-tool-log";
 import { ConfirmDialog } from "../confirm-dialog";
+import { cn } from "@/app/utils/cn";
 import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
 
 const EMPTY_RUN_IDS: string[] = [];
@@ -66,6 +68,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 	const latestRun = [...runs].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
 
 	const [input, setInput] = useState(() => squad.savedBriefing ?? "");
+	const [tab, setTab] = useState<"transcript" | "tools">("transcript");
 	const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewItems, setPreviewItems] = useState<PreviewModalItem[]>([]);
@@ -267,8 +270,25 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 							/>
 
 							<div className="flex min-h-0 flex-1 flex-col gap-3">
+								<div className="border-border flex shrink-0 items-center gap-1 border-b">
+									<RunTab active={tab === "transcript"} onClick={() => setTab("transcript")}>
+										Transcript
+									</RunTab>
+									<RunTab active={tab === "tools"} onClick={() => setTab("tools")}>
+										Ferramentas
+										{squad.runtime.toolLog.length > 0 && (
+											<span className="bg-muted text-muted-foreground ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] leading-none">
+												{squad.runtime.toolLog.length}
+											</span>
+										)}
+									</RunTab>
+								</div>
 								<ScrollArea className="min-h-0 flex-1 rounded-lg border p-4">
-									<RunTranscript squad={squad} onPreviewHtml={openHtmlPreview} />
+									{tab === "transcript" ? (
+										<RunTranscript squad={squad} onPreviewHtml={openHtmlPreview} />
+									) : (
+										<RunToolLog squad={squad} />
+									)}
 								</ScrollArea>
 
 								<RunInteractionPanel
@@ -306,3 +326,16 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 		</>
 	);
 };
+
+const RunTab = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) => (
+	<button
+		type="button"
+		onClick={onClick}
+		className={cn(
+			"flex items-center border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+			active ? "border-primary text-foreground" : "text-muted-foreground hover:text-foreground border-transparent",
+		)}
+	>
+		{children}
+	</button>
+);

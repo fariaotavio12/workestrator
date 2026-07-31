@@ -1,4 +1,12 @@
-import type { Agent, AgentAuthBinding, OrchestratorConfig, Seat, Squad, Trigger } from "@/features/security/orchestrator-shared/types";
+import type {
+	Agent,
+	AgentAuthBinding,
+	OrchestratorConfig,
+	Script,
+	Seat,
+	Squad,
+	Trigger,
+} from "@/features/security/orchestrator-shared/types";
 
 /** Squad completo (`agents`+`seats`+`orchestrator`) sem `runtime`, que é sempre client-only. */
 export type SquadDetail = Omit<Squad, "runtime">;
@@ -12,6 +20,7 @@ export type AgentResponseDto = {
 	providerId: string | null;
 	model: string | null;
 	scriptIds: string[];
+	scripts?: Script[];
 	knowledgeCollectionIds: string[];
 	authBindings: AgentAuthBinding[];
 	canExecute: boolean;
@@ -128,6 +137,9 @@ export const mapAgentDto = (dto: AgentResponseDto): Agent => ({
 	systemPrompt: dto.systemPrompt,
 	modelRef: { providerId: dto.providerId ?? "", model: dto.model ?? "" },
 	scriptIds: dto.scriptIds,
+	// `?? []` cobre um backend antigo, anterior ao campo. Quem executa detecta a divergência com
+	// `scriptIds` e falha explicitamente em vez de rodar o agente sem ferramenta nenhuma.
+	scripts: dto.scripts ?? [],
 	knowledgeCollectionIds: dto.knowledgeCollectionIds ?? [],
 	authBindings: dto.authBindings ?? [],
 	canExecute: dto.canExecute,

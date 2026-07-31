@@ -4,10 +4,12 @@ import com.apibot.features.script.domain.exception.InvalidScriptException
 import com.apibot.features.script.domain.exception.ScriptAccessDeniedException
 import com.apibot.features.script.domain.exception.ScriptNotFoundException
 import com.apibot.features.script.dto.CreateScriptRequest
+import com.apibot.features.script.dto.ScriptResponse
 import com.apibot.features.script.dto.UpdateScriptRequest
 import com.apibot.features.script.model.McpTransport
 import com.apibot.features.script.model.Script
 import com.apibot.features.script.model.ScriptKind
+import com.apibot.features.script.model.toResponse
 import com.apibot.features.script.repository.ScriptRepository
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -56,6 +58,14 @@ class ScriptService(
 
     fun listScripts(userId: UUID): List<Script> =
         scriptRepository.findAllByUserId(userId)
+
+    /**
+     * Índice `id -> ScriptResponse` das ferramentas do usuário, para os agentes serem devolvidos já com
+     * os scripts resolvidos. Sem isso o cliente teria que juntar `scriptIds` com uma segunda busca, e um
+     * agente podia acabar sendo executado sem nenhuma ferramenta.
+     */
+    fun responsesByIdForUser(userId: UUID): Map<UUID, ScriptResponse> =
+        scriptRepository.findAllByUserId(userId).associate { it.id to it.toResponse() }
 
     fun getScriptForUser(userId: UUID, id: UUID): Script {
         val script = scriptRepository.findById(id) ?: throw ScriptNotFoundException()

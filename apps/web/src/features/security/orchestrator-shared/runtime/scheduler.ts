@@ -4,12 +4,11 @@
 // montado em `security/layout.tsx`). Só dispara enquanto a janela do Workestrator estiver aberta — é a
 // decisão travada desde o início do plano (execução sempre local); não existe daemon em background/tray.
 import { tanStackQueryClient } from "@/app/api/clients";
-import { fetchProviders, providersKeys } from "@/features/security/models/api";
-import { fetchScripts, scriptsKeys } from "@/features/security/scripts/api";
-import { fetchSquadDetail, squadDetailKeys } from "@/features/security/squad-detail/api";
+import { squadDetailKeys } from "@/features/security/squad-detail/api";
 import type { SquadDetail } from "@/features/security/squad-detail/api";
 import { fetchSquads, squadsKeys } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
+import { loadRunConfig } from "./config-cache";
 import { isRunActive, startRun } from "./orchestrator-runtime";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -57,29 +56,13 @@ const lastFiredAt = new Map<string, number>();
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const warmCache = async (squadId: string): Promise<void> => {
-	await tanStackQueryClient.fetchQuery({
-		queryKey: squadDetailKeys.detail(squadId),
-		queryFn: () => fetchSquadDetail(squadId),
-	});
-	// Providers/scripts raramente mudam — só busca se o cache ainda estiver vazio, pra não bater a
-	// API a cada tick de 30s por causa de recursos que quase nunca mudam.
-	if (tanStackQueryClient.getQueryData(providersKeys.list()) === undefined) {
-		await tanStackQueryClient.fetchQuery({ queryKey: providersKeys.list(), queryFn: fetchProviders });
-	}
-	if (tanStackQueryClient.getQueryData(scriptsKeys.list()) === undefined) {
-		await tanStackQueryClient.fetchQuery({ queryKey: scriptsKeys.list(), queryFn: fetchScripts });
-	}
-};
-
 const fireScheduledRun = async (squad: SquadSummary): Promise<void> => {
 	lastFiredAt.set(squad.id, Date.now());
-	try {
-		await warmCache(squad.id);
-	} catch {
-		return; // backend fora do ar nesse tick — tenta de novo no próximo, sem travar o loop.
-	}
+	// Squad detail já traz os agentes com as ferramentas resolvidas; providers vêm junto no mesmo gate.
+	await loadRunConfig(squad.id);
 	const detail = tanStackQueryClient.getQueryData<SquadDetail>(squadDetailKeys.detail(squad.id));
+	// Sem o detalhe não dá nem pra resolver o briefing — tenta de novo no próximo tick.
+	if (!detail) return;
 	startRun(squad.id, resolveScheduledBriefing(squad, detail), "schedule");
 };
 

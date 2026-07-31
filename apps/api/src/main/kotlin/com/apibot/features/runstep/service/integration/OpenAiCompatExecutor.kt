@@ -26,10 +26,66 @@ private const val THINKING_FLUSH_CHARS = 240
 
 private data class ChatTurn(val text: String, val reasoning: String, val toolCalls: List<ToolCallAccumulator>)
 private data class ToolCallAccumulator(val id: String, val name: String, val arguments: String)
+private data class TextToolCall(val name: String, val arguments: String)
 private class MutableToolCall {
     var id: String = ""
     var name: String = ""
     var arguments: String = ""
+}
+
+private const val THINK_OPEN = "<think>"
+private const val THINK_CLOSE = "</think>"
+
+private class ThinkTagFilter {
+    private enum class Mode { TEXT, THINKING }
+    private var mode = Mode.TEXT
+    private val carry = StringBuilder()
+
+    data class Piece(val text: String, val reasoning: String)
+
+    fun feed(chunk: String): Piece {
+        carry.append(chunk)
+        val text = StringBuilder()
+        val reasoning = StringBuilder()
+        while (true) {
+            val buf = carry.toString()
+            val marker = if (mode == Mode.TEXT) THINK_OPEN else THINK_CLOSE
+            val idx = buf.indexOf(marker, ignoreCase = true)
+            if (idx >= 0) {
+                val before = buf.substring(0, idx)
+                if (mode == Mode.TEXT) text.append(before) else reasoning.append(before)
+                carry.setLength(0)
+                carry.append(buf.substring(idx + marker.length))
+                mode = if (mode == Mode.TEXT) Mode.THINKING else Mode.TEXT
+                continue
+            }
+            val holdBack = partialSuffixLength(buf, marker)
+            val safeLen = buf.length - holdBack
+            if (safeLen > 0) {
+                val safe = buf.substring(0, safeLen)
+                if (mode == Mode.TEXT) text.append(safe) else reasoning.append(safe)
+                carry.setLength(0)
+                carry.append(buf.substring(safeLen))
+            }
+            break
+        }
+        return Piece(text.toString(), reasoning.toString())
+    }
+
+    /** Descarrega o que sobrou no carry quando o stream acaba, atribuído ao modo atual. */
+    fun finish(): Piece {
+        val remaining = carry.toString()
+        carry.setLength(0)
+        return if (mode == Mode.TEXT) Piece(remaining, "") else Piece("", remaining)
+    }
+
+    private fun partialSuffixLength(buf: String, marker: String): Int {
+        val maxLen = minOf(buf.length, marker.length - 1)
+        for (len in maxLen downTo 1) {
+            if (marker.startsWith(buf.substring(buf.length - len), ignoreCase = true)) return len
+        }
+        return 0
+    }
 }
 
 /**
@@ -55,7 +111,7 @@ class OpenAiCompatExecutor(
         val model = resolveModel(baseUrl, auth, request.model)
         val url = "$baseUrl/chat/completions${auth.querySuffix}"
 
-        val tools = if (request.canExecute) httpToolRunner.resolveTools(userId, request.scripts) else emptyList()
+        val tools = httpToolRunner.resolveTools(userId, request.scripts)
         val toolsByName = tools.associateBy { it.definition.name }
 
         val messages = mutableListOf<ObjectNode>()
@@ -109,14 +165,28 @@ class OpenAiCompatExecutor(
             val turn = readChatResponse(response, emitter)
             if (turn.reasoning.isNotBlank()) lastReasoning = turn.reasoning
 
-            if (turn.toolCalls.isEmpty()) {
+            // Fallback pra modelos sem tool parser nativo no servidor (Gemma no vLLM, vários modelos no
+            // Ollama): a call vem como texto no `content` em vez do campo `tool_calls` estruturado — sem
+            // isso a "chamada" vaza como resposta final do agente e o coordenador redispacha em loop
+            // (porta de `parseTextToolCalls` em `electron/runner/openai-tools.ts`).
+            val toolCalls = turn.toolCalls.ifEmpty {
+                if (tools.isNotEmpty()) {
+                    parseTextToolCalls(turn.text, toolsByName.keys).mapIndexed { index, call ->
+                        ToolCallAccumulator("text_${iteration}_$index", call.name, call.arguments)
+                    }
+                } else {
+                    emptyList()
+                }
+            }
+
+            if (toolCalls.isEmpty()) {
                 output = turn.text
                 break
             }
 
-            messages.add(assistantMessage(turn.text, turn.toolCalls))
+            messages.add(assistantMessage(turn.text, toolCalls))
 
-            for (call in turn.toolCalls) {
+            for (call in toolCalls) {
                 val tool = toolsByName[call.name]
                 emitEvent(emitter, "tool_use", ToolUseEvent(call.id, call.name, call.name, call.arguments))
 
@@ -176,8 +246,12 @@ class OpenAiCompatExecutor(
         if (!isStream) {
             val raw = response.body().bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
             val message = runCatching { objectMapper.readTree(raw) }.getOrNull()?.get("choices")?.get(0)?.get("message")
-            val text = message?.get("content")?.takeIf { !it.isNull }?.asText() ?: ""
-            val reasoning = readReasoning(message)
+            val rawText = message?.get("content")?.takeIf { !it.isNull }?.asText() ?: ""
+            val filter = ThinkTagFilter()
+            val piece = filter.feed(rawText)
+            val tail = filter.finish()
+            val text = piece.text + tail.text
+            val reasoning = readReasoning(message) + piece.reasoning + tail.reasoning
             if (text.isNotEmpty()) emitEvent(emitter, "chunk", ChunkEvent(text))
             if (reasoning.isNotEmpty()) emitEvent(emitter, "thinking", ThinkingEvent(reasoning))
             val toolCalls = message?.get("tool_calls")?.let { parseToolCallsArray(it) } ?: emptyList()
@@ -189,6 +263,7 @@ class OpenAiCompatExecutor(
         var reasoning = ""
         var thinkingBuffer = ""
         val pending = linkedMapOf<Int, MutableToolCall>()
+        val thinkFilter = ThinkTagFilter()
 
         fun flushThinking(force: Boolean) {
             if (thinkingBuffer.isEmpty() || (!force && thinkingBuffer.length < THINKING_FLUSH_CHARS)) return
@@ -206,8 +281,16 @@ class OpenAiCompatExecutor(
 
             val content = delta.get("content")?.takeIf { !it.isNull }?.asText()
             if (!content.isNullOrEmpty()) {
-                text += content
-                emitEvent(emitter, "chunk", ChunkEvent(content))
+                val piece = thinkFilter.feed(content)
+                if (piece.text.isNotEmpty()) {
+                    text += piece.text
+                    emitEvent(emitter, "chunk", ChunkEvent(piece.text))
+                }
+                if (piece.reasoning.isNotEmpty()) {
+                    reasoning += piece.reasoning
+                    thinkingBuffer += piece.reasoning
+                    flushThinking(false)
+                }
             }
             val reasoningDelta = readReasoning(delta)
             if (reasoningDelta.isNotEmpty()) {
@@ -224,6 +307,15 @@ class OpenAiCompatExecutor(
             }
         }
 
+        val tail = thinkFilter.finish()
+        if (tail.text.isNotEmpty()) {
+            text += tail.text
+            emitEvent(emitter, "chunk", ChunkEvent(tail.text))
+        }
+        if (tail.reasoning.isNotEmpty()) {
+            reasoning += tail.reasoning
+            thinkingBuffer += tail.reasoning
+        }
         flushThinking(true)
 
         val toolCalls = pending.entries
@@ -248,6 +340,108 @@ class OpenAiCompatExecutor(
             val arguments = call.get("function")?.get("arguments")?.asText() ?: "{}"
             ToolCallAccumulator(id, name, arguments)
         }.filter { it.name.isNotEmpty() }
+
+    /** Lê o objeto `{...}` balanceado a partir de `start` (índice de um `{`), respeitando strings/escapes. */
+    private fun readBalancedObject(text: String, start: Int): String? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until text.length) {
+            val ch = text[i]
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    ch == '\\' -> escaped = true
+                    ch == '"' -> inString = false
+                }
+                continue
+            }
+            when (ch) {
+                '"' -> inString = true
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return text.substring(start, i + 1)
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Recupera tool calls que o modelo escreveu como TEXTO no `content` em vez do campo estruturado
+     * `tool_calls` — acontece quando o servidor não tem parser de tool nativo pro template do modelo
+     * (Gemma no vLLM é o caso clássico: `call:gerar-autentica-o{}` cru no conteúdo). Cobre os dialetos
+     * comuns e SEMPRE ancora nos nomes de tools registradas (`known`), pra prosa solta não virar chamada
+     * por engano. Porta de `parseTextToolCalls` em `electron/runner/openai-tools.ts` — mantida em sync.
+     */
+    private fun parseTextToolCalls(text: String, known: Set<String>): List<TextToolCall> {
+        if (text.isBlank() || known.isEmpty()) return emptyList()
+        val calls = mutableListOf<TextToolCall>()
+
+        fun add(name: String, rawArgs: Any?) {
+            if (name !in known) return
+            val args = when {
+                rawArgs == null -> "{}"
+                rawArgs is JsonNode && rawArgs.isNull -> "{}"
+                rawArgs is String -> rawArgs.trim().ifEmpty { "{}" }
+                rawArgs is JsonNode -> objectMapper.writeValueAsString(rawArgs)
+                else -> "{}"
+            }
+            calls.add(TextToolCall(name, args))
+        }
+
+        // 1) Hermes/Qwen: <tool_call>{"name":"x","arguments":{...}}</tool_call> (pode repetir).
+        Regex("<tool_call>\\s*([\\s\\S]*?)\\s*</tool_call>", RegexOption.IGNORE_CASE).findAll(text).forEach { m ->
+            runCatching {
+                val obj = objectMapper.readTree(m.groupValues[1])
+                val name = obj.get("name")?.takeIf { it.isTextual }?.asText()
+                if (name != null) add(name, obj.get("arguments") ?: obj.get("parameters"))
+            }
+        }
+        if (calls.isNotEmpty()) return calls
+
+        // 2) Mistral: [TOOL_CALLS][{"name":"x","arguments":{...}}, ...]
+        Regex("\\[TOOL_CALLS]\\s*(\\[[\\s\\S]*])").find(text)?.let { m ->
+            runCatching {
+                objectMapper.readTree(m.groupValues[1]).forEach { obj ->
+                    val name = obj.get("name")?.takeIf { it.isTextual }?.asText()
+                    if (name != null) add(name, obj.get("arguments"))
+                }
+            }
+        }
+        if (calls.isNotEmpty()) return calls
+
+        // 3) Dialeto observado no Gemma: `call:<nome>{args}` — também `call: nome (args)`, `tool_call`,
+        //    `function`. Os args (quando há) são o `{...}` balanceado que vem logo após o nome.
+        val prefix = Regex("""\b(?:call|tool_call|function|tool)\b\s*[:=]?\s*["'`]?([a-zA-Z0-9_.-]+)["'`]?""", RegexOption.IGNORE_CASE)
+        prefix.findAll(text).forEach { m ->
+            val name = m.groupValues[1]
+            if (name in known) {
+                val after = m.range.last + 1
+                val brace = text.indexOf('{', after)
+                // só cola os args se o `{` vier imediatamente depois do nome (só espaço/parêntese no meio).
+                val gap = if (brace >= 0) text.substring(after, brace) else ""
+                val argsText = if (brace >= 0 && Regex("^[\\s(]*$").matches(gap)) readBalancedObject(text, brace) else null
+                add(name, argsText)
+            }
+        }
+        if (calls.isNotEmpty()) return calls
+
+        // 4) JSON solto (às vezes em bloco ```json): { "name"|"tool": "<tool>", "arguments"|"parameters": {...} }.
+        var i = text.indexOf('{')
+        while (i >= 0) {
+            val block = readBalancedObject(text, i) ?: break
+            runCatching {
+                val obj = objectMapper.readTree(block)
+                val name = obj.get("name")?.takeIf { it.isTextual }?.asText()
+                    ?: obj.get("tool")?.takeIf { it.isTextual }?.asText()
+                if (name != null) add(name, obj.get("arguments") ?: obj.get("parameters"))
+            }
+            i = text.indexOf('{', i + 1)
+        }
+        return calls
+    }
 
     private fun resolveModel(baseUrl: String, auth: ProviderAuthResolver.ProviderAuth, configuredModel: String): String =
         try {

@@ -12,7 +12,6 @@ import { notify } from "@/components/toast/notify";
 import { executionsKeys, fetchRunsApi, saveRunApi, updateRunApi } from "@/features/security/executions/api";
 import type { ModelProvider } from "@/features/security/orchestrator-shared/types";
 import { providersKeys } from "@/features/security/models/api";
-import { scriptsKeys } from "@/features/security/scripts/api";
 import { squadDetailKeys } from "@/features/security/squad-detail/api";
 import type { SquadDetail } from "@/features/security/squad-detail/api";
 import { newId, nowIso } from "../data/constants";
@@ -27,9 +26,11 @@ import type {
 	RuntimeSnapshot,
 	Script,
 	SquadRuntimeStatus,
+	ToolCallRecord,
 } from "../types";
 import { searchKnowledgeMulti } from "@/features/security/knowledge/api";
 import { AGENT_TURN_INSTRUCTIONS, parseAgentTurn } from "./agent-turn";
+import { loadRunConfig } from "./config-cache";
 import { buildRetrievalBlock } from "./knowledge-retrieval";
 import {
 	AgentCallError,
@@ -158,9 +159,6 @@ const getSquadConfig = (squadId: string): SquadDetail | undefined =>
 
 const getProvider = (providerId: string): ModelProvider | undefined =>
 	tanStackQueryClient.getQueryData<ModelProvider[]>(providersKeys.list())?.find((p) => p.id === providerId);
-
-const getScript = (scriptId: string): Script | undefined =>
-	tanStackQueryClient.getQueryData<Script[]>(scriptsKeys.list())?.find((s) => s.id === scriptId);
 
 const getRuntime = (squadId: string): Runtime => useOrchestratorRuntimeStore.getState().getRuntime(squadId);
 
@@ -355,6 +353,36 @@ const updateLiveActivity = (squadId: string, id: string, patch: Partial<LiveActi
 
 const appendLiveTerminal = (squadId: string, chunk: string): void => {
 	patchRuntime(squadId, (runtime) => ({ ...runtime, liveTerminal: runtime.liveTerminal + chunk }));
+};
+
+/** Registra uma chamada de ferramenta no log do run inteiro (painel de debug) — não limpa por passo. */
+const pushToolCall = (squadId: string, record: ToolCallRecord): void => {
+	patchRuntime(squadId, (runtime) => ({ ...runtime, toolLog: [...runtime.toolLog, record] }));
+};
+
+/** Fecha o registro de uma chamada pelo `id` quando o resultado chega (output/status/fim). */
+const closeToolCall = (squadId: string, id: string, patch: Partial<ToolCallRecord>): void => {
+	patchRuntime(squadId, (runtime) => ({
+		...runtime,
+		toolLog: runtime.toolLog.map((call) => (call.id === id ? { ...call, ...patch } : call)),
+	}));
+};
+
+/** Fecha o último registro ainda "running" — resultado sem id pareável (provider em modo texto). */
+const closeLastRunningToolCall = (squadId: string, patch: Partial<ToolCallRecord>): void => {
+	patchRuntime(squadId, (runtime) => {
+		let idx = -1;
+		for (let i = runtime.toolLog.length - 1; i >= 0; i--) {
+			if (runtime.toolLog[i].status === "running") {
+				idx = i;
+				break;
+			}
+		}
+		if (idx === -1) return runtime;
+		const toolLog = [...runtime.toolLog];
+		toolLog[idx] = { ...toolLog[idx], ...patch };
+		return { ...runtime, toolLog };
+	});
 };
 
 /** Liga/desliga "coordenador decidindo" — move o foco no mapa do run e mata o buraco de percepção. */
@@ -689,8 +717,7 @@ const completeOrchestratedStep = (
 	persistRunProgress(squadId, null);
 
 	const requiresPublicationApproval =
-		!publicationAlreadyApproved &&
-		agent?.scriptIds.some((scriptId) => getScript(scriptId)?.connectorProvider === "instagram");
+		!publicationAlreadyApproved && agent?.scripts.some((script) => script.connectorProvider === "instagram");
 	if (agent && ((!publicationAlreadyApproved && agent.requiresCheckpointAfter) || requiresPublicationApproval)) {
 		patchRuntime(squadId, (r) => ({
 			...r,
@@ -727,51 +754,79 @@ const completeOrchestratedStep = (
 const runOrchestratedAgentStep = (
 	squadId: string,
 	seatId: string,
-	agent: Agent,
+	seatAgent: Agent,
 	briefing: string,
 	qaHistory: QaPair[] = [],
 	/** Passos (1-based) que o coordenador escolheu como contexto deste agente; vazio/ausente = só o passo anterior. */
 	contextSteps?: number[],
 ): void => {
-	const provider = getProvider(agent.modelRef.providerId);
-	if (!provider) {
-		appendLog(squadId, `Erro em ${agent.name}: provider "${agent.modelRef.providerId}" não está mais cadastrado.`);
-		appendEvent(squadId, {
-			kind: "error",
-			seatId,
-			agentId: agent.id,
-			title: `Erro em ${agent.name}`,
-			content: `Provider "${agent.modelRef.providerId}" não está mais cadastrado.`,
-		});
-		notify.error("Provider do agent não foi encontrado.");
-		finishRun(squadId, "aborted");
-		return;
-	}
-
 	setPerAgentStatus(squadId, seatId, "working");
 	setStreamingText(squadId, "");
 	clearLiveActivity(squadId);
 	// Agente assumiu: coordenador não está mais decidindo; marca o início do passo (cronômetro ao vivo).
 	patchRuntime(squadId, (runtime) => ({ ...runtime, coordinatorThinking: false, stepStartedAt: nowIso() }));
-	const run = activeRun(squadId);
-	// Contexto do agente: os passos que o coordenador citou em `context_steps` (conteúdo completo, montado
-	// aqui pelo runtime — não pelo LLM), com fallback pro passo anterior quando ele não citar nada.
-	const steps = run?.steps ?? [];
-	const selectedContext = (contextSteps ?? [])
-		.map((n) => {
-			const content = steps[n - 1]?.artifact?.content;
-			return content ? `Passo ${n}:\n${content}` : null;
-		})
-		.filter((c): c is string => Boolean(c));
-	const previousOutput = selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
 	const stepId = newId();
-	const scripts = agent.scriptIds.map((id) => getScript(id)).filter((s): s is Script => Boolean(s));
-	const hasInstagramPublisher = scripts.some((script) => script.connectorProvider === "instagram");
-	const publicationApproved = approvedPublishExecutionIds.has(squadId) && hasInstagramPublisher;
 
 	runAbortable(squadId, async (signal) => {
+		// Config recarregada do servidor antes de montar o payload — este passo pode estar rodando horas
+		// depois do início do run (checkpoint, pergunta pendente, fila), e nada aqui pode depender do que
+		// sobrou no cache de UI. Depois disso o agente é relido do squad recarregado.
+		await workspacePreparationByExecution.get(squadId)?.catch(() => undefined);
+		await loadRunConfig(resolveSquadId(squadId));
+		if (signal.aborted) return;
+
+		const agent = getSquadConfig(squadId)?.agents.find((item) => item.id === seatAgent.id) ?? seatAgent;
+		const provider = getProvider(agent.modelRef.providerId);
+		if (!provider) {
+			appendLog(squadId, `Erro em ${agent.name}: provider "${agent.modelRef.providerId}" não está mais cadastrado.`);
+			appendEvent(squadId, {
+				kind: "error",
+				seatId,
+				agentId: agent.id,
+				title: `Erro em ${agent.name}`,
+				content: `Provider "${agent.modelRef.providerId}" não está mais cadastrado.`,
+			});
+			notify.error("Provider do agent não foi encontrado.");
+			finishRun(squadId, "aborted");
+			return;
+		}
+
+		// O agente carrega as próprias ferramentas (`AgentResponse.scripts`). Nenhuma resolvida com
+		// `scriptIds` preenchido significa que a config não chegou inteira — rodar assim produziria uma
+		// saída plausível e sem nenhuma tool plugada, que é justamente a falha silenciosa que queremos evitar.
+		const scripts = agent.scripts;
+		if (agent.scriptIds.length > 0 && scripts.length === 0) {
+			const content = `As ferramentas de ${agent.name} não puderam ser carregadas — verifique a conexão com o servidor e tente de novo.`;
+			appendLog(squadId, content);
+			appendEvent(squadId, { kind: "error", seatId, agentId: agent.id, title: `Erro em ${agent.name}`, content });
+			notify.error("Ferramentas do agent não foram carregadas.");
+			finishRun(squadId, "aborted");
+			return;
+		}
+		if (scripts.length < agent.scriptIds.length) {
+			const missing = agent.scriptIds.filter((id) => !scripts.some((script) => script.id === id));
+			appendLog(squadId, `Ferramentas não encontradas para ${agent.name} (removidas da biblioteca): ${missing.join(", ")}`);
+		}
+
+		const run = activeRun(squadId);
+		// Contexto do agente: os passos que o coordenador citou em `context_steps` (conteúdo completo, montado
+		// aqui pelo runtime — não pelo LLM), com fallback pro passo anterior quando ele não citar nada.
+		const steps = run?.steps ?? [];
+		const selectedContext = (contextSteps ?? [])
+			.map((n) => {
+				const content = steps[n - 1]?.artifact?.content;
+				return content ? `Passo ${n}:\n${content}` : null;
+			})
+			.filter((c): c is string => Boolean(c));
+		const previousOutput = selectedContext.length > 0 ? selectedContext.join("\n\n") : steps.at(-1)?.artifact?.content;
+		const hasInstagramPublisher = scripts.some((script) => script.connectorProvider === "instagram");
+		const publicationApproved = approvedPublishExecutionIds.has(squadId) && hasInstagramPublisher;
+		// Ferramentas de rede (http/mcp/connector) não tocam a máquina — o runner as resolve como function
+		// tools mesmo em provider de API. Só command/inline/file dependem de `canExecute` (execução local).
+		const isNetworkScript = (s: Script): boolean => s.kind === "http" || s.kind === "mcp" || s.kind === "connector";
+		const availableScripts = scripts.filter((s) => isNetworkScript(s) || agent.canExecute);
+
 		try {
-			await workspacePreparationByExecution.get(squadId)?.catch(() => undefined);
 			const retrieval = await retrieveAgentContext(agent, previousOutput ?? briefing);
 			const result = await callAgentStep(
 				{
@@ -787,7 +842,7 @@ const runOrchestratedAgentStep = (
 						briefing,
 						previousOutput,
 						qaHistory,
-						scripts: agent.canExecute ? scripts : undefined,
+						scripts: availableScripts.length > 0 ? availableScripts : undefined,
 						retrieval,
 						providerKind: provider.kind,
 					}),
@@ -796,25 +851,26 @@ const runOrchestratedAgentStep = (
 					baseUrl: provider.baseUrl,
 					apiKeyRef: provider.apiKeyRef,
 					canExecute: agent.canExecute,
-					scripts: agent.canExecute
-						? scripts.map((script) => {
-								const binding =
-									run?.authBindingsSnapshot?.find(
-										(item) => item.agentId === agent.id && item.scriptId === script.id && item.isDefault,
-									) ?? agent.authBindings?.find((item) => item.scriptId === script.id && item.isDefault);
-								const payload = toScriptPayload(script, binding?.connectionId);
-								return publicationApproved && script.connectorProvider === "instagram"
-									? {
-											...payload,
-											env: {
-												...payload.env,
-												WORKESTRATOR_PUBLISH_APPROVED: "true",
-												WORKESTRATOR_RUN_ID: squadId,
-											},
-										}
-									: payload;
-							})
-						: undefined,
+					scripts:
+						availableScripts.length > 0
+							? availableScripts.map((script) => {
+									const binding =
+										run?.authBindingsSnapshot?.find(
+											(item) => item.agentId === agent.id && item.scriptId === script.id && item.isDefault,
+										) ?? agent.authBindings?.find((item) => item.scriptId === script.id && item.isDefault);
+									const payload = toScriptPayload(script, binding?.connectionId);
+									return publicationApproved && script.connectorProvider === "instagram"
+										? {
+												...payload,
+												env: {
+													...payload.env,
+													WORKESTRATOR_PUBLISH_APPROVED: "true",
+													WORKESTRATOR_RUN_ID: squadId,
+												},
+											}
+										: payload;
+								})
+							: undefined,
 					maxBudgetUsd: agent.maxBudgetUsd,
 				},
 				signal,
@@ -829,16 +885,32 @@ const runOrchestratedAgentStep = (
 					onActivity: (activity) => {
 						if (activity.kind === "tool" && activity.status === "running") {
 							// Início de uma ferramenta — item novo, status "running" (fecha no tool_result pelo id).
+							const id = activity.id ?? newId();
 							pushLiveActivity(squadId, {
-								id: activity.id ?? newId(),
+								id,
 								kind: "tool",
 								toolName: activity.toolName,
 								detail: activity.detail,
 								status: "running",
 							});
+							pushToolCall(squadId, {
+								id,
+								seatId,
+								agentId: agent.id,
+								toolName: activity.toolName ?? "ferramenta",
+								input: activity.detail,
+								status: "running",
+								startedAt: nowIso(),
+							});
 						} else if (activity.id) {
 							// Resultado de uma ferramenta já listada — fecha o status pelo id.
 							updateLiveActivity(squadId, activity.id, { status: activity.status ?? "done" });
+							closeToolCall(squadId, activity.id, {
+								output: truncate(activity.detail ?? "", 8000),
+								status: activity.status ?? "done",
+								endedAt: nowIso(),
+								sentHeaders: activity.sentHeaders,
+							});
 						} else {
 							// Resultado sem id pareável (provider em modo texto) — vira uma linha de saída solta.
 							pushLiveActivity(squadId, {
@@ -846,6 +918,11 @@ const runOrchestratedAgentStep = (
 								kind: "output",
 								detail: activity.detail,
 								status: activity.status ?? "done",
+							});
+							closeLastRunningToolCall(squadId, {
+								output: truncate(activity.detail ?? "", 8000),
+								status: activity.status ?? "done",
+								endedAt: nowIso(),
 							});
 						}
 					},
@@ -934,37 +1011,54 @@ const runOrchestratedAgentStep = (
 
 /** Pergunta ao coordenador qual o próximo passo — repete até "done" ou até bater o guardrail `maxSteps`. */
 const advanceOrchestrated = (squadId: string): void => {
-	const squad = getSquadConfig(squadId);
 	const runtime = getRuntime(squadId);
-	if (!squad || runtime.status !== "running") return;
-	const config = squad.orchestrator;
-
-	if (runtime.currentStep >= config.maxSteps) {
-		appendLog(squadId, `Limite de ${config.maxSteps} passos do coordenador atingido — encerrando.`);
-		finishRun(squadId, "done");
-		return;
-	}
-
-	const provider = getProvider(config.modelRef.providerId);
-	if (!provider) {
-		appendLog(squadId, "Erro: provider do coordenador não está mais cadastrado.");
-		appendEvent(squadId, {
-			kind: "error",
-			title: "Erro no coordenador",
-			content: "Provider do coordenador não está mais cadastrado.",
-		});
-		notify.error("Provider do coordenador não foi encontrado.");
-		finishRun(squadId, "aborted");
-		return;
-	}
-
-	const run = activeRun(squadId);
-	if (!run) return;
-	const briefing = run.input;
-	const prompt = buildCoordinatorPrompt(squad, run, briefing);
+	if (runtime.status !== "running") return;
 
 	setCoordinatorThinking(squadId, true);
 	runAbortable(squadId, async (signal) => {
+		// Mesma regra do passo de agente: a decisão do coordenador é montada a partir de uma leitura
+		// autoritativa, não do cache — este ponto também é retomado depois de pausas longas.
+		await loadRunConfig(resolveSquadId(squadId));
+		if (signal.aborted) return;
+
+		const squad = getSquadConfig(squadId);
+		if (!squad) {
+			appendLog(squadId, "Erro: configuração do squad não pôde ser carregada.");
+			appendEvent(squadId, {
+				kind: "error",
+				title: "Erro no coordenador",
+				content: "Configuração do squad não pôde ser carregada — verifique a conexão com o servidor.",
+			});
+			notify.error("Configuração do squad não foi carregada.");
+			finishRun(squadId, "aborted");
+			return;
+		}
+		const config = squad.orchestrator;
+
+		if (getRuntime(squadId).currentStep >= config.maxSteps) {
+			appendLog(squadId, `Limite de ${config.maxSteps} passos do coordenador atingido — encerrando.`);
+			finishRun(squadId, "done");
+			return;
+		}
+
+		const provider = getProvider(config.modelRef.providerId);
+		if (!provider) {
+			appendLog(squadId, "Erro: provider do coordenador não está mais cadastrado.");
+			appendEvent(squadId, {
+				kind: "error",
+				title: "Erro no coordenador",
+				content: "Provider do coordenador não está mais cadastrado.",
+			});
+			notify.error("Provider do coordenador não foi encontrado.");
+			finishRun(squadId, "aborted");
+			return;
+		}
+
+		const run = activeRun(squadId);
+		if (!run) return;
+		const briefing = run.input;
+		const prompt = buildCoordinatorPrompt(squad, run, briefing);
+
 		try {
 			const result = await callAgentStep(
 				{
@@ -1120,7 +1214,11 @@ const launchPreparedExecution = (executionId: string, squad: SquadDetail, origin
 	);
 	const workspacePreparation = resetWorkspace(executionId);
 	workspacePreparationByExecution.set(executionId, workspacePreparation);
-	void Promise.allSettled([workspacePreparation, prepareRunHistory(executionId, squad)]).finally(() => {
+	void Promise.allSettled([
+		workspacePreparation,
+		prepareRunHistory(executionId, squad),
+		loadRunConfig(resolveSquadId(executionId)),
+	]).finally(() => {
 		workspacePreparationByExecution.delete(executionId);
 		advanceOrchestrated(executionId);
 	});
@@ -1275,9 +1373,7 @@ export const resolveCheckpoint = (squadId: string, approved: boolean): void => {
 		appendLog(squadId, "Checkpoint aprovado.");
 		runOrQueueContinuation(squadId, () => {
 			patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
-			const hasInstagramPublisher = agent?.scriptIds.some(
-				(scriptId) => getScript(scriptId)?.connectorProvider === "instagram",
-			);
+			const hasInstagramPublisher = agent?.scripts.some((script) => script.connectorProvider === "instagram");
 			if (seat && agent && hasInstagramPublisher) {
 				approvedPublishExecutionIds.add(squadId);
 				const run = activeRun(squadId);
@@ -1449,6 +1545,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 	// da interação do usuário, então basta disparar em background; na trilha "running" segura o advance.
 	const historyReady = prepareRunHistory(executionId, squad);
 	const workspaceReady = resetWorkspace(executionId, "", run.id);
+	const configReady = loadRunConfig(resolveSquadId(executionId));
 	workspacePreparationByExecution.set(executionId, workspaceReady);
 
 	if (initialStatus === "awaiting_input") {
@@ -1460,7 +1557,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 		return;
 	}
 	runOrQueueContinuation(executionId, () => {
-		void Promise.allSettled([historyReady, workspaceReady]).finally(() => {
+		void Promise.allSettled([historyReady, workspaceReady, configReady]).finally(() => {
 			workspacePreparationByExecution.delete(executionId);
 			advanceOrchestrated(executionId);
 		});

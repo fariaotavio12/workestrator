@@ -11,6 +11,7 @@ import {
 	buildExecutorPlan,
 	callOpenAiCompat,
 	classifyCliFailure,
+	ThinkTagFilter,
 	configureRunnerInstagramProfilesRoot,
 	configureRunnerWorkspace,
 	walkAllRelPaths,
@@ -582,9 +583,35 @@ describe("callOpenAiCompat tool loop", () => {
 		expect(body.tools).toHaveLength(1);
 	});
 
-	it("recovers a narrated vLLM tool call by retrying with a named tool_choice", async () => {
+	it("executes a narrated vLLM tool call straight from the text, without a forced retry", async () => {
 		const fetchMock = mockChatCalls([
 			sseResponse([{ content: 'call:workspace__write_file{"path":"output/vllm-result.md","content":"ok"}' }]),
+			sseResponse([{ content: "FILE_READY output/vllm-result.md verified=true" }]),
+		]);
+		const execute = vi.fn().mockResolvedValue({ ok: true, text: "gravado" });
+		const { res, events } = fakeResponse();
+
+		await callOpenAiCompat({ ...input, tools: [namedTool("workspace__write_file", execute)] }, resolveSecret, res);
+
+		// `parseTextToolCalls` já recupera nome E argumentos do texto, então não vale gastar um
+		// round-trip com `tool_choice` nomeado torcendo pro modelo reemitir os mesmos argumentos.
+		expect(execute).toHaveBeenCalledWith({ path: "output/vllm-result.md", content: "ok" });
+		const chatBodies = fetchMock.mock.calls
+			.filter(([url]) => String(url).includes("/chat/completions"))
+			.map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { tool_choice?: unknown });
+		expect(chatBodies).toHaveLength(2);
+		expect(chatBodies[0].tool_choice).toBe("auto");
+		expect(chatBodies[1].tool_choice).toBe("auto");
+		expect(events.find((e) => e.event === "done")?.data).toMatchObject({
+			output: "FILE_READY output/vllm-result.md verified=true",
+		});
+	});
+
+	it("retries with a named tool_choice when the narrated name only resolves by suffix", async () => {
+		// `parseTextToolCalls` exige nome exato; aqui o modelo narrou `write_file` pra tool
+		// `workspace__write_file`, então quem resolve é o retry estruturado.
+		const fetchMock = mockChatCalls([
+			sseResponse([{ content: 'call:write_file{"path":"output/vllm-result.md","content":"ok"}' }]),
 			sseResponse(toolCallDeltas("workspace__write_file", '{"path":"output/vllm-result.md","content":"ok"}')),
 			sseResponse([{ content: "FILE_READY output/vllm-result.md verified=true" }]),
 		]);
@@ -868,4 +895,47 @@ describe("workspace-fs MCP server (built-in filesystem tool)", () => {
 			rmSync(workspaceDir, { recursive: true, force: true });
 		}
 	}, 20_000);
+});
+
+describe("ThinkTagFilter", () => {
+	it("passes plain text through untouched", () => {
+		const filter = new ThinkTagFilter();
+		expect(filter.feed("hello world")).toEqual({ text: "hello world", reasoning: "" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("routes a <think>...</think> block into reasoning, in a single chunk", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("before<think>hmm let me see</think>after");
+		expect(piece).toEqual({ text: "beforeafter", reasoning: "hmm let me see" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("handles the tag split across chunk boundaries", () => {
+		const filter = new ThinkTagFilter();
+		const pieces = [
+			filter.feed("before<thi"),
+			filter.feed("nk>thinking "),
+			filter.feed("more</thi"),
+			filter.feed("nk>after"),
+		];
+		const text = pieces.map((p) => p.text).join("") + filter.finish().text;
+		const reasoning = pieces.map((p) => p.reasoning).join("") + filter.finish().reasoning;
+		expect(text).toBe("beforeafter");
+		expect(reasoning).toBe("thinking more");
+	});
+
+	it("streams an unterminated trailing <think> block as reasoning without waiting for a close tag", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("before<think>never closes");
+		expect(piece).toEqual({ text: "before", reasoning: "never closes" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "" });
+	});
+
+	it("holds back a partial </think> prefix until finish if the stream ends mid-tag", () => {
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed("<think>reasoning</thi");
+		expect(piece).toEqual({ text: "", reasoning: "reasoning" });
+		expect(filter.finish()).toEqual({ text: "", reasoning: "</thi" });
+	});
 });

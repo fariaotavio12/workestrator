@@ -15,6 +15,9 @@
 #
 # ATENCAO (dev only):
 #   - SECRETS_MASTER_KEY abaixo e uma chave de DEV. NAO use em producao.
+#   - A knowledge base (RAG) precisa de VOYAGE_API_KEY (ou OPENAI_API_KEY, trocando
+#     app.ai.embeddings.provider) num .env na raiz - nao ha default de dev possivel
+#     pra uma chave paga.
 #   - VITE_API_URL do web e embutido em build-time (apps/web/.env) apontando pra
 #     localhost:8080. Se mudar API_PORT, ajuste tambem o VITE_API_URL e rebuilde,
 #     senao o front continua chamando a 8080. O front so funciona acessado do
@@ -62,6 +65,9 @@ services:
       APP_CORS_ALLOWED_ORIGIN_PATTERNS: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:${WEB_PORT:-5173},http://127.0.0.1:${WEB_PORT:-5173}}
       # relaxed binding do Spring -> app.mail.enabled=false (sem SMTP no local)
       APP_MAIL_ENABLED: ${APP_MAIL_ENABLED:-false}
+      # Embeddings da knowledge base (RAG). Sem default: preencha no .env da raiz.
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${API_PORT:-8080}:${API_PORT:-8080}"
     restart: unless-stopped
