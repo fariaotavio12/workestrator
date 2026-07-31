@@ -1,7 +1,6 @@
 package com.apibot.features.approval.repository
 
 import com.apibot.features.approval.model.NotificationChannel
-import com.apibot.features.approval.model.toDomain
 import com.apibot.features.approval.model.toEntity
 import org.springframework.context.annotation.Primary
 import org.springframework.stereotype.Repository
