@@ -71,6 +71,7 @@ class SquadService(
             orchModel = squad.orchModel,
             orchMaxSteps = squad.orchMaxSteps,
             orchUseRunHistory = squad.orchUseRunHistory,
+            lessonsCollectionId = squad.lessonsCollectionId,
             agents = agents.map { it.toResponse(scriptsById) },
             seats = seats.map { it.toResponse() },
             createdAt = squad.createdAt,
@@ -91,6 +92,7 @@ class SquadService(
             orchModel = request.orchModel ?: current.orchModel,
             orchMaxSteps = request.orchMaxSteps ?: current.orchMaxSteps,
             orchUseRunHistory = request.orchUseRunHistory ?: current.orchUseRunHistory,
+            lessonsCollectionId = request.lessonsCollectionId ?: current.lessonsCollectionId,
             updatedAt = Instant.now(),
         )
         return squadRepository.update(updated)

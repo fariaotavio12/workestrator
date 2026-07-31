@@ -33,6 +33,7 @@ data class UpdateSquadRequest(
     @Schema(description = "Orchestrator model name") val orchModel: String? = null,
     @Schema(description = "Max orchestration steps per run") val orchMaxSteps: Int? = null,
     @Schema(description = "Whether the coordinator sees a summary of previous runs") val orchUseRunHistory: Boolean? = null,
+    @Schema(description = "Knowledge collection where this squad's learned lessons are stored") val lessonsCollectionId: UUID? = null,
 )
 
 @Schema(description = "Squad summary — used for list views, excludes agents and seats")
@@ -59,6 +60,7 @@ data class SquadDetailResponse(
     @Schema(description = "Orchestrator model name") val orchModel: String?,
     @Schema(description = "Max orchestration steps per run") val orchMaxSteps: Int,
     @Schema(description = "Whether the coordinator sees a summary of previous runs") val orchUseRunHistory: Boolean,
+    @Schema(description = "Knowledge collection where this squad's learned lessons are stored") val lessonsCollectionId: UUID?,
     @Schema(description = "Agents belonging to this squad") val agents: List<AgentResponse>,
     @Schema(description = "Seats belonging to this squad") val seats: List<SeatResponse>,
     @Schema(description = "Creation date") val createdAt: Instant,

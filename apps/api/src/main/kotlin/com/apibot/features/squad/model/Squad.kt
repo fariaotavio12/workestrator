@@ -25,6 +25,8 @@ data class Squad(
     val orchModel: String? = null,
     val orchMaxSteps: Int = 20,
     val orchUseRunHistory: Boolean = false,
+    /** Coleção de conhecimento onde as lições aprendidas deste squad são gravadas — criada na primeira lição. */
+    val lessonsCollectionId: UUID? = null,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
 )

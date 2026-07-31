@@ -4,6 +4,7 @@ import { DialogSubscriptionError } from "@/components/overlays/subscriptionError
 import { DialogSubscriptionSucess } from "@/components/overlays/subscriptionSucess";
 import { AppSidebar } from "@/components/sidebar/index";
 import { SidebarInset } from "@/components/sidebar";
+import { TrainingSheet } from "@/features/security/training";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/app/utils/cn";
 import { Rotas } from "@/app/routing/variables";
@@ -27,6 +28,8 @@ export const LayoutDashboard = () => {
 				<GlobalRunDialog />
 				<GlobalSquadHistoryDialog />
 				<OrchestratorScheduler />
+				{/* Fora do RunDialog de propósito: a revisão da proposta dura minutos e sobrevive a ele. */}
+				<TrainingSheet />
 			</SidebarInset>
 		</>
 	);

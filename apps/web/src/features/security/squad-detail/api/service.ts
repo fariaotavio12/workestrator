@@ -12,6 +12,19 @@ export const fetchSquadDetail = async (squadId: string): Promise<SquadDetail> =>
 	return mapSquadDetailDto(data);
 };
 
+/** Escritas chamáveis fora de componente React — usadas pelo runtime do treinamento. */
+export const updateSquadApi = async (squadId: string, payload: UpdateSquadPayload): Promise<void> => {
+	await api.put(`/squads/${squadId}`, payload);
+};
+
+export const updateAgentApi = async (
+	squadId: string,
+	agentId: string,
+	payload: Partial<AgentPayload>,
+): Promise<void> => {
+	await api.put(`/squads/${squadId}/agents/${agentId}`, payload);
+};
+
 const useInvalidateSquadDetail = (squadId: string) => {
 	const queryClient = useQueryClient();
 	return () => {

@@ -338,6 +338,8 @@ export type Squad = {
 	seats: Seat[];
 	orchestrator: OrchestratorConfig;
 	runtime: Runtime;
+	/** Coleção de conhecimento onde as lições aprendidas deste squad são gravadas (criada na primeira). */
+	lessonsCollectionId?: string | null;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -372,6 +374,45 @@ export type RunFile = {
 	size: number;
 };
 
+export type RunRejectionCategory =
+	| "instruction"
+	| "wrong_info"
+	| "format"
+	| "tone"
+	| "missing_step"
+	| "out_of_scope"
+	| "other";
+
+export type RunRejectionSeverity = "low" | "medium" | "high";
+
+/** O que foi feito com uma reprovação depois que o treinamento rodou. */
+export type RunRejectionTraining = {
+	lessonDocumentId?: string;
+	promptVersionId?: string;
+	retriedRunId?: string;
+	skippedReason?: string;
+};
+
+/**
+ * Checkpoint reprovado, com a justificativa obrigatória e o passo apontado como responsável.
+ * `blamedStepId` pode ser anterior ao passo do checkpoint — é ele que define qual agente o
+ * treinamento analisa.
+ */
+export type RunRejection = {
+	id: string;
+	seatId: string;
+	agentId?: string;
+	blamedStepId?: string;
+	checkpointKind: "before" | "after";
+	reason: string;
+	category?: RunRejectionCategory;
+	severity?: RunRejectionSeverity;
+	decidedBy?: string;
+	decidedByRole?: "owner" | "approver";
+	createdAt: string;
+	training?: RunRejectionTraining;
+};
+
 /** Histórico de uma execução — "o que rodou e o que não". */
 export type RunRecord = {
 	id: string;
@@ -392,4 +433,45 @@ export type RunRecord = {
 	authBindingsSnapshot?: (AgentAuthBinding & { agentId: string })[] | null;
 	/** Arquivos gerados/alterados, copiados para `.runs/<id>` ao final do run. Ausente em runs antigos/sem arquivos. */
 	files?: RunFile[] | null;
+	/** Checkpoints reprovados neste run. Campo `jsonb` passthrough — não exige mudança no backend. */
+	rejections?: RunRejection[] | null;
+};
+
+/** Quem o treinador responsabiliza pelo erro. Só `agent` autoriza propor alteração de prompt. */
+export type TrainingBlameVerdict = "agent" | "briefing" | "upstream_step" | "tooling" | "unclear";
+
+export type TrainingLesson = {
+	title: string;
+	scenario: string;
+	mistake: string;
+	rule: string;
+	example?: string;
+};
+
+export type TrainingPromptPatch = {
+	proposedSystemPrompt: string;
+	rationale: string;
+	changedSections: string[];
+};
+
+/** Saída do treinador. Não é persistida (D2) — é regenerável a partir do run e da reprovação. */
+export type TrainingProposal = {
+	diagnosis: string;
+	blameVerdict: TrainingBlameVerdict;
+	lesson?: TrainingLesson;
+	promptPatch?: TrainingPromptPatch;
+	confidence?: number;
+};
+
+/** Versão anterior de um `systemPrompt`, criada pelo backend a cada alteração. */
+export type AgentPromptVersion = {
+	id: string;
+	squadId: string;
+	agentId: string;
+	version: number;
+	systemPrompt: string;
+	reason?: string | null;
+	sourceRunId?: string | null;
+	sourceRejectionId?: string | null;
+	createdAt: string;
 };

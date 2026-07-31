@@ -1,5 +1,11 @@
 // Limites e paleta de dados do orquestrador.
-import type { CharacterName, ScriptKind, SquadRuntimeStatus } from "../types";
+import type {
+	CharacterName,
+	RunRejectionCategory,
+	RunRejectionSeverity,
+	ScriptKind,
+	SquadRuntimeStatus,
+} from "../types";
 
 /** Máximo de cadeiras por squad — cabe bem no escritório 2D. */
 export const MAX_SEATS = 16;
@@ -28,6 +34,23 @@ export const ACCENT_COLORS = [
 	"#8b5cf6",
 	"#14b8a6",
 ] as const;
+
+/** Rótulo em pt-BR das categorias de reprovação — fonte única do diálogo, do histórico e do dossiê. */
+export const REJECTION_CATEGORY_LABEL: Record<RunRejectionCategory, string> = {
+	instruction: "Fugiu da instrução",
+	wrong_info: "Informação errada",
+	format: "Formato errado",
+	tone: "Tom errado",
+	missing_step: "Faltou etapa",
+	out_of_scope: "Extrapolou o escopo",
+	other: "Outro",
+};
+
+export const REJECTION_SEVERITY_LABEL: Record<RunRejectionSeverity, string> = {
+	low: "Baixa",
+	medium: "Média",
+	high: "Alta",
+};
 
 export const newId = (): string =>
 	typeof crypto !== "undefined" && "randomUUID" in crypto

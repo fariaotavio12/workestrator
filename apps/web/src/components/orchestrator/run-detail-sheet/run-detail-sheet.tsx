@@ -6,6 +6,7 @@ import {
 } from "@/features/security/orchestrator-shared/runtime/model-client";
 import { continueRun, retryLastStep } from "@/features/security/orchestrator-shared/runtime/orchestrator-runtime";
 import type { RunRecord, Squad } from "@/features/security/orchestrator-shared/types";
+import { RunRejectionsSection } from "@/features/security/training";
 import { Download, Eye, FileCode, FileText, Image as ImageIcon, Play, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
@@ -147,6 +148,8 @@ export const RunDetailSheet = ({ open, onOpenChange, squad, run, onRan }: Props)
 				footer={footer}
 			>
 				<div className="flex flex-col gap-5">
+					<RunRejectionsSection squad={squad} run={run} />
+
 					{files.length > 0 && (
 						<section className="flex flex-col gap-2 rounded-lg border p-4">
 							<div className="flex items-center gap-2">

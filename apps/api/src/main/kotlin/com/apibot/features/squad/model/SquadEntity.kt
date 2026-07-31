@@ -54,6 +54,9 @@ class SquadEntity(
     @Column(nullable = false, columnDefinition = "boolean default false")
     var orchUseRunHistory: Boolean = false,
 
+    @Column(nullable = true)
+    var lessonsCollectionId: UUID? = null,
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 
@@ -85,6 +88,7 @@ class SquadEntity(
         orchModel = this.orchModel,
         orchMaxSteps = this.orchMaxSteps,
         orchUseRunHistory = this.orchUseRunHistory,
+        lessonsCollectionId = this.lessonsCollectionId,
         createdAt = this.createdAt,
         updatedAt = this.updatedAt,
     )
@@ -103,6 +107,7 @@ fun Squad.toEntity(): SquadEntity = SquadEntity(
     orchModel = this.orchModel,
     orchMaxSteps = this.orchMaxSteps,
     orchUseRunHistory = this.orchUseRunHistory,
+    lessonsCollectionId = this.lessonsCollectionId,
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
 )

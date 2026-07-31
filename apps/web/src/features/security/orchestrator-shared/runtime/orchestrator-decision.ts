@@ -31,7 +31,7 @@ export const UNPARSEABLE_DECISION_REASON = "Não consegui interpretar a decisão
  * esse exemplo antes da decisão real, o texto fica com mais de um bloco `{...}`, e um regex do
  * primeiro `{` ao último `}` junta os dois num JSON inválido.
  */
-const extractBalancedJsonBlocks = (raw: string): string[] => {
+export const extractBalancedJsonBlocks = (raw: string): string[] => {
 	const blocks: string[] = [];
 	let depth = 0;
 	let start = -1;

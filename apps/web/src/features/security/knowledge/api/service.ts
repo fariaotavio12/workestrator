@@ -18,13 +18,15 @@ const useInvalidateCollections = () => {
 	return () => queryClient.invalidateQueries({ queryKey: knowledgeKeys.collections() });
 };
 
+/** Criação de coleção chamável fora de componente React (o runtime do treinamento não é React). */
+export const createCollectionApi = async (payload: CollectionPayload): Promise<KnowledgeCollection> => {
+	const { data } = await api.post<KnowledgeCollection>("/knowledge", payload);
+	return data;
+};
+
 export const useCreateCollection = () => {
 	const invalidate = useInvalidateCollections();
-	return useMutation({
-		mutationFn: (payload: CollectionPayload) =>
-			api.post<KnowledgeCollection>("/knowledge", payload).then((r) => r.data),
-		onSuccess: invalidate,
-	});
+	return useMutation({ mutationFn: createCollectionApi, onSuccess: invalidate });
 };
 
 export const useUpdateCollection = () => {
@@ -64,14 +66,18 @@ export const useDocumentsQuery = (collectionId: string) =>
 		},
 	});
 
+/** Upload chamável fora de componente React (o runtime do treinamento sintetiza o `.md` da lição). */
+export const uploadKnowledgeDocumentApi = async (collectionId: string, file: File): Promise<KnowledgeDocument> => {
+	const form = new FormData();
+	form.append("file", file);
+	const { data } = await api.post<KnowledgeDocument>(`/knowledge/${collectionId}/documents`, form);
+	return data;
+};
+
 export const useUploadDocument = (collectionId: string) => {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (file: File) => {
-			const form = new FormData();
-			form.append("file", file);
-			return api.post<KnowledgeDocument>(`/knowledge/${collectionId}/documents`, form).then((r) => r.data);
-		},
+		mutationFn: (file: File) => uploadKnowledgeDocumentApi(collectionId, file),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: knowledgeKeys.documents(collectionId) });
 			queryClient.invalidateQueries({ queryKey: knowledgeKeys.collections() });

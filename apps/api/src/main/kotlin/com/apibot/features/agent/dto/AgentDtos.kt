@@ -41,6 +41,10 @@ data class UpdateAgentRequest(
     @Schema(description = "Character sprite name") val character: String? = null,
     @Schema(description = "Character gender") val gender: String? = null,
     @Schema(description = "Accent color") val accentColor: String? = null,
+    @Schema(description = "Why the system prompt changed — recorded on the version, ignored when the prompt is unchanged")
+    val promptChangeReason: String? = null,
+    @Schema(description = "Run that originated the prompt change") val sourceRunId: UUID? = null,
+    @Schema(description = "Rejection that originated the prompt change") val sourceRejectionId: String? = null,
 )
 
 @Schema(description = "Agent response")

@@ -204,6 +204,8 @@ const AgentFormDialogContent = ({ open, onOpenChange, squadId, onSaved, agent }:
 									setValue={setValue}
 									applyTemplate={applyTemplate}
 									toggleAiPanel={toggleAiPanel}
+									squadId={squadId}
+									agentId={agent?.id}
 								/>
 							</TabsContent>
 

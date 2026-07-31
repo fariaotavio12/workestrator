@@ -6,17 +6,22 @@ import com.apibot.features.agent.dto.CreateAgentRequest
 import com.apibot.features.agent.dto.UpdateAgentRequest
 import com.apibot.features.agent.model.Agent
 import com.apibot.features.agent.repository.AgentRepository
+import com.apibot.features.agentpromptversion.model.AgentPromptVersion
+import com.apibot.features.agentpromptversion.repository.AgentPromptVersionRepository
 import com.apibot.features.seat.repository.SeatRepository
 import com.apibot.features.squad.service.SquadService
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
 
+// Depende do repositório de versões, não do `AgentPromptVersionService` — este último depende deste
+// serviço para reverter, e injetar os dois um no outro seria referência circular de bean.
 @Service
 class AgentService(
     private val agentRepository: AgentRepository,
     private val seatRepository: SeatRepository,
     private val squadService: SquadService,
+    private val promptVersionRepository: AgentPromptVersionRepository,
 ) {
     fun createAgent(userId: UUID, squadId: UUID, request: CreateAgentRequest): Agent {
         squadService.getSquadForUser(userId, squadId)
@@ -56,6 +61,7 @@ class AgentService(
 
     fun updateAgent(userId: UUID, squadId: UUID, id: UUID, request: UpdateAgentRequest): Agent {
         val current = getAgentForUser(userId, squadId, id)
+        recordPromptVersionIfChanged(current, request)
         val updated = current.copy(
             name = request.name ?: current.name,
             role = request.role ?: current.role,
@@ -81,6 +87,30 @@ class AgentService(
         seatRepository.findAllBySquadId(squadId)
             .filter { it.agentId == id }
             .forEach { seatRepository.update(it.copy(agentId = null)) }
+        promptVersionRepository.deleteAllByAgentId(id)
         agentRepository.deleteById(id)
+    }
+
+    /**
+     * Guarda o texto **anterior** sempre que o `systemPrompt` muda — inclusive numa edição manual pelo
+     * formulário. Versionar só o que vem do treinamento deixaria o histórico com buracos exatamente
+     * onde alguém mexeu na mão, que é o caso que motivou a feature.
+     */
+    private fun recordPromptVersionIfChanged(current: Agent, request: UpdateAgentRequest) {
+        val next = request.systemPrompt ?: return
+        if (next == current.systemPrompt) return
+
+        promptVersionRepository.save(
+            AgentPromptVersion(
+                userId = current.userId,
+                squadId = current.squadId,
+                agentId = current.id,
+                version = (promptVersionRepository.countByAgentId(current.id) + 1).toInt(),
+                systemPrompt = current.systemPrompt,
+                reason = request.promptChangeReason,
+                sourceRunId = request.sourceRunId,
+                sourceRejectionId = request.sourceRejectionId,
+            )
+        )
     }
 }

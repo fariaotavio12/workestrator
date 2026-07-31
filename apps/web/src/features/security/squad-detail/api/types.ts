@@ -53,6 +53,7 @@ export type SquadDetailResponseDto = {
 	orchModel: string | null;
 	orchMaxSteps: number;
 	orchUseRunHistory?: boolean;
+	lessonsCollectionId?: string | null;
 	agents: AgentResponseDto[];
 	seats: SeatResponseDto[];
 	createdAt: string;
@@ -70,6 +71,7 @@ export type UpdateSquadPayload = {
 	orchModel?: string | null;
 	orchMaxSteps?: number;
 	orchUseRunHistory?: boolean;
+	lessonsCollectionId?: string | null;
 };
 
 /** Achata `OrchestratorConfig` (nested) pros campos flat que o backend espera em `PUT /squads/{id}`. */
@@ -96,6 +98,10 @@ export type AgentPayload = {
 	character?: string;
 	gender?: string;
 	accentColor?: string;
+	/** Só quando `systemPrompt` muda — o backend guarda o texto anterior como versão com essa procedência. */
+	promptChangeReason?: string;
+	sourceRunId?: string;
+	sourceRejectionId?: string;
 };
 
 /** Achata `Agent`/`AgentDraft` (modelRef nested) pros campos flat que o backend espera. */
@@ -174,6 +180,7 @@ export const mapSquadDetailDto = (dto: SquadDetailResponseDto): SquadDetail => (
 		maxSteps: dto.orchMaxSteps,
 		useRunHistory: dto.orchUseRunHistory ?? false,
 	},
+	lessonsCollectionId: dto.lessonsCollectionId ?? null,
 	createdAt: dto.createdAt,
 	updatedAt: dto.updatedAt,
 });

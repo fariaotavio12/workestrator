@@ -13,6 +13,7 @@ import {
 import { PROMPT_TEMPLATES } from "@/features/security/orchestrator-shared/data/prompt-templates";
 import { Download, Wand2 } from "lucide-react";
 import type { FieldErrors, UseFormSetValue } from "react-hook-form";
+import { AgentPromptHistory } from "./agent-prompt-history";
 import type { AgentFormValues } from "./schema";
 
 type Props = {
@@ -21,9 +22,20 @@ type Props = {
 	setValue: UseFormSetValue<AgentFormValues>;
 	applyTemplate: (templateId: string) => void;
 	toggleAiPanel: () => void;
+	squadId: string;
+	/** Ausente ao criar um agent — não há histórico antes da primeira alteração. */
+	agentId?: string;
 };
 
-export const AgentPromptTab = ({ systemPrompt, errors, setValue, applyTemplate, toggleAiPanel }: Props) => (
+export const AgentPromptTab = ({
+	systemPrompt,
+	errors,
+	setValue,
+	applyTemplate,
+	toggleAiPanel,
+	squadId,
+	agentId,
+}: Props) => (
 	<div className="flex flex-col gap-4">
 		<div className="flex flex-wrap items-center justify-between gap-3">
 			<div className="min-w-0">
@@ -83,5 +95,17 @@ export const AgentPromptTab = ({ systemPrompt, errors, setValue, applyTemplate, 
 				/>
 			</div>
 		</FieldWrapper>
+
+		{agentId && (
+			<div className="flex flex-col gap-3">
+				<div>
+					<Typography variant="title-sm">Histórico de versões</Typography>
+					<Typography variant="body-sm" className="text-muted-foreground">
+						Toda alteração do prompt guarda o texto anterior, com o motivo e o run de origem.
+					</Typography>
+				</div>
+				<AgentPromptHistory squadId={squadId} agentId={agentId} />
+			</div>
+		)}
 	</div>
 );
