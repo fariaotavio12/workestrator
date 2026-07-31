@@ -5,6 +5,7 @@ import com.apibot.features.agent.dto.CreateAgentRequest
 import com.apibot.features.agent.dto.UpdateAgentRequest
 import com.apibot.features.agent.model.toResponse
 import com.apibot.features.agent.service.AgentService
+import com.apibot.features.script.service.ScriptService
 import com.apibot.security.GetUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -28,6 +29,7 @@ import java.util.UUID
 @SecurityRequirement(name = "Bearer")
 class AgentController(
     private val agentService: AgentService,
+    private val scriptService: ScriptService,
 ) {
     @PostMapping
     @Operation(summary = "Add an agent to a squad")
@@ -37,14 +39,16 @@ class AgentController(
         @Valid @RequestBody request: CreateAgentRequest,
     ): ResponseEntity<AgentResponse> {
         val agent = agentService.createAgent(UUID.fromString(userId), squadId, request)
-        return ResponseEntity.status(HttpStatus.CREATED).body(agent.toResponse())
+        val scriptsById = scriptService.responsesByIdForUser(UUID.fromString(userId))
+        return ResponseEntity.status(HttpStatus.CREATED).body(agent.toResponse(scriptsById))
     }
 
     @GetMapping
     @Operation(summary = "List agents of a squad")
     fun listAgents(@GetUserId userId: String, @PathVariable squadId: UUID): ResponseEntity<List<AgentResponse>> {
         val agents = agentService.listAgents(UUID.fromString(userId), squadId)
-        return ResponseEntity.ok(agents.map { it.toResponse() })
+        val scriptsById = scriptService.responsesByIdForUser(UUID.fromString(userId))
+        return ResponseEntity.ok(agents.map { it.toResponse(scriptsById) })
     }
 
     @GetMapping("/{id}")
@@ -55,7 +59,8 @@ class AgentController(
         @PathVariable id: UUID,
     ): ResponseEntity<AgentResponse> {
         val agent = agentService.getAgentForUser(UUID.fromString(userId), squadId, id)
-        return ResponseEntity.ok(agent.toResponse())
+        val scriptsById = scriptService.responsesByIdForUser(UUID.fromString(userId))
+        return ResponseEntity.ok(agent.toResponse(scriptsById))
     }
 
     @PutMapping("/{id}")
@@ -67,7 +72,8 @@ class AgentController(
         @Valid @RequestBody request: UpdateAgentRequest,
     ): ResponseEntity<AgentResponse> {
         val agent = agentService.updateAgent(UUID.fromString(userId), squadId, id, request)
-        return ResponseEntity.ok(agent.toResponse())
+        val scriptsById = scriptService.responsesByIdForUser(UUID.fromString(userId))
+        return ResponseEntity.ok(agent.toResponse(scriptsById))
     }
 
     @DeleteMapping("/{id}")

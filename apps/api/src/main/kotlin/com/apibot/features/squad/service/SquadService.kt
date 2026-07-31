@@ -4,6 +4,7 @@ import com.apibot.features.agent.model.toResponse
 import com.apibot.features.agent.repository.AgentRepository
 import com.apibot.features.run.repository.RunRepository
 import com.apibot.features.seat.model.toResponse
+import com.apibot.features.script.service.ScriptService
 import com.apibot.features.seat.repository.SeatRepository
 import com.apibot.features.squad.domain.exception.SquadAccessDeniedException
 import com.apibot.features.squad.domain.exception.SquadNotFoundException
@@ -25,6 +26,7 @@ class SquadService(
     private val agentRepository: AgentRepository,
     private val seatRepository: SeatRepository,
     private val runRepository: RunRepository,
+    private val scriptService: ScriptService,
 ) {
     fun createSquad(userId: UUID, request: CreateSquadRequest): Squad {
         val squad = Squad(
@@ -55,6 +57,7 @@ class SquadService(
         val squad = getSquadForUser(userId, id)
         val agents = agentRepository.findAllBySquadId(id)
         val seats = seatRepository.findAllBySquadId(id)
+        val scriptsById = scriptService.responsesByIdForUser(userId)
 
         return SquadDetailResponse(
             id = squad.id,
@@ -68,7 +71,7 @@ class SquadService(
             orchModel = squad.orchModel,
             orchMaxSteps = squad.orchMaxSteps,
             orchUseRunHistory = squad.orchUseRunHistory,
-            agents = agents.map { it.toResponse() },
+            agents = agents.map { it.toResponse(scriptsById) },
             seats = seats.map { it.toResponse() },
             createdAt = squad.createdAt,
             updatedAt = squad.updatedAt,

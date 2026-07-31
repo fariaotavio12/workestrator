@@ -1,6 +1,7 @@
 package com.apibot.features.agent.model
 
 import com.apibot.features.agent.dto.AgentResponse
+import com.apibot.features.script.dto.ScriptResponse
 import java.time.Instant
 import java.util.UUID
 
@@ -35,7 +36,12 @@ data class Agent(
     val updatedAt: Instant = Instant.now(),
 )
 
-fun Agent.toResponse(): AgentResponse = AgentResponse(
+/**
+ * `scriptsById` é o índice das ferramentas do usuário (ver `ScriptService.responsesByIdForUser`). O
+ * agente sai daqui já com os scripts resolvidos porque quem executa não pode depender de uma segunda
+ * busca para descobrir quais ferramentas ele tem — um id sem par vira ausência silenciosa de tool.
+ */
+fun Agent.toResponse(scriptsById: Map<UUID, ScriptResponse> = emptyMap()): AgentResponse = AgentResponse(
     id = this.id,
     squadId = this.squadId,
     name = this.name,
@@ -44,6 +50,7 @@ fun Agent.toResponse(): AgentResponse = AgentResponse(
     providerId = this.providerId,
     model = this.model,
     scriptIds = this.scriptIds,
+    scripts = this.scriptIds.mapNotNull { scriptsById[it] },
     knowledgeCollectionIds = this.knowledgeCollectionIds,
     authBindings = this.authBindings,
     canExecute = this.canExecute,

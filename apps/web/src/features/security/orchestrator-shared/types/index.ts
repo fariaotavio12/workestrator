@@ -145,8 +145,14 @@ export type Agent = {
 	role: string;
 	systemPrompt: string;
 	modelRef: ModelRef;
-	/** Referências à biblioteca de scripts (`PersistedRoot.scripts`) — não guarda cópia, só o id. */
+	/** Referências à biblioteca de scripts — usadas nas escritas (formulário do agent) e na UI. */
 	scriptIds: string[];
+	/**
+	 * Ferramentas já resolvidas pelo backend (`AgentResponse.scripts`). O runtime lê daqui, nunca de um
+	 * cache separado de scripts: um agente que chega sem as próprias tools executaria em silêncio, com o
+	 * prompt certo e nenhuma ferramenta plugada.
+	 */
+	scripts: Script[];
 	/**
 	 * Bases de conhecimento (RAG) que este agente consulta durante o run — só os ids das coleções
 	 * (feature `knowledge`). Vazio = sem RAG. O runtime recupera top-K trechos dessas bases e injeta
@@ -270,6 +276,11 @@ export type Runtime = {
 	 * Só durante o passo — limpa a cada novo passo. Alimenta o painel "o que o agente está fazendo".
 	 */
 	liveActivity: LiveActivityItem[];
+	/**
+	 * Todas as chamadas de ferramenta do run atual (input+output), acumuladas por todo o run — não limpa
+	 * por passo. Alimenta o painel de debug "Ferramentas". Só em memória; não persiste no backend.
+	 */
+	toolLog: ToolCallRecord[];
 	/** Saída de terminal acumulada do passo atual (resultados de execução de ferramenta). */
 	liveTerminal: string;
 	/**
@@ -294,6 +305,24 @@ export type LiveActivityItem = {
 	/** Pensamento (thinking), input da ferramenta (tool) ou saída (output). */
 	detail?: string;
 	status?: "running" | "done" | "error";
+};
+
+/**
+ * Registro de uma chamada de ferramenta acumulado por todo o run (painel de debug) — sobrevive à
+ * troca de passo, ao contrário de `LiveActivityItem`. `id` pareia início (tool_use) e fim (tool_result).
+ */
+export type ToolCallRecord = {
+	id: string;
+	seatId?: string;
+	agentId?: string;
+	toolName: string;
+	input?: string;
+	output?: string;
+	status: "running" | "done" | "error";
+	startedAt: string;
+	endedAt?: string;
+	/** Só em tools `http` (provider API) — headers finais enviados no `fetch`, nunca visto pelo modelo. */
+	sentHeaders?: Record<string, string>;
 };
 
 export type Squad = {

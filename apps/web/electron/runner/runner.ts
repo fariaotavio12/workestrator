@@ -2,6 +2,7 @@ import crossSpawn from "cross-spawn";
 import {
 	buildHttpTool,
 	connectMcpTools,
+	parseTextToolCalls,
 	safeToolName,
 	type HttpToolDef,
 	type McpConnection,
@@ -1067,6 +1068,60 @@ const readReasoning = (source: ReasoningDelta | undefined): string =>
  */
 const THINKING_FLUSH_CHARS = 240;
 
+const THINK_OPEN = "<think>";
+const THINK_CLOSE = "</think>";
+
+type ThinkPiece = { text: string; reasoning: string };
+
+export class ThinkTagFilter {
+	private mode: "text" | "thinking" = "text";
+	private carry = "";
+
+	feed(chunk: string): ThinkPiece {
+		this.carry += chunk;
+		let text = "";
+		let reasoning = "";
+		for (;;) {
+			const buf = this.carry;
+			const marker = this.mode === "text" ? THINK_OPEN : THINK_CLOSE;
+			const idx = buf.toLowerCase().indexOf(marker);
+			if (idx >= 0) {
+				const before = buf.slice(0, idx);
+				if (this.mode === "text") text += before;
+				else reasoning += before;
+				this.carry = buf.slice(idx + marker.length);
+				this.mode = this.mode === "text" ? "thinking" : "text";
+				continue;
+			}
+			const holdBack = this.partialSuffixLength(buf, marker);
+			const safeLen = buf.length - holdBack;
+			if (safeLen > 0) {
+				const safe = buf.slice(0, safeLen);
+				if (this.mode === "text") text += safe;
+				else reasoning += safe;
+				this.carry = buf.slice(safeLen);
+			}
+			break;
+		}
+		return { text, reasoning };
+	}
+
+	/** Descarrega o que sobrou no carry quando o stream acaba, atribuído ao modo atual. */
+	finish(): ThinkPiece {
+		const remaining = this.carry;
+		this.carry = "";
+		return this.mode === "text" ? { text: remaining, reasoning: "" } : { text: "", reasoning: remaining };
+	}
+
+	private partialSuffixLength(buf: string, marker: string): number {
+		const maxLen = Math.min(buf.length, marker.length - 1);
+		for (let len = maxLen; len >= 1; len--) {
+			if (marker.startsWith(buf.slice(buf.length - len).toLowerCase())) return len;
+		}
+		return 0;
+	}
+}
+
 /**
  * Consome a resposta do `/chat/completions`. Aceita as duas formas: SSE (`stream: true`, o caminho
  * normal — texto sai ao vivo via `chunk`) e JSON único, porque nem todo servidor OpenAI-compat
@@ -1083,8 +1138,12 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 			choices?: { message?: { content?: string | null; tool_calls?: OpenAiToolCall[] } & ReasoningDelta }[];
 		};
 		const message = body.choices?.[0]?.message;
-		const text = message?.content ?? "";
-		const reasoning = readReasoning(message);
+		const rawText = message?.content ?? "";
+		const filter = new ThinkTagFilter();
+		const piece = filter.feed(rawText);
+		const tail = filter.finish();
+		const text = piece.text + tail.text;
+		const reasoning = readReasoning(message) + piece.reasoning + tail.reasoning;
 		if (text) writeSseEvent(res, "chunk", { text });
 		if (reasoning) writeSseEvent(res, "thinking", { text: reasoning });
 		return { text, reasoning, toolCalls: message?.tool_calls ?? [] };
@@ -1097,6 +1156,7 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 	let reasoning = "";
 	let thinkingBuffer = "";
 	const pending = new Map<number, { id: string; name: string; arguments: string }>();
+	const thinkFilter = new ThinkTagFilter();
 
 	const flushThinking = (force: boolean): void => {
 		if (!thinkingBuffer || (!force && thinkingBuffer.length < THINKING_FLUSH_CHARS)) return;
@@ -1126,8 +1186,16 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 				};
 				const delta = parsed.choices?.[0]?.delta;
 				if (delta?.content) {
-					text += delta.content;
-					writeSseEvent(res, "chunk", { text: delta.content });
+					const piece = thinkFilter.feed(delta.content);
+					if (piece.text) {
+						text += piece.text;
+						writeSseEvent(res, "chunk", { text: piece.text });
+					}
+					if (piece.reasoning) {
+						reasoning += piece.reasoning;
+						thinkingBuffer += piece.reasoning;
+						flushThinking(false);
+					}
 				}
 				const reasoningDelta = readReasoning(delta);
 				if (reasoningDelta) {
@@ -1149,6 +1217,15 @@ const readChatResponse = async (response: Response, res: ServerResponse): Promis
 		}
 	}
 
+	const tail = thinkFilter.finish();
+	if (tail.text) {
+		text += tail.text;
+		writeSseEvent(res, "chunk", { text: tail.text });
+	}
+	if (tail.reasoning) {
+		reasoning += tail.reasoning;
+		thinkingBuffer += tail.reasoning;
+	}
 	flushThinking(true);
 
 	const toolCalls = [...pending.entries()]
@@ -1286,7 +1363,21 @@ export const callOpenAiCompat = async (
 		const turn = await readChatResponse(response, res);
 		if (turn.reasoning) lastReasoning = turn.reasoning;
 
-		if (turn.toolCalls.length === 0) {
+		// Fallback pra modelos sem tool parser nativo no servidor (Gemma no vLLM): a call vem como
+		// texto no `content` em vez do campo `tool_calls`. Recupera ancorando nos nomes registrados —
+		// sem isso a "chamada" vira a resposta do agente e o coordenador redispacha em loop.
+		const toolCalls =
+			turn.toolCalls.length > 0
+				? turn.toolCalls
+				: tools.length > 0
+					? parseTextToolCalls(turn.text, new Set(byName.keys())).map((call, index) => ({
+							id: `text_${iteration}_${index}`,
+							type: "function" as const,
+							function: call,
+						}))
+					: [];
+
+		if (toolCalls.length === 0) {
 			const narratedToolName = toolDefinitions.length > 0 ? extractNarratedToolName(turn.text) : undefined;
 			if (narratedToolName) {
 				const tool = resolveToolCall(byName, narratedToolName);
@@ -1319,9 +1410,9 @@ export const callOpenAiCompat = async (
 		}
 
 		forcedToolName = undefined;
-		messages.push({ role: "assistant", content: turn.text || null, tool_calls: turn.toolCalls });
+		messages.push({ role: "assistant", content: turn.text || null, tool_calls: toolCalls });
 
-		for (const call of turn.toolCalls) {
+		for (const call of toolCalls) {
 			const tool = resolveToolCall(byName, call.function.name);
 			writeSseEvent(res, "tool_use", {
 				id: call.id,
@@ -1357,6 +1448,7 @@ export const callOpenAiCompat = async (
 				ok: result.ok,
 				label: call.function.name,
 				detail: result.text,
+				sentHeaders: result.sentHeaders,
 			});
 		}
 	}

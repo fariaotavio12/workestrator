@@ -18,9 +18,9 @@ import { tanStackQueryClient } from "@/app/api/clients";
 import { notify } from "@/components/toast/notify";
 import { providersKeys } from "@/features/security/models/api";
 import { squadDetailKeys, type SquadDetail } from "@/features/security/squad-detail/api";
-import type { Agent, ModelProvider, RunRecord, Seat } from "../types";
+import type { Agent, ModelProvider, RunRecord, Script, Seat } from "../types";
 import { useOrchestratorRuntimeStore } from "../model/use-orchestrator-runtime-store";
-import { callAgentStep } from "./model-client";
+import { callAgentStep, type AgentCallInput } from "./model-client";
 import { notifyOs } from "./os-notify";
 import { continueRun, retryLastStep, startRun } from "./orchestrator-runtime";
 
@@ -40,6 +40,7 @@ const agent = (overrides: Partial<Agent> & Pick<Agent, "id" | "name">): Agent =>
 	systemPrompt: "AGENT_PROMPT_MARKER",
 	modelRef: { providerId: "provider-1", model: "model-1" },
 	scriptIds: [],
+	scripts: [],
 	canExecute: false,
 	requiresCheckpoint: false,
 	requiresCheckpointAfter: false,
@@ -52,6 +53,19 @@ const agent = (overrides: Partial<Agent> & Pick<Agent, "id" | "name">): Agent =>
 });
 
 const seat = (id: string, agentId: string | null): Seat => ({ id, col: 1, row: 1, agentId });
+
+const script = (id: string, name: string): Script => ({
+	id,
+	name,
+	kind: "http",
+	method: "GET",
+	urlTemplate: "https://exemplo.test/{{cep}}",
+	createdAt: ISO,
+	updatedAt: ISO,
+});
+
+/** Payloads recebidos pela mock de `callAgentStep` — coordenador e agents, na ordem em que rodaram. */
+const agentCallInputs = (): AgentCallInput[] => vi.mocked(callAgentStep).mock.calls.map(([input]) => input);
 
 const squadDetail = (squadId: string, overrides: Partial<SquadDetail> = {}): SquadDetail => ({
 	id: squadId,
@@ -157,6 +171,47 @@ describe("orchestrator-runtime — notificações de ciclo de vida (Etapa 4.5)",
 		await vi.waitFor(() => {
 			expect(notify.error).toHaveBeenCalledWith("O orquestrador apontou uma cadeira inválida — execução encerrada.");
 		});
+	});
+});
+
+describe("orchestrator-runtime — o agent carrega as próprias ferramentas", () => {
+	it("manda as ferramentas do agent mesmo sem nenhum cache da lista de scripts", async () => {
+		const squadId = "squad-tools-embedded";
+		const tool = script("sc-1", "Buscar CEP");
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Ana", scriptIds: [tool.id], scripts: [tool] })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(agentCallInputs().some((input) => input.scripts?.some((s) => s.id === tool.id))).toBe(true);
+		});
+	});
+
+	it("aborta com erro explícito quando o agent tem scriptIds mas chega sem as ferramentas", async () => {
+		const squadId = "squad-tools-missing";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Ana", scriptIds: ["sc-1"], scripts: [] })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(notify.error).toHaveBeenCalledWith("Ferramentas do agent não foram carregadas.");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("aborted");
+		expect(agentCallInputs().some((input) => input.systemPrompt !== "COORDINATOR_PROMPT_MARKER")).toBe(false);
 	});
 });
 
