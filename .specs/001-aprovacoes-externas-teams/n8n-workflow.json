@@ -1,0 +1,78 @@
+{
+  "name": "Workestrator — aviso de checkpoint",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "workestrator-checkpoint",
+        "options": {}
+      },
+      "id": "50eb17f2-2fac-414e-9d54-599017c1543f",
+      "name": "Aviso do Workestrator",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [48, 144],
+      "webhookId": "a1b2c3d4-0001-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Payload do Workestrator: o corpo do POST fica em `body` no nó de webhook (typeVersion 2.1).\n// Ler `$json` direto (sem `.body`) devolve headers/params/query e todo campo de negócio vira undefined.\nconst p = $input.first().json.body;\n\n// ÚNICO lugar do sistema que conhece o esquema do chamado. O Workestrator manda `item.data` como\n// passthrough de propósito (design D15) — o backend não interpreta esses nomes.\nconst F = {\n  processo: 'NUM_PROCESS',\n  solicitante: 'SOLICITANTE_NOME',\n  necessidade: 'SOLICITANTE_NECESSIDADE',\n  criticidade: 'SOLICITANTE_CRITICIDADE_SOLICITANTE',\n  reclassificada: 'SOLICITANTE_CRITICIDADE_RECLASSIFICADA',\n  executor: 'EXECUTOR_RESPONSAVEL',\n};\n\n// `SOLICITANTE_NECESSIDADE` é texto livre digitado pelo solicitante — um `<` ou `&` solto quebraria o\n// HTML do card no Teams (mensagem truncada ou tags aparecendo cruas).\nconst esc = (v) => String(v == null || v === '' ? '—' : v)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst TD = 'border:1px solid #ddd;padding:6px 10px';\nconst linha = (rotulo, valor) =>\n  `<tr><td style=\"${TD};background:#f4f4f4;white-space:nowrap\"><b>${rotulo}</b></td>` +\n  `<td style=\"${TD}\">${esc(valor)}</td></tr>`;\n\nconst itens = Array.isArray(p.items) ? p.items : [];\n\n// Checkpoint sem itens (agente respondeu em prosa, não em lista JSON) — manda UMA mensagem de resumo.\n// Sem esse ramo, um checkpoint booleano não geraria mensagem nenhuma e o aviso sumiria em silêncio.\nif (itens.length === 0) {\n  const html = [\n    `<b>${esc(p.title)}</b>`,\n    esc(p.summary),\n    `<a href=\"${p.decisionUrl}\">Abrir no Workestrator</a>`,\n  ].join('<br>');\n  return [{ json: { html, approvalId: p.approvalId ?? null, itemId: null } }];\n}\n\n// Um item de saída por chamado ⇒ o nó do Teams roda uma vez por chamado, cada mensagem com o seu\n// próprio link de decisão. É o \"uma aprovação por chamado\" pedido.\nreturn itens.map((item, i) => {\n  const d = item.data || {};\n  const html = [\n    `<b>Chamado ${esc(d[F.processo] || item.ref)}</b> — ${i + 1} de ${itens.length}`,\n    `<table style=\"border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;margin-top:8px\">`,\n    linha('Solicitante', d[F.solicitante]),\n    linha('Necessidade', d[F.necessidade]),\n    linha('Criticidade informada', d[F.criticidade]),\n    linha('Reclassificação proposta', d[F.reclassificada]),\n    linha('Executor indicado', d[F.executor]),\n    `</table>`,\n    `<br><a href=\"${item.decisionUrl}\">Aprovar ou reprovar este chamado</a>`,\n  ].join('');\n  return { json: { html, approvalId: p.approvalId ?? null, itemId: item.id, ref: item.ref ?? null } };\n});"
+      },
+      "id": "ac999f87-dc4b-42e4-90b9-b29940ddbdef",
+      "name": "Montar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 144]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "chatId": {
+          "__rl": true,
+          "value": "19:145cbcc4-0fd3-459e-bfbf-974817a86c7d_73dd4902-c8f6-46c5-bb32-1aa9e8618eba@unq.gbl.spaces",
+          "mode": "list",
+          "cachedResultName": "Bruno Pereira, Alertas (oneOnOne)",
+          "cachedResultUrl": "https://teams.microsoft.com/l/chat/19%3A145cbcc4-0fd3-459e-bfbf-974817a86c7d_73dd4902-c8f6-46c5-bb32-1aa9e8618eba%40unq.gbl.spaces/0?tenantId=36cd9612-aae7-4af2-988e-7a834c3f9a0c"
+        },
+        "contentType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [432, 144],
+      "id": "038ebd7c-1751-4e02-ba4c-cf4a67687a6e",
+      "name": "Create chat message",
+      "webhookId": "1a9d6ebb-40cf-4236-99f8-bed8d6f8327f",
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "ioMbW4P9xYgwNNKH",
+          "name": "Alertas Via Teams"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Aviso do Workestrator": {
+      "main": [[{ "node": "Montar mensagem", "type": "main", "index": 0 }]]
+    },
+    "Montar mensagem": {
+      "main": [[{ "node": "Create chat message", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4b9566c8-5ab9-41b2-abae-21edcf0e33ed",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "31b6137faa4f70b76297422e6c6aa17742c8aa6191068c5ac1d8fbb97fb4e10c"
+  },
+  "id": "16DRpkZbI3X4RtBO",
+  "tags": []
+}

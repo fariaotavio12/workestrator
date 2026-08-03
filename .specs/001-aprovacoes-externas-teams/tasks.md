@@ -181,6 +181,44 @@ Code que monta a mensagem → HTTP Request no Graph). **Só as credenciais e o c
 - [ ] Configurar **Error workflow** em Workflow → Settings (não é pré-configurável no JSON).
 - [ ] Exportar o fluxo de volta e versionar junto do projeto sempre que mudar.
 
+## Fase 1.5 — Aprovação por item (D15/D16) ✅ implementado nesta sessão
+
+Motivada por uso real: o squad "Avaliação de Chamados de T.I" produz uma **lista** de chamados (agente
+`Otávio — Classificador Criticidade` devolve array JSON) e aprovar o lote num botão só perdia *quais*
+chamados passaram. Ver [`design.md` § Itens decidíveis](design.md#itens-decidíveis-d15).
+
+### Backend
+
+- [x] `ApprovalItem` + `ApprovalItemStatus` no domínio; coluna `items jsonb default '[]'::jsonb` na entidade.
+- [x] `items[]` em `CreateApprovalRequest` (com `id` opcional do cliente) e em `ApprovalResponse`.
+- [x] `POST /approvals/{id}/items/{itemId}/decide` + `ApprovalService.decideItem`.
+- [x] `decide` do pedido inteiro responde **422** quando há itens (`ItemizedApprovalRequiresPerItemDecision`).
+- [x] Resolução do pai por D16 (`approved` se algum item passou) + `feedback` agregado quando todos reprovam.
+- [x] Teto `app.approval.items-max-count` (200) → `TooManyApprovalItemsException`.
+- [x] **Lock de linha** (`findByIdForUpdate` + `@Transactional` em `decideItem` e no dispatcher) — sem ele,
+      duas decisões concorrentes em itens diferentes se sobrescreviam e o pedido travava em `PENDING` para
+      sempre, com o run pausado sem saída.
+- [x] `JavaTimeModule` no `sharedJsonMapper` — `ApprovalItem.decidedAt` é o primeiro `Instant` a passar por
+      ele, e no Jackson 2.19 um mapper pelado **lança** em `java.time` (toda decisão por item daria 500).
+- [x] `items[]`/`itemCount` no payload do n8n, com `decisionUrl` por item; payload do botão "Testar" idem.
+
+### Web
+
+- [x] `runtime/approval-items.ts` — `parseApprovalItems` (fence ```json, array em meio a prosa, heurística
+      genérica de `ref`/`label`) e `summarizeApprovalItems`. Módulo puro, sem estado nem rede.
+- [x] `enterCheckpoint` manda `items[]` e um `summary` **legível** (antes ia o JSON cru, truncado em 500).
+- [x] `ApprovalItemsPanel` compartilhado entre a tela de decisão e o `run-interaction-panel`.
+- [x] `?item=` destaca o item vindo do link do aviso; `applyApprovalDecision` adianta o run sem esperar o
+      watcher.
+- [x] Uma `RunRejection` por item reprovado, com `itemRef` — inclusive no caso misto (pedido aprovado com
+      alguns itens reprovados), que o caminho antigo perderia.
+
+### Compatibilidade
+
+- [x] Saída em prosa ⇒ `parseApprovalItems` devolve `[]` ⇒ checkpoint booleano de sempre. Nenhum squad
+      existente muda de comportamento; a coluna nova nasce com `default '[]'`, e o fluxo do n8n manda 1
+      mensagem de resumo quando `items` está vazio ou ausente (verificado executando o Code node).
+
 ## Fase 2 — Aprovador sem conta (só se o cenário aparecer)
 
 - [ ] Token opaco de uso único, prazo curto, ligado ao `approvalId`.

@@ -61,6 +61,8 @@ convite/token que ela usa (`SecureRandom` + Base64, útil só como referência d
 | D11 | **`ownerCanDecide` por agente** (default `true`) permite o dono se retirar da decisão | segregação de função é o caso onde aprovação externa mais importa: quem monta o squad não aprova o próprio trabalho. Sem isso, o dono só consegue *adicionar* quem decide, nunca *se remover* | só permitir adicionar aprovadores, mantendo o dono sempre apto — inviabiliza compliance |
 | D12 | **Retirar-se remove o poder de aprovar, nunca o de abortar** | é o antídoto do deadlock: aprovador indisponível não prende o run para sempre. E é coerente conceitualmente — abortar a própria execução é direito de dono; aprovar o conteúdo dela é a função delegada | dono perde tudo (run trava sem escapatória) ou dono mantém aprovação disfarçada (a segregação seria fake) |
 | D13 | **Política insatisfazível é rejeitada na escrita**, nos dois caminhos (salvar agente e remover do pool) | validar só ao salvar o agente deixaria a porta dos fundos aberta: remover o último aprovador do pool produziria um agente que ninguém pode aprovar, e o erro só apareceria no meio de um run | validar só na leitura/decisão — o problema apareceria com o run já pausado, no pior momento possível |
+| D15 | **Um pedido com N itens decidíveis**, não N pedidos | o motor do run modela checkpoint como *uma* pausa com resultado booleano; N pedidos exigiriam ensinar `settleCheckpoint`, o watcher e a UI de checkpoint a esperar N decisões e seguir com um subconjunto. Com itens dentro de um pedido, o run pausa uma vez (nada muda no motor) e a granularidade fica onde ela realmente importa: na decisão e no dado que sai dela. Ainda dá uma mensagem por item no Teams — o n8n divide `items[]` com um Split Out | N `ApprovalRequest`, um por item: pausa única viraria pausa múltipla, e "aprovou 3 de 5" não teria como voltar pro run |
+| D16 | Pedido com itens resolve **`approved` se ≥1 item aprovado**, `rejected` só se todos reprovados | preserva o contrato booleano que o motor já consome: aprovado → segue com o subconjunto aprovado; tudo reprovado → não há o que fazer adiante, aborta. Reprovar 2 de 20 não pode abortar o run inteiro — era justamente o caso de uso | exigir unanimidade (uma reprovação aborta tudo) ou tratar qualquer decisão como aprovação (perderia o sinal da reprovação) |
 
 ## Modelo de dados
 
@@ -112,7 +114,40 @@ Nova feature `apps/api/src/main/kotlin/com/apibot/features/approval/`, layout pa
 | `decidedByRole` | enum `OWNER \| APPROVER` nullable | para a trilha de auditoria (RF18) |
 | `decidedAt` | timestamptz nullable | |
 | `feedback` | text nullable | justificativa da reprovação |
+| `items` | jsonb `default '[]'` | itens decidíveis (D15); `[]` = pedido booleano de sempre |
 | `createdAt` / `updatedAt` | timestamptz | |
+
+### Itens decidíveis (D15)
+
+Quando o passo anterior produz uma **lista** (chamados de T.I., posts, pedidos), aprovar o lote inteiro num
+único botão perde a informação que mais importa: *quais* itens passaram. `items[]` dá um veredito por item
+sem multiplicar pedidos:
+
+```txt
+ApprovalItem {
+  id: uuid                  // atribuído pelo servidor; aceito do cliente quando ele quer correlacionar
+  ref: string?              // chave de negócio p/ humano ("227921") — heurística, nunca campo fixo
+  label: string?            // rótulo curto ("Danilo Santos")
+  data: object              // o item cru do agente, passthrough — o backend não interpreta
+  status: pending | approved | rejected
+  feedback: string?         // justificativa, obrigatória p/ reprovar (mesma regra do pedido)
+  decidedByUserId / decidedByRole / decidedAt
+}
+```
+
+`ref`/`label` saem de uma **heurística genérica** no runtime (primeira chave que casa `num|id|processo|
+codigo|ticket` e `nome|titulo|assunto|necessidade|descricao`), com fallback `Item N`. Não pode ser campo
+fixo: o mesmo checkpoint serve para qualquer domínio, e cravar `NUM_PROCESS` aqui amarraria o produto ao
+caso de T.I. de um squad. Renderização segue o mesmo princípio — a tela de decisão mostra `data` como pares
+chave/valor, sem conhecer nome de campo nenhum.
+
+Teto de itens por pedido (`app.approval.itemsMaxCount`, 200) — sem ele um agente em loop geraria um payload
+arbitrariamente grande, e o timeout curto do webhook (5s) transformaria isso num `notifyError` silencioso.
+
+**Resolução do pai (D16):** cada `decideItem` verifica se sobrou item pendente; ao fechar o último, o pedido
+vira `approved` se **algum** item foi aprovado, `rejected` se todos foram reprovados. O `decide` do pedido
+inteiro passa a responder **422** quando há itens — decidir o lote quando existe granularidade por item
+apagaria vereditos individuais sem o usuário perceber.
 
 > ⚠️ **Gotcha já registrado no repo:** enum `@Enumerated(STRING)` cria um `*_check` no Postgres que o
 > `ddl-auto=update` **não** atualiza quando um valor novo é adicionado (aconteceu com `scripts_kind_check` e
@@ -157,7 +192,8 @@ Todos exigem login (`@GetUserId`). **Nenhuma rota pública.**
 |---|---|---|---|
 | `POST` | `/approvals` | interno (chamado pelo runtime do dono) | registra o pedido e dispara o aviso |
 | `GET` | `/approvals/{id}` | dono **ou** aprovador atribuído (403 para os demais) | ler o pedido |
-| `POST` | `/approvals/{id}/decide` | quem o snapshot autoriza (ver abaixo) | `{ approved, feedback? }` |
+| `POST` | `/approvals/{id}/decide` | quem o snapshot autoriza (ver abaixo) | `{ approved, feedback? }` — decide o pedido inteiro; **rejeitado com 422 quando o pedido tem itens** (aí a decisão é por item) |
+| `POST` | `/approvals/{id}/items/{itemId}/decide` | idem `decide` | `{ approved, feedback? }` para **um item** (D15). Ao decidir o último item pendente, resolve o pedido pai por D16 |
 | `POST` | `/approvals/{id}/cancel` | dono **sempre**, mesmo sem poder decidir (D12) | run abortado/parado |
 | `POST` | `/approvals/{id}/renotify` | dono | reenviar aviso |
 | `GET` | `/approvals?runId=` | dono | trilha para o histórico do run |
@@ -211,6 +247,24 @@ conectar e 5s no total, **uma tentativa** — falhou, registra `notifyError`.
   "title": "Aprovação necessária antes de acionar Publicador",
   "summary": "texto curto, já truncado pela API",
   "decisionUrl": "https://app.workestrator.../dashboard/aprovacoes/{approvalId}",
+  "itemCount": 3,
+  "items": [
+    {
+      "id": "uuid",
+      "ref": "227921",
+      "label": "Danilo Santos",
+      "status": "pending",
+      "decisionUrl": "https://app.workestrator.../dashboard/aprovacoes/{approvalId}?item={itemId}",
+      "data": {
+        "NUM_PROCESS": "227921",
+        "SOLICITANTE_NOME": "Danilo Santos",
+        "SOLICITANTE_NECESSIDADE": "…",
+        "SOLICITANTE_CRITICIDADE_SOLICITANTE": "Alta",
+        "SOLICITANTE_CRITICIDADE_RECLASSIFICADA": "Baixa",
+        "EXECUTOR_RESPONSAVEL": "Thássio"
+      }
+    }
+  ],
   "approvers": [
     { "email": "ana@empresa.com", "displayName": "Ana Souza" }
   ],
@@ -228,7 +282,17 @@ conectar e 5s no total, **uma tentativa** — falhou, registra `notifyError`.
   àquele agente, resolvidos do snapshot (`ApprovalService.resolveApprovers`, via `UserRepository`), para o
   fluxo do n8n poder rotear dinamicamente por e-mail em vez de ter uma pessoa fixa configurada nele. O fluxo
   pode ignorar o campo e continuar mandando para um contato fixo — nenhuma mudança é exigida do lado dele.
-- `summary` — cortado no servidor. **Nunca** contém `toolLog`, valor de segredo ou artefato completo.
+- `items`/`itemCount` são **aditivos** (não pedem incremento de `version`) e só aparecem quando o checkpoint
+  tem itens decidíveis (D15). `data` é **passthrough**: o backend nunca interpreta o formato dos campos — o
+  esquema é do domínio de quem montou o squad (chamado de T.I., post, pedido…), e o Workestrator só carrega.
+  Consequência prática: o mapeamento de campos (`NUM_PROCESS`, `EXECUTOR_RESPONSAVEL`…) vive **no fluxo do
+  n8n**, único lugar que conhece o negócio, nunca no Kotlin nem no runtime.
+- `item.decisionUrl` abre a mesma tela do pedido com o item em foco (`?item=`) — permite uma mensagem por
+  item no Teams (Split Out), cada uma linkando o seu próprio chamado, sem rota nova nem token.
+- `summary` — cortado no servidor (`app.approval.summaryMaxChars`, 500). Por isso ele **nunca** carrega os
+  dados: quando há itens, o runtime compõe um resumo legível ("20 chamados, 6 reclassificados") e os dados
+  vão em `items[]`, que não é truncado. Despejar o artefato do agente aqui cortava no meio da palavra.
+  **Nunca** contém `toolLog`, valor de segredo ou artefato completo.
 - Resposta esperada: qualquer `2xx`, corpo ignorado.
 
 O `test` (RF6) envia o mesmo payload com `event: "checkpoint.opened"`, `approvalId` nulo e dados de exemplo.

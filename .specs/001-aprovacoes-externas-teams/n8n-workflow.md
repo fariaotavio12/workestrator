@@ -1,124 +1,83 @@
 # 001 · Anexo — Workflow do n8n (pronto para importar)
 
-Workflow completo que recebe o aviso do Workestrator e entrega no Teams para uma pessoa específica.
-**Depois de importar, só três coisas precisam ser corrigidas** — as duas credenciais e o id do chat. Estão
-todas marcadas com `SUBSTITUIR` no JSON.
+Workflow que recebe o aviso do Workestrator e entrega no Teams **uma mensagem por item** — um chamado por
+aprovação (design D15). O JSON versionado está em [`n8n-workflow.json`](n8n-workflow.json); importe esse
+arquivo direto (n8n → Workflows → *Import from File*).
 
 Contrato de entrada: [`design.md` § Contrato do payload](design.md#contrato-do-payload-para-o-n8n).
 
-## O que precisa ser corrigido
+## Uma mensagem por item
 
-| # | O quê | Onde | Como obter |
-|---|---|---|---|
-| 1 | **Credencial Header Auth** — valida que o `POST` veio do Workestrator | nó `Aviso do Workestrator` | criar em n8n → Credentials → *Header Auth*: `Name` = nome do header (ex.: `X-Workestrator-Token`), `Value` = um segredo aleatório. O **mesmo** par vai em `authHeaderName` + segredo da conexão de notificação no Workestrator |
-| 2 | **Credencial Microsoft Teams OAuth2** | nó `Enviar no Teams` | criar em n8n → Credentials → *Microsoft Teams OAuth2 API* e autorizar com a conta que vai enviar as mensagens |
-| 3 | **`SUBSTITUIR_CHAT_ID`** — o chat 1:1 do destinatário | URL do nó `Enviar no Teams` | ver [Como descobrir o chatId](#como-descobrir-o-chatid) |
+O nó `Montar mensagem` devolve **um item de saída por elemento de `items[]`**, então o nó do Teams roda uma
+vez por chamado e cada mensagem carrega o seu próprio `item.decisionUrl`. Não precisa de nó `Split Out`: o
+`return` de um array no Code node já produz N itens, e resolver no próprio Code node deixa o caso "sem itens"
+no mesmo lugar da lógica em vez de exigir um `IF` só para isso.
 
-Nada mais no workflow precisa ser editado para funcionar.
+Comportamento verificado (rodando o Code node contra o payload real, com 3 chamados):
 
-## Por que HTTP Request em vez do nó nativo do Teams
+| Entrada | Saída |
+|---|---|
+| `items[]` com 3 chamados | 3 mensagens, cada uma com `itemId` e link próprios |
+| `items: []` (agente respondeu em prosa) | **1** mensagem de resumo — o aviso nunca some |
+| payload sem o campo `items` (formato anterior) | 1 mensagem — retrocompatível |
+| `NUM_PROCESS` ou `SOLICITANTE_NECESSIDADE` ausente | célula com `—`, sem quebrar a tabela |
+| texto do solicitante com `<` ou `&` | escapado (`&lt;`, `&amp;`) — sem tag crua vazando |
 
-O nó `Microsoft Teams` do n8n tem a operação *Chat Message → Create*, e funciona. Aqui uso `HTTP Request`
-chamando o Microsoft Graph direto por dois motivos:
+## O mapeamento de campos vive aqui, e só aqui
 
-- os nomes de parâmetro do nó nativo variam entre versões do n8n, e um JSON de importação com parâmetro
-  errado chega quebrado — enquanto `HTTP Request` + Graph é estável;
-- a credencial continua sendo a **mesma** do nó nativo (`predefinedCredentialType` →
-  `microsoftTeamsOAuth2Api`), então não há setup extra de autenticação.
+O objeto `F` no topo do Code node é o **único lugar do sistema** que conhece `NUM_PROCESS`,
+`SOLICITANTE_NECESSIDADE`, `EXECUTOR_RESPONSAVEL` e companhia. O Workestrator manda `item.data` como
+passthrough de propósito: o esquema pertence ao domínio de quem montou o squad, e cravá-lo no Kotlin ou no
+runtime amarraria o produto ao caso de uso de T.I. de um squad só. Mudou o esquema do agente? Muda `F`, e
+nada mais.
 
-Se preferir o nó nativo, troque o terceiro nó e mantenha os dois primeiros — o resto do workflow não muda.
+## Dois bugs que a versão anterior deste fluxo tinha
 
-> ⚠️ **A confirmar no primeiro teste:** a credencial Teams OAuth2 do n8n precisa ter escopo que permita
-> enviar mensagem de chat (`ChatMessage.Send`). Se o Graph responder **403**, o caminho é usar uma credencial
-> *Microsoft Entra Service Principal* ou uma OAuth2 genérica onde você controla os escopos. Isso não muda a
-> estrutura do workflow, só a credencial do nó de envio.
+| Bug | Sintoma | Correção |
+|---|---|---|
+| Code node lia `$input.all().map(i => i.json)` | no webhook v2.1 o corpo do POST está em `$json.**body**`; sem isso todo campo era `undefined` — a tabela chegava com `—` em tudo e "temos 1 chamados" | lê `$input.first().json.body` |
+| Campos de negócio buscados na raiz do payload | `processo`/`necessidade`/… nunca existiram no contrato; os dados do agente ficavam presos dentro de `summary`, que o backend trunca em 500 chars (cortava no meio da palavra) | dados vêm de `items[].data`, sem truncamento; `summary` virou só um resumo legível |
 
-## O JSON
+## Falta endurecer: autenticação do webhook
 
-```json
-{
-  "name": "Workestrator — aviso de checkpoint",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "workestrator-checkpoint",
-        "authentication": "headerAuth",
-        "responseMode": "onReceived",
-        "options": {}
-      },
-      "id": "a1b2c3d4-0001-4000-8000-000000000001",
-      "name": "Aviso do Workestrator",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [-220, 0],
-      "webhookId": "a1b2c3d4-0001-4000-8000-000000000001",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "SUBSTITUIR",
-          "name": "Workestrator — segredo do webhook"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const p = $input.first().json.body;\nconst momento = p.checkpointKind === 'before' ? 'antes de agir' : 'já agiu, aguardando validação';\nconst partes = [\n  `<b>${p.title}</b>`,\n  p.summary || null,\n  `<i>${momento}</i>`,\n  `<a href=\"${p.decisionUrl}\">Abrir no Workestrator</a>`\n].filter(Boolean);\nreturn [{ json: { html: partes.join('<br>'), approvalId: p.approvalId ?? null } }];"
-      },
-      "id": "a1b2c3d4-0002-4000-8000-000000000002",
-      "name": "Montar mensagem",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [0, 0]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://graph.microsoft.com/v1.0/chats/SUBSTITUIR_CHAT_ID/messages",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "microsoftTeamsOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ body: { contentType: 'html', content: $json.html } }) }}",
-        "options": {}
-      },
-      "id": "a1b2c3d4-0003-4000-8000-000000000003",
-      "name": "Enviar no Teams",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [220, 0],
-      "credentials": {
-        "microsoftTeamsOAuth2Api": {
-          "id": "SUBSTITUIR",
-          "name": "Microsoft Teams — conta remetente"
-        }
-      }
-    }
-  ],
-  "connections": {
-    "Aviso do Workestrator": {
-      "main": [[{ "node": "Montar mensagem", "type": "main", "index": 0 }]]
-    },
-    "Montar mensagem": {
-      "main": [[{ "node": "Enviar no Teams", "type": "main", "index": 0 }]]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "pinData": {}
-}
-```
+O JSON entregue **não** tem `headerAuth`, para importar e funcionar sem depender de credencial nova. Enquanto
+isso, qualquer um com a URL do webhook dispara mensagem no seu Teams. Para fechar (2 minutos):
+
+1. n8n → Credentials → *Header Auth*: `Name` = `X-Workestrator-Token`, `Value` = um segredo aleatório.
+2. No nó `Aviso do Workestrator`, marcar *Authentication* → *Header Auth* e selecionar a credencial.
+3. No Workestrator, na conexão de notificação, preencher `authHeaderName` = `X-Workestrator-Token` e o
+   segredo com o **mesmo** valor.
+
+Fazer os três juntos — só o passo 2 sem o 3 faz o n8n rejeitar os avisos e o pedido gravar `notifyError`.
+
+## Sobre o botão "Testar conexão"
+
+O teste manda o payload real com **dois itens de exemplo**, então ele exercita o caminho de `items[]` (você
+recebe duas mensagens). As chaves de `data` do teste são genéricas (`exemplo`), não as suas — o backend não
+tem como conhecer o esquema de cada squad. Resultado esperado: as mensagens chegam com as células em `—`.
+Isso valida conectividade, credencial e formato; o mapeamento real só aparece num checkpoint de verdade.
+
+## Por que o nó nativo do Teams (e não HTTP Request)
+
+Este fluxo usa `n8n-nodes-base.microsoftTeams` (*Chat Message → Create*), que é o que já está funcionando na
+instância — trocar por `HTTP Request` + Microsoft Graph só para uniformizar exigiria refazer a credencial sem
+ganho nenhum. O `chatId` fica no parâmetro do nó, não numa URL.
+
+> ⚠️ A credencial Teams OAuth2 precisa de escopo que permita enviar mensagem de chat (`ChatMessage.Send`).
+> Um **403** no envio é escopo, não estrutura do fluxo: o caminho é uma credencial *Microsoft Entra Service
+> Principal* ou uma OAuth2 genérica onde você controla os escopos.
 
 ## Passo a passo
 
-1. n8n → **Workflows → Import from clipboard** → colar o JSON acima.
-2. Criar a credencial **Header Auth** (item 1 da tabela) e selecioná-la no nó `Aviso do Workestrator`.
-3. Criar a credencial **Microsoft Teams OAuth2 API** (item 2) e selecioná-la no nó `Enviar no Teams`.
-4. Descobrir o `chatId` e substituir na URL do nó `Enviar no Teams` (item 3).
-5. **Ativar** o workflow e copiar a *Production URL* do nó de webhook.
-6. No Workestrator: cadastrar a conexão de notificação com essa URL, o nome do header e o segredo — os
-   mesmos da credencial Header Auth.
-7. Clicar em **Testar** na conexão do Workestrator. Deve chegar uma mensagem de exemplo no Teams.
+1. n8n → **Workflows → Import from File** → [`n8n-workflow.json`](n8n-workflow.json).
+2. Conferir se o nó `Create chat message` está com a credencial **Microsoft Teams OAuth2** e o `chatId` certo
+   (o JSON já vem com os da instância atual — ver [Como descobrir o chatId](#como-descobrir-o-chatid) se mudar
+   de destinatário).
+3. **Ativar** o workflow e copiar a *Production URL* do nó de webhook.
+4. No Workestrator, cadastrar/atualizar a conexão de notificação com essa URL.
+5. Clicar em **Testar** na conexão — devem chegar **duas** mensagens de exemplo (ver a seção do botão acima).
+6. Opcional, recomendado: fechar a autenticação do webhook (seção
+   [Falta endurecer](#falta-endurecer-autenticação-do-webhook)).
 
 ## Como descobrir o chatId
 
@@ -141,8 +100,12 @@ lista chat que não existe.
 - **Error workflow.** Em *Workflow → Settings → Error workflow*, apontar para um workflow de erro. Sem isso,
   uma execução que falha é silenciosa, e a única pista fica no `notifyError` do Workestrator. Não dá para
   pré-configurar no JSON porque depende de um workflow que só existe na sua instância.
-- **Versionar este JSON.** Exportar de volta e commitar junto do projeto sempre que o fluxo mudar. Fluxo
-  editado à mão sem revisão é o modo de falha mais comum desse tipo de integração.
+- **Versionar este JSON.** Exportar de volta para `n8n-workflow.json` e commitar sempre que o fluxo mudar.
+  Fluxo editado à mão sem revisão é o modo de falha mais comum desse tipo de integração — os dois bugs da
+  seção acima entraram exatamente assim.
+- **Cuidado com o teto de mensagens.** Um lote de 60 chamados vira 60 mensagens no Teams. Se isso virar ruído,
+  o lugar de agrupar é aqui (uma mensagem a cada N itens), não no Workestrator — a granularidade da *decisão*
+  segue sendo por item de qualquer forma.
 - **Não colocar regra de negócio aqui.** O workflow formata e entrega. Qualquer decisão é do Workestrator —
   quem decide precisa estar autenticado lá, e é isso que a
   [spec](spec.md#fronteira-do-sistema) garante.
