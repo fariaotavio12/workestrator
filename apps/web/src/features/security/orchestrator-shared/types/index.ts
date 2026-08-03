@@ -270,6 +270,34 @@ export type ApprovalStatus = "pending" | "approved" | "rejected" | "canceled";
 
 export type ApprovalDecidedByRole = "owner" | "approver";
 
+export type ApprovalItemStatus = "pending" | "approved" | "rejected";
+
+/**
+ * Item ainda não registrado no backend — o que `parseApprovalItems` extrai da saída do passo anterior antes
+ * do `POST /approvals`. Sem `id`: quem atribui é o servidor, e o runtime usa os itens que voltam na resposta.
+ */
+export type ApprovalItemDraft = {
+	ref?: string;
+	label?: string;
+	data: Record<string, unknown>;
+};
+
+/**
+ * Item decidível de um pedido (design D15). `data` é passthrough — a tela renderiza par chave/valor sem
+ * conhecer nome de campo nenhum, porque o esquema pertence ao domínio de quem montou o squad.
+ */
+export type ApprovalItem = {
+	id: string;
+	ref?: string | null;
+	label?: string | null;
+	data: Record<string, unknown>;
+	status: ApprovalItemStatus;
+	feedback?: string | null;
+	decidedByUserId?: string | null;
+	decidedByRole?: ApprovalDecidedByRole | null;
+	decidedAt?: string | null;
+};
+
 /**
  * Pedido de aprovação de um checkpoint (ver .specs/001-aprovacoes-externas-teams). Espelha
  * `ApprovalResponse` do backend — a autorização (quem pode decidir) é resolvida e validada lá, nunca
@@ -296,6 +324,11 @@ export type ApprovalRequest = {
 	canDecide: boolean;
 	/** Só o dono, mesmo com `ownerCanDecide: false` (D12) — abortar não é decidir. */
 	canCancel: boolean;
+	/**
+	 * Itens decidíveis (D15). Vazio ⇒ pedido booleano de sempre. Com itens, o `decide` do pedido inteiro
+	 * responde 422 e a decisão é sempre por item — a tela combina `canDecide` com o `status` de cada item.
+	 */
+	items: ApprovalItem[];
 	createdAt: string;
 	updatedAt: string;
 };
@@ -499,6 +532,12 @@ export type RunRejection = {
 	agentId?: string;
 	/** Passo (stepId) responsável pelo erro, se diferente do passo do checkpoint. */
 	blamedStepId?: string;
+	/**
+	 * Chave de negócio do item reprovado (design D15) — presente só em checkpoint com revisão por item. O
+	 * treinamento (002) precisa saber *qual* item falhou; sem isso todas as reprovações de um lote ficariam
+	 * indistinguíveis entre si.
+	 */
+	itemRef?: string;
 	checkpointKind: "before" | "after";
 	reason: string;
 	category?: RunRejectionCategory;

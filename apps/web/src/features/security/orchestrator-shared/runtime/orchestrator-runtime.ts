@@ -53,6 +53,7 @@ import {
 } from "./model-client";
 import { isApiOnlySquad } from "./squad-readiness";
 import { notifyOs } from "./os-notify";
+import { parseApprovalItems, summarizeApprovalItems } from "./approval-items";
 import { startApprovalWatch, stopApprovalWatch } from "./approval-watcher";
 import { parseCoordinatorDecision, UNPARSEABLE_DECISION_REASON } from "./orchestrator-decision";
 import { cancelAdvance, runAbortable } from "./runner-controllers";
@@ -204,6 +205,44 @@ const recordRejection = (squadId: string, rejection: Omit<RunRejection, "id" | "
 		...run,
 		rejections: [...(run.rejections ?? []), { ...rejection, id: newId(), createdAt: nowIso() }],
 	}));
+};
+
+/**
+ * Grava as reprovações de um pedido já decidido. Com itens (design D15) grava **uma por item reprovado**,
+ * cada uma com a sua justificativa e a chave de negócio em `itemRef` — o treinamento (002) precisa saber
+ * *qual* item falhou, não que "o lote foi reprovado". Sem itens, cai no comportamento de um registro só.
+ */
+const recordApprovalRejections = (
+	squadId: string,
+	approval: ApprovalRequest,
+	seatId: string | null,
+	agentId: string | undefined,
+	checkpointKind: ApprovalCheckpointKind | null,
+): void => {
+	const rejectedItems = approval.items.filter((item) => item.status === "rejected");
+	if (rejectedItems.length > 0) {
+		rejectedItems.forEach((item) => {
+			recordRejection(squadId, {
+				seatId: seatId ?? "",
+				agentId,
+				checkpointKind: checkpointKind ?? "before",
+				reason: item.feedback ?? "",
+				itemRef: item.ref ?? undefined,
+				decidedBy: item.decidedByUserId ?? undefined,
+				decidedByRole: item.decidedByRole ?? undefined,
+			});
+		});
+		return;
+	}
+	if (approval.status !== "rejected") return;
+	recordRejection(squadId, {
+		seatId: seatId ?? "",
+		agentId,
+		checkpointKind: checkpointKind ?? "before",
+		reason: approval.feedback ?? "",
+		decidedBy: approval.decidedByUserId ?? undefined,
+		decidedByRole: approval.decidedByRole ?? undefined,
+	});
 };
 
 /** Id real do run no backend, por squad — só existe enquanto o run está ativo (mesmo ciclo de vida de
@@ -737,6 +776,11 @@ const enterCheckpoint = (
 	notifyBody: string,
 	summary: string,
 ): void => {
+	// Lista JSON no artefato do passo anterior ⇒ revisão item a item (design D15). Prosa ⇒ `[]`, e o
+	// checkpoint segue booleano como sempre — é o que mantém squads existentes intactos.
+	const items = parseApprovalItems(summary);
+	const digest = items.length > 0 ? summarizeApprovalItems(items) : null;
+
 	patchRuntime(squadId, (r) => ({
 		...r,
 		status: "checkpoint",
@@ -770,7 +814,10 @@ const enterCheckpoint = (
 				agentId: agent.id,
 				checkpointKind: kind,
 				title,
-				summary: truncate(summary, 2000),
+				// Com itens, o `summary` vira o resumo legível e os dados viajam em `items[]` — despejar o
+				// artefato aqui fazia o teto de 500 chars do backend cortar no meio da palavra.
+				summary: digest ?? truncate(summary, 2000),
+				items: items.length > 0 ? items : undefined,
 			});
 			// O checkpoint pode já ter sido resolvido (ou trocado de cadeira) enquanto o POST estava em
 			// voo — não pisar num estado que já seguiu adiante.
@@ -810,14 +857,7 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 	const byApprover = approval.decidedByRole === "approver";
 
 	if (approval.status === "rejected") {
-		recordRejection(squadId, {
-			seatId: seatId ?? "",
-			agentId: agent?.id,
-			checkpointKind: checkpointKind ?? "before",
-			reason: approval.feedback ?? "",
-			decidedBy: approval.decidedByUserId ?? undefined,
-			decidedByRole: approval.decidedByRole ?? undefined,
-		});
+		recordApprovalRejections(squadId, approval, seatId, agent?.id, checkpointKind);
 		appendLog(squadId, `Checkpoint rejeitado${byApprover ? " por um aprovador" : ""}.`);
 		patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
 		finishRun(squadId, "aborted");
@@ -831,7 +871,17 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 		return;
 	}
 
-	appendLog(squadId, `Checkpoint aprovado${byApprover ? " por um aprovador" : ""}.`);
+	// Caso misto: pedido aprovado (D16 — algum item passou) mas com itens reprovados no meio. Essas
+	// reprovações são justamente o insumo do treinamento (002) e se perderiam se só o caminho "rejected"
+	// gravasse — aprovar o lote não apaga o que foi reprovado dentro dele.
+	recordApprovalRejections(squadId, approval, seatId, agent?.id, checkpointKind);
+	const rejectedCount = approval.items.filter((item) => item.status === "rejected").length;
+	appendLog(
+		squadId,
+		rejectedCount > 0
+			? `Checkpoint aprovado${byApprover ? " por um aprovador" : ""} — ${rejectedCount} item(ns) reprovado(s).`
+			: `Checkpoint aprovado${byApprover ? " por um aprovador" : ""}.`,
+	);
 	patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
 
 	if (checkpointKind === "after") {
@@ -1623,6 +1673,18 @@ export const resolveCheckpoint = (squadId: string, approved: boolean, rejection?
 			}
 			notify.error("Não foi possível registrar a decisão — tente de novo.");
 		});
+};
+
+/**
+ * Aplica ao run uma decisão que a UI de itens (design D15) acabou de registrar, sem esperar o próximo tick
+ * do `approval-watcher` — fechar o último item e ver o run parado por até 10s pareceria travado.
+ *
+ * Seguro chamar em paralelo com o watcher: `settleCheckpoint` já ignora quem chega depois (guarda de
+ * `status`/`pendingApprovalId`), então no pior caso o segundo é um no-op — nunca um duplo avanço.
+ */
+export const applyApprovalDecision = (squadId: string, approval: ApprovalRequest): void => {
+	if (approval.status === "pending") return;
+	settleCheckpoint(squadId, approval);
 };
 
 /** Responde a pergunta que um agent fez no meio do turno (`runtime.pendingQuestion`) e ele continua. */

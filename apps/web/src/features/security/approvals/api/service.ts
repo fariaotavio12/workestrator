@@ -27,6 +27,19 @@ export const decideApprovalApi = async (id: string, payload: DecideApprovalPaylo
 	return data;
 };
 
+/**
+ * Decide **um item** de um pedido com granularidade por item (design D15). Mesma semântica de 409 do
+ * `decideApprovalApi`, aplicada ao item: quem chegou depois recebe o pedido com aquele item já resolvido.
+ */
+export const decideApprovalItemApi = async (
+	id: string,
+	itemId: string,
+	payload: DecideApprovalPayload,
+): Promise<ApprovalRequest> => {
+	const { data } = await api.post<ApprovalRequest>(`/approvals/${id}/items/${itemId}/decide`, payload);
+	return data;
+};
+
 /** Lê o `ApprovalRequest` do corpo de um 409 de `decideApprovalApi` — `undefined` para qualquer outro erro. */
 export const extractApprovalFromConflict = (error: unknown): ApprovalRequest | undefined => {
 	const response = (error as { response?: { status?: number; data?: ApprovalRequest } })?.response;

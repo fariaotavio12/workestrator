@@ -1,4 +1,8 @@
-import type { ApprovalCheckpointKind, ApprovalStatus } from "@/features/security/orchestrator-shared/types";
+import type {
+	ApprovalCheckpointKind,
+	ApprovalItemDraft,
+	ApprovalStatus,
+} from "@/features/security/orchestrator-shared/types";
 
 export type CreateApprovalPayload = {
 	squadId: string;
@@ -8,6 +12,8 @@ export type CreateApprovalPayload = {
 	checkpointKind: ApprovalCheckpointKind;
 	title: string;
 	summary: string;
+	/** Itens decidíveis (design D15) — omitido/vazio cria o pedido booleano de sempre. */
+	items?: ApprovalItemDraft[];
 };
 
 export type DecideApprovalPayload = {
