@@ -2,8 +2,9 @@ import { cn } from "@/app/utils/cn";
 import { Button } from "@/components/button";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, X } from "lucide-react";
 import * as React from "react";
+import { useSheetWidth } from "./use-sheet-width";
 
 const Sheet = SheetPrimitive.Root;
 
@@ -150,6 +151,11 @@ type AppSheetProps = {
 	headerLeading?: React.ReactNode;
 	headerTrailing?: React.ReactNode;
 	onAction?: () => void;
+	/** Habilita arrastar a borda esquerda e o botão de maximizar; a largura escolhida é lembrada. */
+	resizable?: boolean;
+	/** Identifica a largura salva no localStorage — obrigatório na prática quando `resizable`. */
+	widthKey?: string;
+	minWidth?: number;
 };
 
 const AppSheet = ({
@@ -173,60 +179,99 @@ const AppSheet = ({
 	headerLeading,
 	headerTrailing,
 	onAction,
-}: AppSheetProps) => (
-	<Sheet open={open} onOpenChange={onOpenChange}>
-		{trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
-		<SheetContent
-			side="right"
-			className={cn("flex w-full flex-col p-0 sm:max-w-xl", contentClassName)}
-			overlayClassName={overlayClassName}
-		>
-			<SheetHeader className={cn("border-border shrink-0 border-b p-6 pr-16", headerClassName)}>
-				<div className="flex w-full items-start justify-between gap-6">
-					<div className="flex min-w-0 items-center gap-4">
-						{headerLeading}
-						<div className="min-w-0">
-							<SheetTitle>{title}</SheetTitle>
-							{description && <SheetDescription className={descriptionClassName}>{description}</SheetDescription>}
+	resizable,
+	widthKey,
+	minWidth,
+}: AppSheetProps) => {
+	const { style, maximized, startDrag, onHandleKeyDown, toggleMaximized, resetWidth } = useSheetWidth({
+		storageKey: widthKey,
+		minWidth,
+		enabled: resizable === true,
+	});
+
+	return (
+		<Sheet open={open} onOpenChange={onOpenChange}>
+			{trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
+			<SheetContent
+				side="right"
+				className={cn("flex w-full flex-col p-0 sm:max-w-xl", contentClassName)}
+				overlayClassName={overlayClassName}
+				style={style}
+			>
+				<SheetHeader
+					className={cn("border-border shrink-0 border-b p-6 pr-16", resizable && "sm:pr-28", headerClassName)}
+				>
+					<div className="flex w-full items-start justify-between gap-6">
+						<div className="flex min-w-0 items-center gap-4">
+							{headerLeading}
+							<div className="min-w-0">
+								<SheetTitle>{title}</SheetTitle>
+								{description && <SheetDescription className={descriptionClassName}>{description}</SheetDescription>}
+							</div>
 						</div>
+						{headerTrailing}
 					</div>
-					{headerTrailing}
-				</div>
-			</SheetHeader>
+				</SheetHeader>
 
-			<div className={cn("flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6", bodyClassName)}>
-				{loading ? (
-					<div className="flex flex-1 items-center justify-center">
-						<Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
-					</div>
-				) : (
-					children
-				)}
-			</div>
-
-			{showFooter && (
-				<div className="border-border bg-background flex justify-end gap-3 border-t px-6 py-5 sm:px-8">
-					{footer ?? (
-						<>
-							{showCancel && (
-								<SheetClose asChild>
-									<Button variant="outline" size="sm">
-										Cancelar
-									</Button>
-								</SheetClose>
-							)}
-							{onAction && (
-								<Button size="sm" disabled={actionDisabled || loading} onClick={onAction}>
-									{actionLabel ?? "Confirmar"}
-								</Button>
-							)}
-						</>
+				<div className={cn("flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6", bodyClassName)}>
+					{loading ? (
+						<div className="flex flex-1 items-center justify-center">
+							<Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+						</div>
+					) : (
+						children
 					)}
 				</div>
-			)}
-		</SheetContent>
-	</Sheet>
-);
+
+				{showFooter && (
+					<div className="border-border bg-background flex justify-end gap-3 border-t px-6 py-5 sm:px-8">
+						{footer ?? (
+							<>
+								{showCancel && (
+									<SheetClose asChild>
+										<Button variant="outline" size="sm">
+											Cancelar
+										</Button>
+									</SheetClose>
+								)}
+								{onAction && (
+									<Button size="sm" disabled={actionDisabled || loading} onClick={onAction}>
+										{actionLabel ?? "Confirmar"}
+									</Button>
+								)}
+							</>
+						)}
+					</div>
+				)}
+
+				{resizable && (
+					<>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							onClick={toggleMaximized}
+							aria-label={maximized ? "Restaurar largura do painel" : "Maximizar painel"}
+							className="text-muted-foreground hover:text-foreground absolute top-5 right-[3.75rem] z-10 hidden rounded-full sm:flex"
+						>
+							{maximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+						</Button>
+						<div
+							role="separator"
+							aria-orientation="vertical"
+							aria-label="Redimensionar painel"
+							tabIndex={0}
+							onPointerDown={startDrag}
+							onKeyDown={onHandleKeyDown}
+							onDoubleClick={resetWidth}
+							className="hover:bg-primary/40 focus-visible:bg-primary/40 absolute inset-y-0 left-0 z-20 hidden w-1.5 cursor-col-resize transition-colors focus:outline-none sm:block"
+						/>
+					</>
+				)}
+			</SheetContent>
+		</Sheet>
+	);
+};
 
 export {
 	AppSheet,

@@ -17,7 +17,7 @@ import {
 	runStepEndpointAvailable,
 } from "@/features/security/orchestrator-shared/runtime/model-client";
 import { ATTENTION_RUN_STATUSES, RUN_STATUS_LABEL } from "@/features/security/orchestrator-shared/data/constants";
-import { AlertTriangle, MonitorDown, Play, Save } from "lucide-react";
+import { AlertTriangle, MonitorDown, PanelLeftClose, PanelLeftOpen, Play, Save } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import {
@@ -49,6 +49,15 @@ import { cn } from "@/app/utils/cn";
 import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
 
 const EMPTY_RUN_IDS: string[] = [];
+const ACTIVITY_MAP_KEY = "workestrator:run-activity-map-collapsed";
+
+const readMapCollapsed = (): boolean => {
+	try {
+		return window.localStorage.getItem(ACTIVITY_MAP_KEY) === "1";
+	} catch {
+		return false;
+	}
+};
 
 type Props = {
 	open: boolean;
@@ -73,6 +82,16 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 	const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewItems, setPreviewItems] = useState<PreviewModalItem[]>([]);
+	const [mapCollapsed, setMapCollapsedState] = useState(readMapCollapsed);
+
+	const setMapCollapsed = (collapsed: boolean) => {
+		setMapCollapsedState(collapsed);
+		try {
+			window.localStorage.setItem(ACTIVITY_MAP_KEY, collapsed ? "1" : "0");
+		} catch {
+			return;
+		}
+	};
 
 	const updateSquad = useUpdateSquad(squad.id);
 	const openRunDialog = useRunDialogStore((state) => state.openRunDialog);
@@ -170,6 +189,9 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 				onOpenChange={onOpenChange}
 				title={`Rodar: ${squad.name}`}
 				description="Acompanhe a execução do squad."
+				resizable
+				widthKey="run-dialog"
+				minWidth={480}
 				contentClassName={status === "idle" ? "sm:max-w-3xl" : "sm:max-w-[72rem]"}
 				bodyClassName={status === "idle" ? "overflow-hidden" : undefined}
 				headerLeading={
@@ -265,13 +287,25 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 						</div>
 					) : (
 						<div className="flex min-h-0 flex-1 gap-4">
-							<RunActivityMap
-								squad={squad}
-								className="border-border hidden w-52 shrink-0 overflow-y-auto border-r pr-3 md:block"
-							/>
+							{!mapCollapsed && (
+								<RunActivityMap
+									squad={squad}
+									className="border-border hidden w-52 shrink-0 overflow-y-auto border-r pr-3 md:block"
+								/>
+							)}
 
-							<div className="flex min-h-0 flex-1 flex-col gap-3">
+							<div className="flex min-h-0 w-0 flex-1 flex-col gap-3">
 								<div className="border-border flex shrink-0 items-center gap-1 border-b">
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon"
+										className="text-muted-foreground hover:text-foreground hidden size-8 shrink-0 md:flex"
+										onClick={() => setMapCollapsed(!mapCollapsed)}
+										aria-label={mapCollapsed ? "Mostrar mapa de atividade" : "Ocultar mapa de atividade"}
+									>
+										{mapCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+									</Button>
 									<RunTab active={tab === "transcript"} onClick={() => setTab("transcript")}>
 										Transcript
 									</RunTab>
