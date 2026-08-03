@@ -83,6 +83,25 @@ class ApprovalController(
         }
     }
 
+    @PostMapping("/{id}/items/{itemId}/decide")
+    @Operation(summary = "Approve or reject a single item of a checkpoint that reviews a list")
+    fun decideItem(
+        @GetUserId userId: String,
+        @PathVariable id: UUID,
+        @PathVariable itemId: UUID,
+        @Valid @RequestBody request: DecideApprovalRequest,
+    ): ResponseEntity<ApprovalResponse> {
+        val requesterId = UUID.fromString(userId)
+        val outcome = service.decideItem(requesterId, id, itemId, request.approved, request.feedback)
+        return when (outcome) {
+            // Mesma regra do `decide`, por item (D10): quem chegou depois recebe 409 com o estado real,
+            // para a tela mostrar quem decidiu aquele item em vez de um erro genérico.
+            is DecideOutcome.AlreadyDecided ->
+                ResponseEntity.status(HttpStatus.CONFLICT).body(outcome.request.toResponse(requesterId))
+            is DecideOutcome.Applied -> ResponseEntity.ok(outcome.request.toResponse(requesterId))
+        }
+    }
+
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel a pending approval — owner only, even when opted out of deciding")
     fun cancel(@GetUserId userId: String, @PathVariable id: UUID): ResponseEntity<ApprovalResponse> {

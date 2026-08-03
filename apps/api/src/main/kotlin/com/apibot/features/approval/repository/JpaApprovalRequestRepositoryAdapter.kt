@@ -18,6 +18,9 @@ class JpaApprovalRequestRepositoryAdapter(
     override fun findById(id: UUID): ApprovalRequest? =
         jpaRepository.findById(id).map { it.toDomain() }.orElse(null)
 
+    override fun findByIdForUpdate(id: UUID): ApprovalRequest? =
+        jpaRepository.findByIdForUpdate(id)?.toDomain()
+
     override fun findAllByRunId(runId: UUID): List<ApprovalRequest> =
         jpaRepository.findAllByRunId(runId).map { it.toDomain() }
 

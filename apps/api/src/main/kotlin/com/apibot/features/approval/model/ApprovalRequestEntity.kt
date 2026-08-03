@@ -82,6 +82,13 @@ class ApprovalRequestEntity(
     @Column(nullable = true, columnDefinition = "text")
     var feedback: String? = null,
 
+    // Itens decidíveis (design D15). `default '[]'` é obrigatório: `ddl-auto=update` adiciona a coluna numa
+    // tabela que já tem linhas, e sem default elas ficariam NULL numa coluna NOT NULL (mesmo motivo de
+    // `RunEntity.files`/`rejections`).
+    @Column(nullable = false, columnDefinition = "jsonb default '[]'::jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var items: JsonNode = emptyJsonArray(),
+
     @Column(nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
 
@@ -120,6 +127,7 @@ class ApprovalRequestEntity(
         decidedByRole = this.decidedByRole,
         decidedAt = this.decidedAt,
         feedback = this.feedback,
+        items = this.items.toObject(),
         createdAt = this.createdAt,
         updatedAt = this.updatedAt,
     )
@@ -145,6 +153,7 @@ fun ApprovalRequest.toEntity(): ApprovalRequestEntity = ApprovalRequestEntity(
     decidedByRole = this.decidedByRole,
     decidedAt = this.decidedAt,
     feedback = this.feedback,
+    items = this.items.toJsonNode(),
     createdAt = this.createdAt,
     updatedAt = this.updatedAt,
 )

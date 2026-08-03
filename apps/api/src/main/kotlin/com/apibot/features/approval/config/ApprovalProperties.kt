@@ -15,4 +15,9 @@ data class ApprovalProperties(
     val notifyReadTimeoutSeconds: Long = 5,
     /** Teto de caracteres do `summary` embutido no payload — nunca o artefato completo do run. */
     val summaryMaxChars: Int = 500,
+    /**
+     * Teto de itens decidíveis por pedido (design D15). Sem ele, um agente em loop geraria um payload
+     * arbitrariamente grande e o timeout curto do webhook viraria um `notifyError` silencioso.
+     */
+    val itemsMaxCount: Int = 200,
 )

@@ -74,6 +74,21 @@ class NotificationChannelService(
             "title" to "Teste de conexão — Workestrator",
             "summary" to "Este é um aviso de teste disparado a partir da configuração do canal.",
             "decisionUrl" to "https://example.invalid/dashboard/aprovacoes/teste",
+            // Dois itens de exemplo para o fluxo exercitar o caminho de `items[]` (design D15) — inclusive o
+            // Split Out, se ele manda uma mensagem por item. As chaves de `data` são **genéricas** de
+            // propósito: o esquema real é do domínio de cada squad e o backend não tem como conhecê-lo, então
+            // um teste mostra campo vazio no mapeamento do fluxo. É esperado, e está dito no anexo do n8n.
+            "itemCount" to 2,
+            "items" to listOf(1, 2).map { index ->
+                mapOf(
+                    "id" to "00000000-0000-4000-8000-00000000000$index",
+                    "ref" to "EXEMPLO-$index",
+                    "label" to "Item de exemplo $index",
+                    "status" to "pending",
+                    "decisionUrl" to "https://example.invalid/dashboard/aprovacoes/teste?item=$index",
+                    "data" to mapOf("exemplo" to "valor $index"),
+                )
+            },
             "approvers" to emptyList<Any>(),
             "createdAt" to Instant.now().toString(),
         )

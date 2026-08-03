@@ -5,6 +5,7 @@ import com.apibot.features.approval.repository.ApprovalRequestRepository
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
 
@@ -22,10 +23,18 @@ class ApprovalNotificationDispatcher(
 ) {
     private val logger = LoggerFactory.getLogger(ApprovalNotificationDispatcher::class.java)
 
+    /**
+     * `@Transactional` junto com `@Async` (proxies diferentes, ambos honrados porque a chamada vem de outro
+     * bean): o stamp de `notifiedAt`/`notifyError` é um read-modify-write da linha inteira, então sem o lock
+     * ele pode sobrescrever um veredito de item gravado no meio do caminho (design D15). A janela é curta —
+     * o re-read acontece depois do webhook responder — mas é a mesma classe de perda de decisão que
+     * `ApprovalService.decideItem` fecha, e o custo de fechar aqui também é uma linha.
+     */
     @Async
+    @Transactional
     fun dispatch(userId: UUID, approvalId: UUID, channel: NotificationChannel, payload: Any) {
         val outcome = webhookNotifier.send(userId, channel, payload)
-        val current = approvalRequestRepository.findById(approvalId) ?: return
+        val current = approvalRequestRepository.findByIdForUpdate(approvalId) ?: return
 
         val updated = when (outcome) {
             is NotificationOutcome.Success -> current.copy(

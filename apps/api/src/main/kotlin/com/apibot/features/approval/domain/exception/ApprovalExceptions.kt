@@ -38,3 +38,20 @@ class ApprovalAccessDeniedException(
 class RejectionRequiresFeedbackException(
     message: String = "A justification is required to reject a checkpoint",
 ) : BusinessRuleViolationException(message)
+
+/**
+ * Thrown when deciding the whole request while it carries decidable items (design D15) — a batch verdict
+ * would silently erase the per-item ones. The caller must decide item by item instead.
+ */
+class ItemizedApprovalRequiresPerItemDecisionException(
+    message: String = "This checkpoint reviews a list — decide each item instead of the whole request",
+) : BusinessRuleViolationException(message)
+
+class ApprovalItemNotFoundException(
+    message: String = "Approval item not found",
+) : ResourceNotFoundException(message)
+
+/** Thrown when a client sends more items than `app.approval.items-max-count` allows. */
+class TooManyApprovalItemsException(
+    message: String,
+) : BusinessRuleViolationException(message)

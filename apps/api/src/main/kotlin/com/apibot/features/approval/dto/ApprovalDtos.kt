@@ -1,9 +1,13 @@
 package com.apibot.features.approval.dto
 
 import com.apibot.features.approval.model.ApprovalDecidedByRole
+import com.apibot.features.approval.model.ApprovalItemStatus
 import com.apibot.features.approval.model.ApprovalStatus
 import com.apibot.features.approval.model.CheckpointKind
+import com.apibot.shared.extensions.emptyJsonObject
+import com.fasterxml.jackson.databind.JsonNode
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.time.Instant
@@ -30,6 +34,29 @@ data class CreateApprovalRequest(
 
     @field:NotBlank(message = "Summary is required")
     @Schema(description = "Card summary — truncated server-side, never a full artifact") val summary: String,
+
+    @field:Valid
+    @Schema(description = "Decidable items, when the checkpoint reviews a list — empty for a plain approve/reject")
+    val items: List<CreateApprovalItemRequest> = emptyList(),
+)
+
+@Schema(description = "A single decidable item of an approval request")
+data class CreateApprovalItemRequest(
+    /**
+     * Aceito do cliente de propósito: o runtime cria os itens ao abrir o checkpoint e precisa correlacionar
+     * os seus com os do servidor. Sem isso a única correlação seria a ordem da lista, que quebra silencioso
+     * na primeira vez que alguém reordenar ou filtrar. Ausente ⇒ o servidor gera.
+     */
+    @Schema(description = "Client-generated item ID, so the runtime can correlate its local items")
+    val id: UUID? = null,
+
+    @Schema(description = "Human-facing business key, extracted client-side (e.g. a ticket number)")
+    val ref: String? = null,
+
+    @Schema(description = "Short label for the item row") val label: String? = null,
+
+    @Schema(description = "The raw item as produced by the agent — passthrough, never interpreted server-side")
+    val data: JsonNode = emptyJsonObject(),
 )
 
 @Schema(description = "Request to decide a pending approval")
@@ -60,6 +87,21 @@ data class ApprovalResponse(
     val canDecide: Boolean,
     @Schema(description = "Whether the authenticated requester can cancel this request (owner only, even without canDecide)")
     val canCancel: Boolean,
+    @Schema(description = "Decidable items — empty for a plain approve/reject request")
+    val items: List<ApprovalItemResponse>,
     @Schema(description = "Creation date") val createdAt: Instant,
     @Schema(description = "Last update date") val updatedAt: Instant,
+)
+
+@Schema(description = "A single decidable item of an approval request")
+data class ApprovalItemResponse(
+    @Schema(description = "Item ID") val id: UUID,
+    @Schema(description = "Human-facing business key") val ref: String?,
+    @Schema(description = "Short label for the item row") val label: String?,
+    @Schema(description = "The raw item as produced by the agent — passthrough") val data: JsonNode,
+    @Schema(description = "Current item status") val status: ApprovalItemStatus,
+    @Schema(description = "Rejection justification, if rejected") val feedback: String?,
+    @Schema(description = "Who decided this item, if decided") val decidedByUserId: UUID?,
+    @Schema(description = "Whether the decider was the owner or a pool approver") val decidedByRole: ApprovalDecidedByRole?,
+    @Schema(description = "When this item was decided, if decided") val decidedAt: Instant?,
 )
