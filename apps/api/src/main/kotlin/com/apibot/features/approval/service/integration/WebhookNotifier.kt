@@ -5,12 +5,12 @@ import com.apibot.features.approval.model.NotificationChannel
 import com.apibot.features.secret.service.SecretService
 import com.apibot.shared.extensions.sharedJsonMapper
 import org.slf4j.LoggerFactory
-import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings
 import org.springframework.http.MediaType
+import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
+import java.net.http.HttpClient
 import java.time.Duration
 import java.util.UUID
 
@@ -33,21 +33,31 @@ class WebhookNotifier(
 ) {
     private val logger = LoggerFactory.getLogger(WebhookNotifier::class.java)
 
+    /**
+     * `HTTP_1_1` **explícito**, e não o default do JDK (`HTTP_2`): num alvo `http://` (cleartext) o JDK
+     * `HttpClient` em HTTP/2 tenta o upgrade h2c (`Upgrade: h2c` + `HTTP2-Settings`), e o n8n roda em
+     * Node/Express, que não negocia h2c. A troca morria na hora (~24ms, rápido demais pra ser timeout)
+     * como `ClosedChannelException`/`IOException: Request cancelled`, enquanto curl e Postman — que falam
+     * HTTP/1.1 — passavam sem reclamar contra o mesmo endpoint.
+     *
+     * Também troca `ClientHttpRequestFactoryBuilder.detect()` por uma fábrica fixa: `detect()` escolhe o
+     * cliente conforme o que está no classpath (Apache HC5 → Jetty → Reactor → JDK), então adicionar uma
+     * dependência HTTP em qualquer outro ponto do projeto trocaria silenciosamente o transporte daqui e o
+     * comportamento de protocolo junto.
+     */
     private val restClient: RestClient = run {
-        val settings = ClientHttpRequestFactorySettings.defaults()
-            .withConnectTimeout(Duration.ofSeconds(properties.notifyConnectTimeoutSeconds))
-            .withReadTimeout(Duration.ofSeconds(properties.notifyReadTimeoutSeconds))
-        val requestFactory = ClientHttpRequestFactoryBuilder.detect().build(settings)
+        val httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(properties.notifyConnectTimeoutSeconds))
+            .build()
+        val requestFactory = JdkClientHttpRequestFactory(httpClient)
+        requestFactory.setReadTimeout(Duration.ofSeconds(properties.notifyReadTimeoutSeconds))
         RestClient.builder().requestFactory(requestFactory).build()
     }
 
     fun send(userId: UUID, channel: NotificationChannel, payload: Any): NotificationOutcome {
         val body = sharedJsonMapper.writeValueAsString(payload)
         return try {
-            // `toEntity(String::class.java)` em vez de `toBodilessEntity()`: o n8n sempre responde com um
-            // corpo JSON, mesmo no ack imediato do webhook. Descartar sem ler (`toBodilessEntity`) faz o
-            // backend JDK `HttpClient` do `RestClient` abortar a troca no meio, e a exceção some com uma
-            // mensagem inútil ("Request cancelled") em vez do que realmente aconteceu na resposta.
             restClient.post()
                 .uri(channel.url)
                 .headers { headers ->
@@ -72,16 +82,16 @@ class WebhookNotifier(
 
     /**
      * `ResourceAccessException.message` é literalmente `"I/O error on POST request for \"<uri>\": " +
-     * cause.message` — quando a causa raiz (SSLHandshakeException, ConnectException, etc.) não tem
-     * mensagem própria, o usuário via só um `": null"` sem nenhuma pista pra diagnosticar. Sobe a cadeia
-     * de causas até achar uma mensagem não-vazia; na ausência de uma, usa o nome da classe da causa raiz
-     * (ex.: "ConnectException") em vez de "null".
+     * cause.message` — quando a causa raiz não tem mensagem própria, sobrava só um `": null"` sem pista
+     * nenhuma. Desce até a causa raiz e sempre prefixa o tipo dela (`ConnectException: Connection
+     * refused`, `IOException: Request cancelled`): a mensagem sozinha costuma não dizer em que camada a
+     * coisa quebrou, e é isso que fica salvo em `lastError` e aparece na tela.
      */
     private fun describeFailure(exception: RestClientException): String {
         var cause: Throwable = exception
         while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
-        return cause.message?.takeIf { it.isNotBlank() }
-            ?: cause::class.simpleName
-            ?: "Erro desconhecido ao enviar a notificação"
+        val type = cause::class.simpleName ?: "Erro"
+        val message = cause.message?.takeIf { it.isNotBlank() } ?: return type
+        return "$type: $message"
     }
 }
