@@ -44,6 +44,10 @@ class WebhookNotifier(
     fun send(userId: UUID, channel: NotificationChannel, payload: Any): NotificationOutcome {
         val body = sharedJsonMapper.writeValueAsString(payload)
         return try {
+            // `toEntity(String::class.java)` em vez de `toBodilessEntity()`: o n8n sempre responde com um
+            // corpo JSON, mesmo no ack imediato do webhook. Descartar sem ler (`toBodilessEntity`) faz o
+            // backend JDK `HttpClient` do `RestClient` abortar a troca no meio, e a exceção some com uma
+            // mensagem inútil ("Request cancelled") em vez do que realmente aconteceu na resposta.
             restClient.post()
                 .uri(channel.url)
                 .headers { headers ->
@@ -57,11 +61,11 @@ class WebhookNotifier(
                 }
                 .body(body)
                 .retrieve()
-                .toBodilessEntity()
+                .toEntity(String::class.java)
             NotificationOutcome.Success
         } catch (exception: RestClientException) {
             val detail = describeFailure(exception)
-            logger.warn("Falha ao notificar canal {}: {}", channel.id, detail)
+            logger.warn("Falha ao notificar canal {}: {}", channel.id, detail, exception)
             NotificationOutcome.Failure(detail)
         }
     }
