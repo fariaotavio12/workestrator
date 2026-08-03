@@ -103,13 +103,21 @@ const NotificationChannelFormDialogContent = ({ open, onOpenChange, channel }: P
 				<FieldWrapper
 					label="URL do webhook"
 					htmlFor="channel-url"
-					description={isEditing ? "Deixe em branco para manter a URL atual." : undefined}
+					description={
+						isEditing
+							? "A URL salva não é reexibida por segurança — deixe em branco para manter a atual."
+							: undefined
+					}
 				>
 					<Input
 						id="channel-url"
 						value={url}
 						onChange={(e) => setUrl(e.target.value)}
-						placeholder="https://n8n.exemplo.com/webhook/..."
+						placeholder={
+							isEditing && channel?.hasUrl
+								? `Atual: ${channel.urlHost ?? "configurada"} — digite para substituir`
+								: "https://n8n.exemplo.com/webhook/..."
+						}
 					/>
 				</FieldWrapper>
 

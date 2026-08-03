@@ -60,8 +60,24 @@ class WebhookNotifier(
                 .toBodilessEntity()
             NotificationOutcome.Success
         } catch (exception: RestClientException) {
-            logger.warn("Falha ao notificar canal {}: {}", channel.id, exception.message)
-            NotificationOutcome.Failure(exception.message ?: "Unknown delivery error")
+            val detail = describeFailure(exception)
+            logger.warn("Falha ao notificar canal {}: {}", channel.id, detail)
+            NotificationOutcome.Failure(detail)
         }
+    }
+
+    /**
+     * `ResourceAccessException.message` é literalmente `"I/O error on POST request for \"<uri>\": " +
+     * cause.message` — quando a causa raiz (SSLHandshakeException, ConnectException, etc.) não tem
+     * mensagem própria, o usuário via só um `": null"` sem nenhuma pista pra diagnosticar. Sobe a cadeia
+     * de causas até achar uma mensagem não-vazia; na ausência de uma, usa o nome da classe da causa raiz
+     * (ex.: "ConnectException") em vez de "null".
+     */
+    private fun describeFailure(exception: RestClientException): String {
+        var cause: Throwable = exception
+        while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
+        return cause.message?.takeIf { it.isNotBlank() }
+            ?: cause::class.simpleName
+            ?: "Erro desconhecido ao enviar a notificação"
     }
 }
