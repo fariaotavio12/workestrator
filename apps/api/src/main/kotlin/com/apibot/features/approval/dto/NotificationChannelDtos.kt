@@ -39,7 +39,8 @@ data class NotificationChannelResponse(
     @Schema(description = "Display label") val label: String,
     @Schema(description = "Channel kind") val kind: NotificationChannelKind,
     @Schema(description = "Whether a URL is configured") val hasUrl: Boolean,
-    @Schema(description = "Host of the configured URL, for visual confirmation only") val urlHost: String?,
+    @Schema(description = "Scheme, host and port of the configured URL (e.g. \"https://host:5678\") — never the path, which may be the webhook's access token")
+    val urlHost: String?,
     @Schema(description = "Auth header name, if any") val authHeaderName: String?,
     @Schema(description = "Channel status") val status: NotificationChannelStatus,
     @Schema(description = "Last successful test") val lastTestedAt: Instant?,

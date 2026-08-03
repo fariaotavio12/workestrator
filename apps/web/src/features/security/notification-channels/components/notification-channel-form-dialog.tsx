@@ -26,10 +26,11 @@ const NONE_SECRET = "__none__";
 
 /**
  * Conexão de notificação (n8n → Teams — ver .specs/001-aprovacoes-externas-teams). `url` e o segredo do
- * header nunca voltam do backend (`NotificationChannelResponse` só expõe `hasUrl`/`urlHost`) — em edição,
- * os campos ficam em branco por desenho: o dono digita de novo se quiser trocar, não reaproveita algo que
- * ele não consegue mais conferir. Formulário simples (sem react-hook-form): só 4 campos, sem ramificação
- * por tipo de autenticação como `SecretFormDialog` precisa.
+ * header nunca voltam do backend (`NotificationChannelResponse` só expõe `hasUrl`/`urlHost`, este último
+ * limitado a esquema+host+porta — nunca o path, que costuma ser o token de acesso do webhook) — em
+ * edição, os campos ficam em branco por desenho: o dono digita de novo se quiser trocar, não reaproveita
+ * algo que ele não consegue mais conferir por completo. Formulário simples (sem react-hook-form): só 4
+ * campos, sem ramificação por tipo de autenticação como `SecretFormDialog` precisa.
  */
 export const NotificationChannelFormDialog = (props: Props) => {
 	if (!props.open) return null;

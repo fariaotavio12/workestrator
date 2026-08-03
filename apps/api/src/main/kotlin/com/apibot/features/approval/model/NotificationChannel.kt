@@ -39,6 +39,9 @@ enum class NotificationChannelStatus(@JsonValue val value: String) {
  * Conexão de saída para avisar um checkpoint externamente (n8n → Teams, no v1 — ver
  * .specs/001-aprovacoes-externas-teams). `url` e o segredo de autenticação (`authSecretId`) nunca saem
  * em nenhuma resposta de API — `toResponse()` expõe só `hasUrl`/`urlHost` para conferência visual.
+ * `urlHost` inclui esquema e porta (ex.: `https://192.168.228.14:5678`) — o suficiente pra flagrar um
+ * mismatch de protocolo/porta (causa comum de erro na hora do teste), mas nunca o path, que costuma ser
+ * o próprio token de acesso do webhook.
  */
 data class NotificationChannel(
     val id: UUID = UUID.randomUUID(),
@@ -55,12 +58,19 @@ data class NotificationChannel(
     val updatedAt: Instant = Instant.now(),
 )
 
+private fun schemeHostPort(url: String): String? {
+    val uri = URI(url)
+    val host = uri.host ?: return null
+    val portSuffix = if (uri.port >= 0) ":${uri.port}" else ""
+    return "${uri.scheme}://$host$portSuffix"
+}
+
 fun NotificationChannel.toResponse(): NotificationChannelResponse = NotificationChannelResponse(
     id = this.id,
     label = this.label,
     kind = this.kind,
     hasUrl = this.url.isNotBlank(),
-    urlHost = runCatching { URI(this.url).host }.getOrNull(),
+    urlHost = runCatching { schemeHostPort(this.url) }.getOrNull(),
     authHeaderName = this.authHeaderName,
     status = this.status,
     lastTestedAt = this.lastTestedAt,
