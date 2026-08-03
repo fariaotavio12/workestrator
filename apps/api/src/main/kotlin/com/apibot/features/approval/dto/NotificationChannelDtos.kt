@@ -14,7 +14,7 @@ data class CreateNotificationChannelRequest(
     val label: String,
 
     @field:NotBlank(message = "URL is required")
-    @Schema(description = "n8n webhook URL — never returned by the API")
+    @Schema(description = "n8n webhook URL")
     val url: String,
 
     @Schema(description = "Secret holding the auth header value, if any")
@@ -27,19 +27,21 @@ data class CreateNotificationChannelRequest(
 @Schema(description = "Request to update a notification channel")
 data class UpdateNotificationChannelRequest(
     @Schema(description = "Display label") val label: String? = null,
-    @Schema(description = "n8n webhook URL — never returned by the API") val url: String? = null,
+    @Schema(description = "n8n webhook URL") val url: String? = null,
     @Schema(description = "Secret holding the auth header value, if any") val authSecretId: UUID? = null,
     @Schema(description = "Auth header name, if any") val authHeaderName: String? = null,
     @Schema(description = "Channel status") val status: NotificationChannelStatus? = null,
 )
 
-@Schema(description = "Notification channel response — the webhook URL is never included")
+@Schema(description = "Notification channel response")
 data class NotificationChannelResponse(
     @Schema(description = "Channel ID") val id: UUID,
     @Schema(description = "Display label") val label: String,
     @Schema(description = "Channel kind") val kind: NotificationChannelKind,
     @Schema(description = "Whether a URL is configured") val hasUrl: Boolean,
-    @Schema(description = "Scheme, host and port of the configured URL (e.g. \"https://host:5678\") — never the path, which may be the webhook's access token")
+    @Schema(description = "Full configured webhook URL, for the owner to review/edit")
+    val url: String?,
+    @Schema(description = "Scheme, host and port of the configured URL (e.g. \"https://host:5678\"), for quick visual confirmation in lists")
     val urlHost: String?,
     @Schema(description = "Auth header name, if any") val authHeaderName: String?,
     @Schema(description = "Channel status") val status: NotificationChannelStatus,

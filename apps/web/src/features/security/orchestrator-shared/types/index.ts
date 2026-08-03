@@ -245,6 +245,7 @@ export type NotificationChannel = {
 	label: string;
 	kind: "webhook";
 	hasUrl: boolean;
+	url?: string | null;
 	urlHost?: string | null;
 	authHeaderName?: string | null;
 	status: "active" | "error" | "disabled";

@@ -25,12 +25,11 @@ type Props = {
 const NONE_SECRET = "__none__";
 
 /**
- * Conexão de notificação (n8n → Teams — ver .specs/001-aprovacoes-externas-teams). `url` e o segredo do
- * header nunca voltam do backend (`NotificationChannelResponse` só expõe `hasUrl`/`urlHost`, este último
- * limitado a esquema+host+porta — nunca o path, que costuma ser o token de acesso do webhook) — em
- * edição, os campos ficam em branco por desenho: o dono digita de novo se quiser trocar, não reaproveita
- * algo que ele não consegue mais conferir por completo. Formulário simples (sem react-hook-form): só 4
- * campos, sem ramificação por tipo de autenticação como `SecretFormDialog` precisa.
+ * Conexão de notificação (n8n → Teams — ver .specs/001-aprovacoes-externas-teams). `url` volta do
+ * backend em edição (o dono revisando o que ele mesmo cadastrou não é um risco de segurança real, e
+ * escondê-la só atrapalhava o diagnóstico de erro de conexão) — só o segredo do header de autenticação
+ * continua nunca voltando em texto puro, por ser credencial de terceiro. Formulário simples (sem
+ * react-hook-form): só 4 campos, sem ramificação por tipo de autenticação como `SecretFormDialog` precisa.
  */
 export const NotificationChannelFormDialog = (props: Props) => {
 	if (!props.open) return null;
@@ -46,7 +45,7 @@ const NotificationChannelFormDialogContent = ({ open, onOpenChange, channel }: P
 	// Sem `useEffect` de reset: o componente monta do zero a cada abertura (`if (!open) return null` acima),
 	// mesmo padrão de `AgentFormDialog`/`RunDialog` — o estado inicial já nasce certo.
 	const [label, setLabel] = useState(channel?.label ?? "");
-	const [url, setUrl] = useState("");
+	const [url, setUrl] = useState(channel?.url ?? "");
 	const [authHeaderName, setAuthHeaderName] = useState(channel?.authHeaderName ?? "");
 	const [authSecretId, setAuthSecretId] = useState<string>(NONE_SECRET);
 
@@ -87,7 +86,7 @@ const NotificationChannelFormDialogContent = ({ open, onOpenChange, channel }: P
 			open={open}
 			onOpenChange={onOpenChange}
 			title={isEditing ? "Editar conexão" : "Nova conexão de notificação"}
-			description="URL de um webhook (ex.: n8n) que recebe o aviso quando um checkpoint abre. A URL e o segredo nunca voltam depois de salvos."
+			description="URL de um webhook (ex.: n8n) que recebe o aviso quando um checkpoint abre. O segredo do header, se configurado, nunca volta depois de salvo."
 			headerIcon={<Webhook />}
 			size="sm"
 			footer={
@@ -101,24 +100,12 @@ const NotificationChannelFormDialogContent = ({ open, onOpenChange, channel }: P
 					<Input id="channel-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Teams — squad de conteúdo" />
 				</FieldWrapper>
 
-				<FieldWrapper
-					label="URL do webhook"
-					htmlFor="channel-url"
-					description={
-						isEditing
-							? "A URL salva não é reexibida por segurança — deixe em branco para manter a atual."
-							: undefined
-					}
-				>
+				<FieldWrapper label="URL do webhook" htmlFor="channel-url">
 					<Input
 						id="channel-url"
 						value={url}
 						onChange={(e) => setUrl(e.target.value)}
-						placeholder={
-							isEditing && channel?.hasUrl
-								? `Atual: ${channel.urlHost ?? "configurada"} — digite para substituir`
-								: "https://n8n.exemplo.com/webhook/..."
-						}
+						placeholder="https://n8n.exemplo.com/webhook/..."
 					/>
 				</FieldWrapper>
 

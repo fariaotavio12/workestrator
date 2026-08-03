@@ -37,11 +37,13 @@ enum class NotificationChannelStatus(@JsonValue val value: String) {
 
 /**
  * Conexão de saída para avisar um checkpoint externamente (n8n → Teams, no v1 — ver
- * .specs/001-aprovacoes-externas-teams). `url` e o segredo de autenticação (`authSecretId`) nunca saem
- * em nenhuma resposta de API — `toResponse()` expõe só `hasUrl`/`urlHost` para conferência visual.
- * `urlHost` inclui esquema e porta (ex.: `https://192.168.228.14:5678`) — o suficiente pra flagrar um
- * mismatch de protocolo/porta (causa comum de erro na hora do teste), mas nunca o path, que costuma ser
- * o próprio token de acesso do webhook.
+ * .specs/001-aprovacoes-externas-teams). `toResponse()` expõe a `url` completa — o dono precisa dela pra
+ * revisar/editar de verdade (a antiga política de nunca reexibi-la só atrapalhava o diagnóstico de erro
+ * de conexão, sem ganho real de segurança: é o próprio dono lendo o que ele mesmo cadastrou). O segredo
+ * do header de autenticação (`authSecretId`) continua nunca saindo em texto puro — esse sim é uma
+ * credencial de terceiro, não um dado que o dono já conhece. `urlHost` (esquema+host+porta, ex.:
+ * `https://192.168.228.14:5678`) continua existindo à parte pra listagens, sem precisar mandar a URL
+ * inteira só pra exibir uma linha resumida.
  */
 data class NotificationChannel(
     val id: UUID = UUID.randomUUID(),
@@ -70,6 +72,7 @@ fun NotificationChannel.toResponse(): NotificationChannelResponse = Notification
     label = this.label,
     kind = this.kind,
     hasUrl = this.url.isNotBlank(),
+    url = this.url.takeIf { it.isNotBlank() },
     urlHost = runCatching { schemeHostPort(this.url) }.getOrNull(),
     authHeaderName = this.authHeaderName,
     status = this.status,
