@@ -20,6 +20,7 @@ const approvalRequest = (overrides: Partial<ApprovalRequest> & Pick<ApprovalRequ
 	summary: "",
 	canDecide: true,
 	canCancel: true,
+	items: [],
 	createdAt: ISO,
 	updatedAt: ISO,
 	...overrides,
