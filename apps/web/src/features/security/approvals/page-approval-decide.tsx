@@ -12,7 +12,8 @@ import type { ApprovalRequest } from "@/features/security/orchestrator-shared/ty
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertOctagon, Check, Lock, ShieldOff, X } from "lucide-react";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { ApprovalItemsPanel } from "./components/approval-items-panel";
 
 const CHECKPOINT_KIND_LABEL: Record<ApprovalRequest["checkpointKind"], string> = {
 	before: "antes de agir",
@@ -33,6 +34,10 @@ const STATUS_MESSAGE: Record<Exclude<ApprovalRequest["status"], "pending">, stri
  */
 export const PageApprovalDecide = () => {
 	const { approvalId = "" } = useParams();
+	// `?item=` vem do link por item do aviso (design D15) — quem chegou de uma mensagem específica no Teams
+	// abre a lista com aquele chamado destacado, em vez de ter que procurar no meio do lote.
+	const [searchParams] = useSearchParams();
+	const focusedItemId = searchParams.get("item");
 	const queryClient = useQueryClient();
 	const { data: approval, isLoading, isError, error, refetch } = useApprovalQuery(approvalId);
 	const [rejecting, setRejecting] = useState(false);
@@ -138,7 +143,12 @@ export const PageApprovalDecide = () => {
 						</div>
 					)}
 
-					{approval.canDecide && !rejecting && (
+					{/* Com itens a decisão é sempre por item — o `decide` do lote responde 422 (design D15). */}
+					{approval.items.length > 0 && (
+						<ApprovalItemsPanel approval={approval} onDecided={applyResult} focusedItemId={focusedItemId} />
+					)}
+
+					{approval.items.length === 0 && approval.canDecide && !rejecting && (
 						<div className="flex gap-2">
 							<Button variant="error" className="flex-1" disabled={submitting} onClick={() => setRejecting(true)}>
 								<X />
@@ -151,7 +161,7 @@ export const PageApprovalDecide = () => {
 						</div>
 					)}
 
-					{approval.canDecide && rejecting && (
+					{approval.items.length === 0 && approval.canDecide && rejecting && (
 						<div className="flex flex-col gap-3">
 							<Textarea
 								label="Motivo da reprovação"

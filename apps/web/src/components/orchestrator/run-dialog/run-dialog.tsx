@@ -22,6 +22,7 @@ import { useState, type ReactNode } from "react";
 import { renderSquadIcon } from "../icon-picker/render-squad-icon";
 import {
 	answerPrompt,
+	applyApprovalDecision,
 	continueRun,
 	pauseRun,
 	resetRun,
@@ -296,6 +297,7 @@ const RunDialogContent = ({ open, onOpenChange, squad }: Props) => {
 									onApprove={() => resolveCheckpoint(runKey, true)}
 									onReject={(rejection) => resolveCheckpoint(runKey, false, rejection)}
 									onAnswer={(answer) => answerPrompt(runKey, answer)}
+									onApprovalDecided={(updated) => applyApprovalDecision(runKey, updated)}
 								/>
 							</div>
 						</div>
