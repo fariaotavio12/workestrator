@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import type { ServerResponse } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,6 +84,79 @@ describe("isolated execution workspaces", () => {
 			server.close();
 			rmSync(root, { recursive: true, force: true });
 			configureRunnerWorkspace(path.resolve(process.cwd(), "orchestrator-workspace"));
+		}
+	});
+});
+
+/**
+ * Regressão do 401 real contra o Fluig (spec 003): `handleTestTool` — o botão "Testar" da ferramenta —
+ * faz uma requisição HTTP de verdade e desestruturava só `{ headers, url }` de `applyAuthToHttpTarget`,
+ * descartando `oauth1` e mandando a chamada **sem** `Authorization`. Os testes de `buildHttpToolDef`/
+ * `buildHttpTool` passavam porque este consumidor não era exercitado por nenhum deles — e ele não
+ * estava na tabela de consumidores do design. Este teste vai pelo caminho HTTP completo (servidor do
+ * runner + backend falso + API falsa) porque é a única forma de pegar um consumidor que esquece de
+ * assinar: qualquer teste que chame o assinador direto passa mesmo com o bug presente.
+ */
+describe("handleTestTool — oauth1 (regressão do 401)", () => {
+	it("assina a requisição do botão Testar em vez de mandá-la sem Authorization", async () => {
+		const captured: (string | null)[] = [];
+		const targetApi = createServer((req, res) => {
+			captured.push(req.headers.authorization ?? null);
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: true }));
+		});
+		const fakeBackend = createServer((_req, res) => {
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(
+				JSON.stringify({
+					// Valores distintivos de propósito: um segredo curto tipo "cs" apareceria por acaso numa
+					// assinatura base64 e tornaria a asserção de vazamento abaixo intermitente.
+					value: JSON.stringify({ consumerSecret: "consumer-secret-xyzzy", tokenSecret: "token-secret-plugh" }),
+					authType: "oauth1",
+					metadata: { consumerKey: "fluig_avalia_chamados", token: "tok-1" },
+				}),
+			);
+		});
+		await new Promise<void>((resolve) => targetApi.listen(0, "127.0.0.1", resolve));
+		await new Promise<void>((resolve) => fakeBackend.listen(0, "127.0.0.1", resolve));
+		const targetPort = (targetApi.address() as AddressInfo).port;
+		const backendPort = (fakeBackend.address() as AddressInfo).port;
+
+		const server = await startLocalRunnerServer();
+		try {
+			const response = await fetch(`${server.baseUrl}/api/test-tool`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-Orchestrator-Token": server.token },
+				body: JSON.stringify({
+					script: {
+						id: "s1",
+						name: "Consultar tarefas",
+						kind: "http",
+						method: "GET",
+						urlTemplate: `http://127.0.0.1:${targetPort}/requests/230598/tasks`,
+						authRef: "oauth1-secret",
+					},
+					backendBaseUrl: `http://127.0.0.1:${backendPort}`,
+					backendToken: "backend-token",
+				}),
+			});
+			const result = (await response.json()) as { ok: boolean; message: string };
+
+			expect(result.ok).toBe(true);
+			expect(captured).toHaveLength(1);
+			// Asserção explícita antes do match: sem ela, o bug (header ausente) falha com
+			// "toMatch expects a string, but got object", que não diz nada sobre a causa.
+			expect(captured[0], "requisição saiu SEM Authorization — o assinador oauth1 foi descartado").not.toBeNull();
+			expect(captured[0]).toMatch(/^OAuth /);
+			expect(captured[0]).toContain('oauth_consumer_key="fluig_avalia_chamados"');
+			expect(captured[0]).toContain("oauth_signature=");
+			// O segredo nunca viaja no header — só a assinatura e os identificadores públicos.
+			expect(captured[0]).not.toContain("consumer-secret-xyzzy");
+			expect(captured[0]).not.toContain("token-secret-plugh");
+		} finally {
+			server.close();
+			targetApi.close();
+			fakeBackend.close();
 		}
 	});
 });

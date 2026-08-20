@@ -107,11 +107,7 @@ class HttpToolRunner(
                 .header("Content-Type", "application/json")
             target.headers.forEach { (key, value) -> requestBuilder.header(key, value) }
             // OAuth 1.0a assina método + URL final: só dá pra montar o header depois do template resolvido.
-            val signedHeaders = target.signRequest?.invoke(method, url)
-            // TEMP DEBUG (spec 003) — remover depois de diagnosticar o 401 contra o Fluig. Seguro de
-            // logar: Authorization contém só assinatura + identificadores públicos, nunca o segredo.
-            if (signedHeaders != null) println("[oauth1-debug] $method $url -> Authorization: ${signedHeaders["Authorization"]}")
-            signedHeaders?.forEach { (key, value) -> requestBuilder.header(key, value) }
+            target.signRequest?.invoke(method, url)?.forEach { (key, value) -> requestBuilder.header(key, value) }
             requestBuilder.method(method, bodyPublisher)
 
             val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())

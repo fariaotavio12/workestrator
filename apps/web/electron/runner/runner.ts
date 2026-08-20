@@ -1,4 +1,5 @@
 import crossSpawn from "cross-spawn";
+import { authorizationHeader } from "../mcp-servers/oauth1.mjs";
 import {
 	buildHttpTool,
 	connectMcpTools,
@@ -2645,12 +2646,18 @@ export const handleTestTool = async (req: IncomingMessage, res: ServerResponse, 
 			}
 			let headers = await resolveMapPlaceholders(script.headers, resolveSecret);
 			let url = script.urlTemplate;
+			let oauth1: OAuth1Credentials | undefined;
 			if (script.authRef && !Object.keys(headers).some((h) => h.toLowerCase() === "authorization")) {
 				const resolved = await resolveSecret(script.authRef);
-				if (resolved) ({ headers, url } = await applyAuthToHttpTarget(resolved, { headers, url }));
+				if (resolved) ({ headers, url, oauth1 } = await applyAuthToHttpTarget(resolved, { headers, url }));
 			}
 			try {
-				const response = await fetch(url, { method: script.method ?? "GET", headers });
+				const method = script.method ?? "GET";
+				// Este botão faz uma requisição REAL, então precisa assinar como qualquer outro executor:
+				// descartar `oauth1` aqui manda a chamada sem `Authorization` e a API legada responde 401
+				// sem dizer por quê — foi exatamente o sintoma que levou a esta correção (spec 003).
+				const sentHeaders = oauth1 ? { ...headers, Authorization: authorizationHeader(method, url, oauth1) } : headers;
+				const response = await fetch(url, { method, headers: sentHeaders });
 				const bodyText = (await response.text()).slice(0, 2000);
 				res.end(
 					JSON.stringify({
