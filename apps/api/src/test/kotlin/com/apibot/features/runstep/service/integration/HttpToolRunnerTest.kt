@@ -24,8 +24,13 @@ import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** In-memory fake — mesmo padrão de `ProviderAuthResolverTest`/`OAuthTokenServiceTest`. */
-private class FakeSecretRepository : SecretRepository {
+/**
+ * In-memory fake — mesmo padrão de `ProviderAuthResolverTest`/`OAuthTokenServiceTest`. Nome distinto
+ * do `FakeSecretRepository` de `ProviderAuthResolverTest.kt`: uma `class` top-level do Kotlin não tem
+ * o nome mangled por arquivo (diferente de função/propriedade), então duas classes `private` com o
+ * mesmo nome no mesmo pacote colidem de verdade no bytecode — foi exatamente o erro de compilação.
+ */
+private class FakeHttpToolSecretRepository : SecretRepository {
     val store = mutableMapOf<UUID, Secret>()
     override fun save(secret: Secret): Secret {
         store[secret.id] = secret
@@ -77,8 +82,8 @@ class HttpToolRunnerTest {
         return httpServer.address.port to captured
     }
 
-    private fun buildRunner(): Pair<HttpToolRunner, FakeSecretRepository> {
-        val secretRepository = FakeSecretRepository()
+    private fun buildRunner(): Pair<HttpToolRunner, FakeHttpToolSecretRepository> {
+        val secretRepository = FakeHttpToolSecretRepository()
         val secretService = SecretService(secretRepository, cipher)
         val objectMapper = ObjectMapper()
         val resolver = ProviderAuthResolver(secretService, HttpClient.newHttpClient(), objectMapper)
