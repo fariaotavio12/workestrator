@@ -56,7 +56,13 @@ class SecretEntity(
     @JdbcTypeCode(SqlTypes.JSON)
     var scopes: JsonNode = emptyScopesNode,
 
-    @Column(nullable = false, columnDefinition = "varchar(32) default 'CONNECTED'")
+    // `default 'CONNECTED'` fica só em `schema.sql`, não aqui: `columnDefinition` com um `DEFAULT`
+    // embutido funciona no CREATE TABLE inicial, mas quando `ddl-auto=update` decide que o tipo da
+    // coluna mudou (varchar(255) -> varchar(32)), o Hibernate gera
+    // `ALTER COLUMN status SET DATA TYPE varchar(32) default 'CONNECTED'` — SQL inválido no Postgres,
+    // porque DEFAULT não é cláusula de SET DATA TYPE. Falha em todo boot, engolida em silêncio pelo
+    // Spring (o app sobe normalmente), e a coluna nunca ganha o default de verdade.
+    @Column(nullable = false, columnDefinition = "varchar(32)")
     @Enumerated(EnumType.STRING)
     var status: AuthConnectionStatus = AuthConnectionStatus.CONNECTED,
 

@@ -47,6 +47,16 @@ ALTER TABLE IF EXISTS secrets
 ALTER TABLE IF EXISTS secrets
     ADD CONSTRAINT secrets_auth_type_check CHECK (auth_type IN ('BEARER', 'HEADER', 'QUERY', 'BASIC', 'OAUTH2_CLIENT_CREDENTIALS', 'OAUTH2_REFRESH', 'OAUTH1', 'RAW'));
 
+-- `secrets.status` tinha `default 'CONNECTED'` embutido no `columnDefinition` do JPA
+-- (`SecretEntity.kt`). Isso funciona no CREATE TABLE inicial, mas quando `ddl-auto=update` decide
+-- alterar o tipo da coluna (varchar(255) -> varchar(32)), o Hibernate gera
+-- `ALTER COLUMN status SET DATA TYPE varchar(32) default 'CONNECTED'` — sintaxe inválida no Postgres
+-- (DEFAULT não é cláusula de SET DATA TYPE). Falha em todo boot, engolida em silêncio pelo Spring, e a
+-- coluna nunca ganha o default de verdade. Corrigido movendo o DEFAULT pra cá, fora do caminho do
+-- Hibernate, idempotente como o resto deste arquivo.
+ALTER TABLE IF EXISTS secrets
+    ALTER COLUMN status SET DEFAULT 'CONNECTED';
+
 ALTER TABLE IF EXISTS pending_contact_info
     ALTER COLUMN bot_id DROP NOT NULL;
 
