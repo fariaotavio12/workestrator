@@ -6,6 +6,7 @@ import {
 	safeToolName,
 	type HttpToolDef,
 	type McpConnection,
+	type OAuth1Credentials,
 	type OpenAiToolDefinition,
 	type ResolvedTool,
 } from "./openai-tools";
@@ -249,6 +250,7 @@ export type SecretAuthType =
 	| "basic"
 	| "oauth2_client_credentials"
 	| "oauth2_refresh"
+	| "oauth1"
 	| "raw";
 
 /** Retorno de `GET /secrets/{id}/value` — nunca cacheado em texto puro fora deste processo. */
@@ -324,6 +326,12 @@ const KNOWN_AUTH_METADATA_KEYS = new Set([
 	"tokenUrl",
 	"clientId",
 	"scopes",
+	// oauth1 (D4) — chave fora deste conjunto vira cabeçalho HTTP fixo (`fixedMetadataHeaders`
+	// abaixo); esquecer uma destas manda `consumerKey: ...` como header em toda requisição.
+	"consumerKey",
+	"token",
+	"signatureMethod",
+	"realm",
 ]);
 
 const fixedMetadataHeaders = (metadata: Record<string, string> | undefined): Record<string, string> => {
@@ -337,6 +345,34 @@ const parseJsonSafe = <T>(raw: string): T | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+/**
+ * Lê um campo de um JSON cifrado que pode não ser JSON — mesma regra do Kotlin `readJsonField`
+ * (`ProviderAuthResolver.kt:145`): valor que não é JSON válido, ou sem o campo, devolve `undefined`
+ * (quem chama decide o fallback, ex.: tratar o valor cru como `consumerSecret`).
+ */
+const readJsonField = (raw: string, field: string): string | undefined => {
+	const value = parseJsonSafe<Record<string, unknown>>(raw)?.[field];
+	return typeof value === "string" ? value : undefined;
+};
+
+/**
+ * `consumerKey`/`token` viajam em claro em todo request, então moram no `metadata`; os dois segredos
+ * (`consumerSecret`/`tokenSecret`) vêm cifrados no valor, como JSON (D3). Espelha
+ * `ProviderAuthResolver.oauth1Credentials` (Kotlin).
+ */
+const oauth1Credentials = (resolved: ResolvedSecret): OAuth1Credentials => {
+	const consumerKey = resolved.metadata?.consumerKey;
+	if (!consumerKey) throw new Error("Secret OAuth 1.0 sem metadata.consumerKey configurado.");
+	return {
+		consumerKey,
+		consumerSecret: readJsonField(resolved.value, "consumerSecret") ?? resolved.value,
+		token: resolved.metadata?.token,
+		tokenSecret: readJsonField(resolved.value, "tokenSecret"),
+		signatureMethod: resolved.metadata?.signatureMethod ?? "HMAC-SHA1",
+		realm: resolved.metadata?.realm,
+	};
 };
 
 /** Token exchange (client_credentials/refresh_token) com cache em memória por `tokenUrl+clientId`. */
@@ -421,6 +457,15 @@ const resolveAuthToken = async (resolved: ResolvedSecret): Promise<string> => {
 	if (resolved.authType === "basic") {
 		return parseJsonSafe<{ password?: string }>(resolved.value)?.password ?? resolved.value;
 	}
+	if (resolved.authType === "oauth1") {
+		// Env var de processo MCP stdio (`buildMcpServerEntry`, `WORKESTRATOR_AUTH_TOKEN`): não há
+		// requisição pra assinar aqui, só um valor fixo — oauth1 não tem resposta correta pra este
+		// caminho (ver §"Onde a assinatura não se aplica" do design). Registra e segue sem token.
+		console.warn(
+			"[secrets] Secret OAuth 1.0 referenciado como variável de ambiente de processo MCP stdio — não há requisição para assinar; nenhum valor será usado.",
+		);
+		return "";
+	}
 	return resolved.value;
 };
 
@@ -428,9 +473,10 @@ const resolveAuthToken = async (resolved: ResolvedSecret): Promise<string> => {
 const applyAuthToHttpTarget = async (
 	resolved: ResolvedSecret,
 	target: { headers: Record<string, string>; url: string },
-): Promise<{ headers: Record<string, string>; url: string }> => {
+): Promise<{ headers: Record<string, string>; url: string; oauth1?: OAuth1Credentials }> => {
 	const headers = { ...target.headers, ...fixedMetadataHeaders(resolved.metadata) };
 	let url = target.url;
+	let oauth1: OAuth1Credentials | undefined;
 
 	switch (resolved.authType) {
 		case "bearer":
@@ -457,11 +503,17 @@ const applyAuthToHttpTarget = async (
 		case "oauth2_refresh":
 			headers.Authorization = `Bearer ${await exchangeOAuth2Token(resolved)}`;
 			break;
+		case "oauth1":
+			// Sem cabeçalho aqui de propósito (D2): a assinatura depende da URL final e de um nonce/
+			// timestamp por chamada, então quem executa a requisição (loop de tool calling,
+			// `http-tool.mjs`) assina — ver `oauth1` no retorno.
+			oauth1 = oauth1Credentials(resolved);
+			break;
 		case "raw":
 		default:
 			break;
 	}
-	return { headers, url };
+	return { headers, url, oauth1 };
 };
 
 /**
@@ -555,10 +607,11 @@ export const buildHttpToolDef = async (
 	if (!script.urlTemplate) return undefined;
 	let headers = await resolveMapPlaceholders(script.headers, resolveSecret);
 	let urlTemplate = script.urlTemplate;
+	let oauth1: OAuth1Credentials | undefined;
 	if (script.authRef && !Object.keys(headers).some((h) => h.toLowerCase() === "authorization")) {
 		const resolved = await resolveSecret(script.authRef);
 		if (resolved) {
-			({ headers, url: urlTemplate } = await applyAuthToHttpTarget(resolved, { headers, url: urlTemplate }));
+			({ headers, url: urlTemplate, oauth1 } = await applyAuthToHttpTarget(resolved, { headers, url: urlTemplate }));
 		}
 	}
 	return {
@@ -569,6 +622,7 @@ export const buildHttpToolDef = async (
 		headers,
 		bodySchema: script.bodySchema,
 		responseMap: script.responseMap,
+		oauth1,
 	};
 };
 
@@ -585,7 +639,19 @@ export const buildMcpServerEntry = async (
 			let url = script.url;
 			if (script.authRef && !Object.keys(headers).some((h) => h.toLowerCase() === "authorization")) {
 				const resolved = await resolveSecret(script.authRef);
-				if (resolved) ({ headers, url } = await applyAuthToHttpTarget(resolved, { headers, url }));
+				if (resolved) {
+					// D10: um servidor MCP HTTP recebe um conjunto de cabeçalhos fixo, reaproveitado por N
+					// chamadas — incompatível por construção com uma assinatura que muda a cada requisição
+					// (nonce/timestamp novos). Assinar uma vez só valeria pra primeira chamada; recusa e
+					// registra o motivo em vez de montar uma integração que falha em runtime sem explicação.
+					if (resolved.authType === "oauth1") {
+						console.warn(
+							`[secrets] Script "${script.name}" (servidor MCP HTTP) referencia uma credencial OAuth 1.0 — esquema não suportado neste caminho (cabeçalho fixo, D10); a integração não foi montada.`,
+						);
+						return undefined;
+					}
+					({ headers, url } = await applyAuthToHttpTarget(resolved, { headers, url }));
+				}
 			}
 			return { type: "http", url, headers: Object.keys(headers).length > 0 ? headers : undefined };
 		}
@@ -668,7 +734,17 @@ export const buildMcpServerEntry = async (
 		let url = gatewayUrl;
 		if (script.authRef) {
 			const resolved = await resolveSecret(script.authRef);
-			if (resolved) ({ headers, url } = await applyAuthToHttpTarget(resolved, { headers, url }));
+			if (resolved) {
+				// D10, mesmo motivo do servidor MCP HTTP acima: o gateway de conector recebe um cabeçalho
+				// fixo reaproveitado por toda a sessão.
+				if (resolved.authType === "oauth1") {
+					console.warn(
+						`[secrets] Script "${script.name}" (gateway de conector) referencia uma credencial OAuth 1.0 — esquema não suportado neste caminho (cabeçalho fixo, D10); a integração não foi montada.`,
+					);
+					return undefined;
+				}
+				({ headers, url } = await applyAuthToHttpTarget(resolved, { headers, url }));
+			}
 		}
 		return { type: "http", url, headers: Object.keys(headers).length > 0 ? headers : undefined };
 	}
@@ -861,6 +937,14 @@ const resolveProviderAuth = async (
 	const resolved = await resolveSecret(apiKeyRef);
 	if (!resolved) return NO_PROVIDER_AUTH;
 	const applied = await applyAuthToHttpTarget(resolved, { headers: {}, url: "" });
+	if (applied.oauth1) {
+		// D9: provider de modelo não é caso de uso do esquema oauth1 (não há requisição por chamada
+		// pra assinar aqui — só um header estático). Falhar em silêncio mandaria a requisição sem
+		// `Authorization` e o 401 apareceria três camadas adiante; registra o motivo em vez disso.
+		console.warn(
+			`[secrets] Secret ${resolved.id ?? apiKeyRef} usa OAuth 1.0, que não se aplica à chave do provider LLM — ignorado.`,
+		);
+	}
 	return { headers: applied.headers, querySuffix: applied.url };
 };
 

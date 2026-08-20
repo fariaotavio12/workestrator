@@ -196,6 +196,15 @@ None currently. Pattern for future jobs: a `*Job` component holds only the `@Sch
 - **Firebase**: Cloud messaging configured in `shared/config/FirebaseConfig.kt` and `shared/media/config/FirebaseStorageConfig.kt`.
 - **Custom config properties**: App-specific config uses `@ConfigurationProperties` beans with the `app.*` prefix in `shared/config/`.
 
+## OAuth 1.0a Auth Scheme (per-request signing)
+
+`SecretAuthType.OAUTH1` (`.specs/003-autenticacao-oauth1-nas-ferramentas`, `C:\Projetos\docs\Workestrator\003-autenticacao-oauth1-nas-ferramentas\` — new specs from 003 onward live outside the repo) — the 8th auth scheme, added for legacy APIs that never migrated past OAuth 1.0a (Fluig/TOTVS). Unlike every other scheme, the header is **not** a fixed value calculated once and reused: it's a signature over method + final URL + a per-request nonce/timestamp, computed via `OAuth1Signer` (`runstep/service/integration/OAuth1Signer.kt`, RFC 5849).
+
+- **`ProviderAuthResolver.HttpAuthTarget.signRequest` is an optional callback, not a header.** It only gets populated for `OAUTH1` (`applyAuthToHttpTarget`); every other scheme still returns a plain header in `headers`. **Any consumer of `HttpAuthTarget` must invoke `signRequest` if present** — ignoring it silently sends the request without `Authorization`. Today the only consumer is `HttpToolRunner.executeHttpTool`, which calls it after `applyUrlTemplate` resolves the final URL (the signature covers the URL byte-for-byte, so signing the template and substituting placeholders afterward would 401 every parametrized tool).
+- **`consumerKey`/`token`/`signatureMethod`/`realm` live in `Secret.metadata`** (public, travel in clear on every request); the two secrets (`consumerSecret`/`tokenSecret`) are a JSON blob in the encrypted value (`{ "consumerSecret": "...", "tokenSecret": "..." }`, `tokenSecret` optional). Adding a metadata key for a new scheme? It must go into `knownAuthMetadataKeys` — anything outside that set leaks as a fixed HTTP header (`fixedMetadataHeaders`).
+- **A credential of this scheme used as a model provider's `apiKeyRef` applies nothing and logs a warning** (D9) — there's no per-call signing point there, and failing silently would send an unauthenticated request that 401s three layers downstream with no clue why.
+- **The JS port (`apps/web/electron/mcp-servers/oauth1.mjs`) must produce byte-identical signatures** for the same input (RF11) — the two executors (this backend, the Electron local runner) are verified against the **same test vectors** (RFC 5849 §3.4.1.3.1 normative example + a real Fluig URL with a non-default port), in `OAuth1SignerTest.kt` and `oauth1.test.ts` respectively. Changing the encoding/normalization logic on one side without mirroring the other produces a 401 on one executor and success on the other, with no other symptom.
+
 ## External Checkpoint Approvals (n8n → Teams, delegated approver)
 
 `features/approval` (`.specs/001-aprovacoes-externas-teams`) — a checkpoint pause can notify externally via a webhook (n8n → Teams) and be decided by someone other than the squad owner. Key non-obvious points:

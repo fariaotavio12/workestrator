@@ -10,7 +10,8 @@ import java.util.UUID
  * How the resolved value is injected into a request (see docs/plano-integracoes-e-flow-builder.md
  * §8.3). `metadata` on `Secret` carries the non-sensitive parameters each scheme needs
  * (`headerName`/`valuePrefix` for `HEADER`, `queryParam` for `QUERY`, `basicUsername` for `BASIC`,
- * `tokenUrl`/`clientId`/`scopes` for the `OAUTH2_*` schemes). `RAW` is the escape hatch: the runner
+ * `tokenUrl`/`clientId`/`scopes` for the `OAUTH2_*` schemes, `consumerKey`/`token`/`signatureMethod`/
+ * `realm` for `OAUTH1`). `RAW` is the escape hatch: the runner
  * substitutes a `"$label"` placeholder anywhere in a header/env value, same as before this scheme existed.
  */
 enum class SecretAuthType(@JsonValue val value: String) {
@@ -20,6 +21,7 @@ enum class SecretAuthType(@JsonValue val value: String) {
     BASIC("basic"),
     OAUTH2_CLIENT_CREDENTIALS("oauth2_client_credentials"),
     OAUTH2_REFRESH("oauth2_refresh"),
+    OAUTH1("oauth1"),
     RAW("raw"),
     ;
 

@@ -216,4 +216,61 @@ describe("buildHttpTool", () => {
 		expect(result.ok).toBe(false);
 		expect(result.text).toContain("ECONNREFUSED");
 	});
+
+	describe("oauth1 (D5, D9/RF9, critério 4/12)", () => {
+		const oauth1Credentials = { consumerKey: "ck", consumerSecret: "cs-super-secreto", tokenSecret: "ts-super-secreto", signatureMethod: "HMAC-SHA1" };
+
+		it("assina a URL final (placeholders já substituídos) e manda um Authorization OAuth por chamada", async () => {
+			const fetchMock = vi
+				.spyOn(globalThis, "fetch")
+				.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+			const tool = buildHttpTool(
+				httpDef({ urlTemplate: "https://fluig.example/requests/{{id}}/tasks", oauth1: oauth1Credentials }),
+				"tarefas",
+			);
+
+			await tool.execute({ variables: { id: "230598" } });
+
+			expect(fetchMock).toHaveBeenCalledWith(
+				"https://fluig.example/requests/230598/tasks",
+				expect.objectContaining({
+					headers: expect.objectContaining({ Authorization: expect.stringMatching(/^OAuth /) }),
+				}),
+			);
+		});
+
+		it("duas chamadas seguidas produzem Authorization diferentes (nonce/timestamp novos)", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+			const tool = buildHttpTool(
+				httpDef({ urlTemplate: "https://fluig.example/requests/{{id}}/tasks", oauth1: oauth1Credentials }),
+				"tarefas",
+			);
+
+			await tool.execute({ variables: { id: "1" } });
+			await tool.execute({ variables: { id: "1" } });
+
+			const fetchMock = vi.mocked(fetch);
+			const first = (fetchMock.mock.calls[0]?.[1] as { headers: Record<string, string> }).headers.Authorization;
+			const second = (fetchMock.mock.calls[1]?.[1] as { headers: Record<string, string> }).headers.Authorization;
+			expect(first).not.toBe(second);
+		});
+
+		it("nunca expõe os segredos — nem no objeto de headers, nem na resposta de erro", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("boom", { status: 500 }));
+			const tool = buildHttpTool(
+				httpDef({ urlTemplate: "https://fluig.example/requests/{{id}}/tasks", oauth1: oauth1Credentials }),
+				"tarefas",
+			);
+
+			const result = await tool.execute({ variables: { id: "1" } });
+
+			expect(result.text).not.toContain("cs-super-secreto");
+			expect(result.text).not.toContain("ts-super-secreto");
+			const fetchMock = vi.mocked(fetch);
+			const sentHeaders = (fetchMock.mock.calls[0]?.[1] as { headers: Record<string, string> }).headers;
+			expect(JSON.stringify(sentHeaders)).not.toContain("cs-super-secreto");
+			expect(JSON.stringify(sentHeaders)).not.toContain("ts-super-secreto");
+			expect(sentHeaders.Authorization).toMatch(/^OAuth /);
+		});
+	});
 });

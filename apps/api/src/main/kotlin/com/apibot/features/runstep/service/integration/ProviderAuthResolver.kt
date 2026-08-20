@@ -35,9 +35,21 @@ class ProviderAuthResolver(
     private val oauthTokenCache = ConcurrentHashMap<UUID, CachedToken>()
 
     private val knownAuthMetadataKeys =
-        setOf("headerName", "valuePrefix", "queryParam", "basicUsername", "tokenUrl", "clientId", "scopes")
+        setOf(
+            "headerName", "valuePrefix", "queryParam", "basicUsername", "tokenUrl", "clientId", "scopes",
+            "consumerKey", "token", "signatureMethod", "realm",
+        )
 
-    data class HttpAuthTarget(val headers: Map<String, String>, val url: String)
+    /**
+     * `signRequest` só é populado por esquemas cujo header depende da requisição — hoje `OAUTH1`, que
+     * assina método + URL final + nonce + timestamp (ver `OAuth1Signer`). Quem executa a chamada
+     * precisa invocá-lo com a URL já resolvida; ignorá-lo manda a requisição sem `Authorization`.
+     */
+    data class HttpAuthTarget(
+        val headers: Map<String, String>,
+        val url: String,
+        val signRequest: ((method: String, url: String) -> Map<String, String>)? = null,
+    )
     data class ProviderAuth(val headers: Map<String, String>, val querySuffix: String)
     private data class CachedToken(val accessToken: String, val expiresAt: Instant)
 
@@ -46,6 +58,9 @@ class ProviderAuthResolver(
         val resolved = tryResolveSecret(userId, apiKeyRef) ?: return ProviderAuth(emptyMap(), "")
         val (secretId, value) = resolved
         val applied = applyAuthToHttpTarget(userId, secretId, value, HttpAuthTarget(emptyMap(), ""))
+        if (applied.signRequest != null) {
+            logger.warn("Secret {} usa OAuth 1.0, que não se aplica à chave do provider LLM — ignorado.", secretId)
+        }
         return ProviderAuth(applied.headers, applied.url)
     }
 
@@ -75,6 +90,7 @@ class ProviderAuthResolver(
         val headers = target.headers + fixedMetadataHeaders(resolved.metadata)
         var url = target.url
         val authHeaders = mutableMapOf<String, String>()
+        var signRequest: ((String, String) -> Map<String, String>)? = null
 
         when (resolved.authType) {
             SecretAuthType.BEARER -> authHeaders["Authorization"] = "Bearer ${resolved.value}"
@@ -96,10 +112,34 @@ class ProviderAuthResolver(
             }
             SecretAuthType.OAUTH2_CLIENT_CREDENTIALS, SecretAuthType.OAUTH2_REFRESH ->
                 authHeaders["Authorization"] = "Bearer ${exchangeOAuth2Token(userId, secretId, resolved)}"
+            SecretAuthType.OAUTH1 -> {
+                val credentials = oauth1Credentials(resolved)
+                signRequest = { method, requestUrl ->
+                    mapOf("Authorization" to OAuth1Signer.authorizationHeader(method, requestUrl, credentials))
+                }
+            }
             SecretAuthType.RAW -> Unit
         }
 
-        return HttpAuthTarget(headers + authHeaders, url)
+        return HttpAuthTarget(headers + authHeaders, url, signRequest)
+    }
+
+    /**
+     * `consumerKey`/`token` viajam em claro em todo request, então moram no `metadata`; os dois
+     * segredos (`consumerSecret`/`tokenSecret`) vêm cifrados no valor, como JSON.
+     */
+    private fun oauth1Credentials(resolved: SecretValueResponse): OAuth1Signer.Credentials {
+        val consumerKey = resolved.metadata?.get("consumerKey")
+            ?: throw IllegalStateException("Secret OAuth 1.0 sem metadata.consumerKey configurado.")
+        val consumerSecret = readJsonField(resolved.value, "consumerSecret") ?: resolved.value
+        return OAuth1Signer.Credentials(
+            consumerKey = consumerKey,
+            consumerSecret = consumerSecret,
+            token = resolved.metadata["token"],
+            tokenSecret = readJsonField(resolved.value, "tokenSecret"),
+            signatureMethod = resolved.metadata["signatureMethod"] ?: "HMAC-SHA1",
+            realm = resolved.metadata["realm"],
+        )
     }
 
     private fun fixedMetadataHeaders(metadata: Map<String, String>?): Map<String, String> =

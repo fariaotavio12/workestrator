@@ -7,8 +7,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { authorizationHeader } from "./oauth1.mjs";
 
-/** @typedef {{ name: string, description?: string, method: string, urlTemplate: string, headers?: Record<string,string>, bodySchema?: string, responseMap?: string }} HttpToolDef */
+/** @typedef {{ consumerKey: string, consumerSecret: string, token?: string, tokenSecret?: string, signatureMethod: string, realm?: string }} OAuth1Credentials */
+/** @typedef {{ name: string, description?: string, method: string, urlTemplate: string, headers?: Record<string,string>, bodySchema?: string, responseMap?: string, oauth1?: OAuth1Credentials }} HttpToolDef */
 
 /** @type {HttpToolDef[]} */
 const toolDefs = JSON.parse(process.env.WORKESTRATOR_HTTP_TOOL_CONFIG ?? "[]");
@@ -61,10 +63,16 @@ for (const def of toolDefs) {
 		},
 		async ({ variables, body }) => {
 			const url = applyUrlTemplate(def.urlTemplate, variables);
+			// Este processo é quem conhece a URL final (já com os placeholders substituídos) — por
+			// isso assina aqui dentro (D11), em vez de receber um header pronto de `runner.ts`. Precisa
+			// ser recalculado a cada chamada: a assinatura cobre método + URL + nonce + timestamp, e um
+			// header reaproveitado é rejeitado pela API legada na segunda chamada.
+			const headers = { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) };
+			if (def.oauth1) headers.Authorization = authorizationHeader(def.method || "GET", url, def.oauth1);
 			try {
 				const res = await fetch(url, {
 					method: def.method || "GET",
-					headers: { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) },
+					headers,
 					body: body !== undefined && def.method !== "GET" ? JSON.stringify(body) : undefined,
 				});
 				const raw = await res.text();

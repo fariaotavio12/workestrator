@@ -14,6 +14,12 @@ export const toMetadata = (values: SecretFormValues): Record<string, string> | u
 		if (values.clientId?.trim()) entries.push(["clientId", values.clientId.trim()]);
 		if (values.scopes?.trim()) entries.push(["scopes", values.scopes.trim()]);
 	}
+	if (values.authType === "oauth1") {
+		if (values.consumerKey?.trim()) entries.push(["consumerKey", values.consumerKey.trim()]);
+		if (values.oauthToken?.trim()) entries.push(["token", values.oauthToken.trim()]);
+		if (values.signatureMethod?.trim()) entries.push(["signatureMethod", values.signatureMethod.trim()]);
+		if (values.realm?.trim()) entries.push(["realm", values.realm.trim()]);
+	}
 	return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
 
@@ -22,5 +28,9 @@ export const toValue = (values: SecretFormValues): string => {
 	if (values.authType === "basic") return JSON.stringify({ password: raw });
 	if (values.authType === "oauth2_client_credentials") return JSON.stringify({ clientSecret: raw });
 	if (values.authType === "oauth2_refresh") return JSON.stringify({ refreshToken: raw });
+	if (values.authType === "oauth1") {
+		const tokenSecret = values.tokenSecret?.trim();
+		return JSON.stringify(tokenSecret ? { consumerSecret: raw, tokenSecret } : { consumerSecret: raw });
+	}
 	return raw;
 };

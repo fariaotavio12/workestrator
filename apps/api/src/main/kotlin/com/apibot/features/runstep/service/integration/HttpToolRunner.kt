@@ -106,6 +106,8 @@ class HttpToolRunner(
             val requestBuilder = HttpRequest.newBuilder(URI.create(url))
                 .header("Content-Type", "application/json")
             target.headers.forEach { (key, value) -> requestBuilder.header(key, value) }
+            // OAuth 1.0a assina método + URL final: só dá pra montar o header depois do template resolvido.
+            target.signRequest?.invoke(method, url)?.forEach { (key, value) -> requestBuilder.header(key, value) }
             requestBuilder.method(method, bodyPublisher)
 
             val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())

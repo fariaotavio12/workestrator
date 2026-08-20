@@ -1,5 +1,5 @@
 import type { SecretAuthType } from "@/features/security/orchestrator-shared/types";
-import { Braces, Hash, KeyRound, Link2, RefreshCw, RotateCw, UserRoundCheck } from "lucide-react";
+import { Braces, Hash, KeyRound, Link2, RefreshCw, RotateCw, Signature, UserRoundCheck } from "lucide-react";
 
 export const AUTH_TYPE_LABEL: Record<SecretAuthType, string> = {
 	bearer: "Bearer",
@@ -8,6 +8,7 @@ export const AUTH_TYPE_LABEL: Record<SecretAuthType, string> = {
 	basic: "Basic auth",
 	oauth2_client_credentials: "OAuth2 - client credentials",
 	oauth2_refresh: "OAuth2 - refresh token",
+	oauth1: "OAuth 1.0 — assinatura por requisição",
 	raw: "Placeholder manual",
 };
 
@@ -18,6 +19,7 @@ export const AUTH_TYPE_HINT: Record<SecretAuthType, string> = {
 	basic: "Usuário + senha",
 	oauth2_client_credentials: "Token trocado por client_id + secret",
 	oauth2_refresh: "Token renovado por refresh token",
+	oauth1: "Assinatura calculada a cada chamada — não é um header fixo",
 	raw: "$id em headers/env",
 };
 
@@ -28,6 +30,7 @@ export const AUTH_TYPE_ICON: Record<SecretAuthType, typeof KeyRound> = {
 	basic: UserRoundCheck,
 	oauth2_client_credentials: RefreshCw,
 	oauth2_refresh: RotateCw,
+	oauth1: Signature,
 	raw: Braces,
 };
 
@@ -40,5 +43,6 @@ export const VALUE_LABEL: Record<SecretAuthType, string> = {
 	basic: "Senha",
 	oauth2_client_credentials: "Client secret",
 	oauth2_refresh: "Refresh token",
+	oauth1: "Segredo do consumidor",
 	raw: "Valor real",
 };

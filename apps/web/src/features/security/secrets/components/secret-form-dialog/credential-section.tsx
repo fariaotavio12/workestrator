@@ -28,6 +28,15 @@ export const SecretCredentialSection = ({ authType, isEditing, register }: Props
 				autoComplete="off"
 				{...register("value")}
 			/>
+			{authType === "oauth1" && (
+				<Input
+					label="Segredo do token (opcional)"
+					type="password"
+					placeholder="Cole o segredo do token aqui"
+					autoComplete="off"
+					{...register("tokenSecret")}
+				/>
+			)}
 			<Typography variant="caption" className="text-muted-foreground">
 				O valor fica cifrado no backend - nunca e exibido de volta, nem aqui, nem em outra tela.
 			</Typography>

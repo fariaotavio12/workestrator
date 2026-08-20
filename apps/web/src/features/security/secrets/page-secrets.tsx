@@ -37,6 +37,7 @@ const AUTH_TYPE_LABEL: Record<SecretAuthType, string> = {
 	basic: "Basic",
 	oauth2_client_credentials: "OAuth2 (client credentials)",
 	oauth2_refresh: "OAuth2 (refresh)",
+	oauth1: "OAuth 1.0",
 	raw: "Manual",
 };
 

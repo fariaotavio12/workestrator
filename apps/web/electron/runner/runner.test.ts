@@ -116,6 +116,20 @@ describe("buildMcpServerEntry", () => {
 		expect(entry).toEqual({ type: "http", url: "https://mcp.example.com", headers: undefined });
 	});
 
+	it("refuses to build an mcp http entry for an oauth1 secret — fixed headers reused across N calls can't carry a per-request signature (D10, critério 13)", async () => {
+		const oauth1ResolveSecret: SecretResolver = async () => ({
+			value: JSON.stringify({ consumerSecret: "cs" }),
+			authType: "oauth1",
+			metadata: { consumerKey: "ck" },
+		});
+		expect(
+			await buildMcpServerEntry(
+				baseScript({ kind: "mcp", transport: "http", url: "https://mcp.example.com", authRef: "oauth1-secret" }),
+				oauth1ResolveSecret,
+			),
+		).toBeUndefined();
+	});
+
 	it("substitutes $id placeholders in headers with the resolved secret's value", async () => {
 		const entry = await buildMcpServerEntry(
 			baseScript({
@@ -155,6 +169,26 @@ describe("buildMcpServerEntry", () => {
 
 	it("returns undefined for an http-kind script missing urlTemplate", async () => {
 		expect(await buildMcpServerEntry(baseScript({ kind: "http" }), resolveSecret)).toBeUndefined();
+	});
+
+	it("propagates oauth1 credentials into the http-tool.mjs config instead of a fixed header (D11, critério 13)", async () => {
+		const oauth1ResolveSecret: SecretResolver = async () => ({
+			value: JSON.stringify({ consumerSecret: "cs", tokenSecret: "ts" }),
+			authType: "oauth1",
+			metadata: { consumerKey: "fluig_avalia_chamados", token: "tok-1" },
+		});
+		const entry = await buildMcpServerEntry(
+			baseScript({ kind: "http", method: "GET", urlTemplate: "https://fluig.example/tasks", authRef: "oauth1-secret" }),
+			oauth1ResolveSecret,
+		);
+		expect(entry).toMatchObject({
+			env: {
+				WORKESTRATOR_HTTP_TOOL_CONFIG: expect.stringContaining('"consumerKey":"fluig_avalia_chamados"'),
+			},
+		});
+		const config = JSON.parse((entry as { env: Record<string, string> }).env.WORKESTRATOR_HTTP_TOOL_CONFIG);
+		expect(config[0].headers?.Authorization).toBeUndefined();
+		expect(config[0].oauth1).toMatchObject({ consumerKey: "fluig_avalia_chamados", consumerSecret: "cs", tokenSecret: "ts" });
 	});
 
 	it("resolves a youtube connector into the local youtube.mjs server without requiring config", async () => {
@@ -249,6 +283,25 @@ describe("buildMcpServerEntry", () => {
 	it("returns undefined for a composio connector without config.gatewayUrl", async () => {
 		expect(
 			await buildMcpServerEntry(baseScript({ kind: "connector", connectorProvider: "composio" }), resolveSecret),
+		).toBeUndefined();
+	});
+
+	it("refuses to build a connector gateway entry for an oauth1 secret — same fixed-header reason as the mcp http path (D10, critério 13)", async () => {
+		const oauth1ResolveSecret: SecretResolver = async () => ({
+			value: JSON.stringify({ consumerSecret: "cs" }),
+			authType: "oauth1",
+			metadata: { consumerKey: "ck" },
+		});
+		expect(
+			await buildMcpServerEntry(
+				baseScript({
+					kind: "connector",
+					connectorProvider: "composio",
+					config: JSON.stringify({ gatewayUrl: "https://mcp.composio.dev/abc" }),
+					authRef: "oauth1-secret",
+				}),
+				oauth1ResolveSecret,
+			),
 		).toBeUndefined();
 	});
 

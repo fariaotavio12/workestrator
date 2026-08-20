@@ -16,6 +16,7 @@
  * Sem dependência de `runner.ts`: recebe configs já resolvidas (auth aplicada) por parâmetro, pra
  * não criar ciclo de import entre os dois módulos.
  */
+import { authorizationHeader } from "../mcp-servers/oauth1.mjs";
 
 /** `parameters` de uma function tool no formato OpenAI (JSON Schema). */
 export type OpenAiToolDefinition = {
@@ -171,6 +172,20 @@ export const parseTextToolCalls = (text: string, known: ReadonlySet<string>): Te
 
 // --- Tools HTTP (kind: "http") ---
 
+/**
+ * Mesmos campos de `OAuth1Signer.Credentials` (Kotlin) — o assinador (`mcp-servers/oauth1.mjs`)
+ * precisa da URL final (já com placeholders substituídos) pra assinar, então esta credencial viaja
+ * até aqui em vez de um `Authorization` pronto (D2, D5, D11).
+ */
+export type OAuth1Credentials = {
+	consumerKey: string;
+	consumerSecret: string;
+	token?: string;
+	tokenSecret?: string;
+	signatureMethod: string;
+	realm?: string;
+};
+
 /** Mesma forma consumida por `mcp-servers/http-tool.mjs` — a auth já vem aplicada em headers/url. */
 export type HttpToolDef = {
 	name: string;
@@ -180,6 +195,8 @@ export type HttpToolDef = {
 	headers?: Record<string, string>;
 	bodySchema?: string;
 	responseMap?: string;
+	/** Presente só pra ferramentas com credencial `oauth1` — assinada por chamada, ver `buildHttpTool`. */
+	oauth1?: OAuth1Credentials;
 };
 
 /**
@@ -279,7 +296,17 @@ export const buildHttpTool = (def: HttpToolDef, name: string): ResolvedTool => {
 		execute: async (args) => {
 			const variables = (args.variables ?? {}) as Record<string, unknown>;
 			const url = applyUrlTemplate(def.urlTemplate, variables);
-			const sentHeaders = { "Content-Type": "application/json", ...applyHeaderTemplate(def.headers, variables) };
+			const sentHeaders: Record<string, string> = {
+				"Content-Type": "application/json",
+				...applyHeaderTemplate(def.headers, variables),
+			};
+			// Assina depois de resolver a URL final e antes do fetch (D5) — a assinatura cobre a URL
+			// byte a byte, então assinar o template e substituir depois produziria 401 em toda
+			// ferramenta parametrizada. `sentHeaders` (exposto na aba Ferramentas pra debug) recebe só o
+			// `Authorization` resultante — nunca as credenciais (`consumerSecret`/`tokenSecret`).
+			if (def.oauth1) {
+				sentHeaders.Authorization = authorizationHeader(def.method || "GET", url, def.oauth1);
+			}
 			try {
 				const res = await fetch(url, {
 					method: def.method || "GET",

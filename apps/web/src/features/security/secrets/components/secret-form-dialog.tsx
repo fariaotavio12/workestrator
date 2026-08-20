@@ -50,6 +50,11 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 				tokenUrl: secret.metadata?.tokenUrl ?? "",
 				clientId: secret.metadata?.clientId ?? "",
 				scopes: secret.metadata?.scopes ?? "",
+				consumerKey: secret.metadata?.consumerKey ?? "",
+				oauthToken: secret.metadata?.token ?? "",
+				signatureMethod:
+					(secret.metadata?.signatureMethod as SecretFormValues["signatureMethod"]) ?? "HMAC-SHA1",
+				realm: secret.metadata?.realm ?? "",
 			});
 			return;
 		}
@@ -135,7 +140,13 @@ export const SecretFormDialog = ({ open, onOpenChange, secret, preset }: Props) 
 					/>
 				</SheetSection>
 
-				<SecretAuthFields authType={authType} errors={errors} register={register} setValue={setValue} />
+				<SecretAuthFields
+					authType={authType}
+					control={control}
+					errors={errors}
+					register={register}
+					setValue={setValue}
+				/>
 				<SecretCredentialSection authType={authType} isEditing={isEditing} register={register} />
 			</form>
 		</AppSheet>

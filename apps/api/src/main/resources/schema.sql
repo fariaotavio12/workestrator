@@ -37,6 +37,16 @@ ALTER TABLE IF EXISTS scripts
 ALTER TABLE IF EXISTS secrets
     DROP COLUMN IF EXISTS kind;
 
+-- Mesmo problema de scripts_kind_check acima, agora em secrets.auth_type: o Hibernate gerou o CHECK
+-- com o conjunto de valores que SecretAuthType tinha quando a tabela nasceu e `ddl-auto=update` nunca
+-- atualiza check constraint. Sem isso, todo cadastro do esquema OAUTH1 falha com
+-- "violates check constraint secrets_auth_type_check" (spec 003, decisão D13).
+ALTER TABLE IF EXISTS secrets
+    DROP CONSTRAINT IF EXISTS secrets_auth_type_check;
+
+ALTER TABLE IF EXISTS secrets
+    ADD CONSTRAINT secrets_auth_type_check CHECK (auth_type IN ('BEARER', 'HEADER', 'QUERY', 'BASIC', 'OAUTH2_CLIENT_CREDENTIALS', 'OAUTH2_REFRESH', 'OAUTH1', 'RAW'));
+
 ALTER TABLE IF EXISTS pending_contact_info
     ALTER COLUMN bot_id DROP NOT NULL;
 

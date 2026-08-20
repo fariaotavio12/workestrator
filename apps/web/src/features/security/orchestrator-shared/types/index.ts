@@ -74,8 +74,10 @@ export type Script = {
 /**
  * Esquema de injeção do valor no momento do uso (ver docs/plano-integracoes-e-flow-builder.md §8.3).
  * `metadata` carrega os parâmetros não sensíveis de cada esquema: `headerName`/`valuePrefix` (header),
- * `queryParam` (query), `basicUsername` (basic), `tokenUrl`/`clientId`/`scopes` (oauth2_*). Chaves de
- * `metadata` fora dessas são tratadas como headers fixos sempre enviados (ex.: `anthropic-version`).
+ * `queryParam` (query), `basicUsername` (basic), `tokenUrl`/`clientId`/`scopes` (oauth2_*),
+ * `consumerKey`/`token`/`signatureMethod`/`realm` (oauth1 — os dois segredos ficam fora do metadata,
+ * ver `.specs/003-autenticacao-oauth1-nas-ferramentas`). Chaves de `metadata` fora dessas são tratadas
+ * como headers fixos sempre enviados (ex.: `anthropic-version`).
  */
 export type SecretAuthType =
 	| "bearer"
@@ -84,6 +86,7 @@ export type SecretAuthType =
 	| "basic"
 	| "oauth2_client_credentials"
 	| "oauth2_refresh"
+	| "oauth1"
 	| "raw";
 
 export type AuthConnectionStatus = "connected" | "expired" | "revoked" | "error";

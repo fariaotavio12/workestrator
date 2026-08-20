@@ -30,3 +30,13 @@ Numeração é sequencial por ordem de criação, nunca reaproveitada.
 | [002](002-treinamento-pos-reprovacao/spec.md) | Treinamento do agente após reprovação | 🚧 em implementação (fases 1–3 mergeadas em `feat/improve-squads`; falta a avaliação manual da qualidade da lição e o vínculo `retriedRunId` — ver `tasks.md`) |
 
 Status: `📝 especificado` → `🚧 em implementação` → `✅ entregue` → `🗄️ superado por NNN`.
+
+## Specs novas moram fora do repo
+
+A partir da 003, spec nova nasce em `C:\Projetos\docs\Workestrator\NNN-slug\` (decisão `AD-002` em `C:\Projetos\docs\STATE.md`), com índice próprio no `README.md` de lá. A numeração é contínua com a daqui — nenhum número é reaproveitado nos dois lugares.
+
+| # | Feature | Onde |
+|---|---|---|
+| 003 | Autenticação OAuth 1.0a nas ferramentas HTTP — o cofre assina cada requisição e uma API legada (Fluig/TOTVS) passa a ser chamada de dentro do run | `C:\Projetos\docs\Workestrator\003-autenticacao-oauth1-nas-ferramentas\` |
+
+As 001 e 002 ficam aqui até fecharem: estão em implementação e são referenciadas pelos `CLAUDE.md` dos dois apps e por comentários no código.
