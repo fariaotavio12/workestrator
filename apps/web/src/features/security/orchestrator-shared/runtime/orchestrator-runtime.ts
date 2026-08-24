@@ -408,6 +408,39 @@ const pushLiveActivity = (squadId: string, item: LiveActivityItem): void => {
 	patchRuntime(squadId, (runtime) => ({ ...runtime, liveActivity: [...runtime.liveActivity, item] }));
 };
 
+/**
+ * Funde thinking consecutivo num único item "streamável" em vez de criar uma caixa por flush —
+ * o corte em blocos de `THINKING_FLUSH_CHARS` (runner.ts) é só o tamanho do pacote SSE, não deve
+ * virar corte visual. Só funde enquanto o último item ainda for um thinking em aberto (`running`);
+ * qualquer atividade no meio (tool call, output) fecha o bloco via `closeStreamingThinking`.
+ */
+const streamThinking = (squadId: string, text: string): void => {
+	patchRuntime(squadId, (runtime) => {
+		const items = runtime.liveActivity;
+		const last = items[items.length - 1];
+		if (last?.kind === "thinking" && last.status === "running") {
+			const merged: LiveActivityItem = { ...last, detail: (last.detail ?? "") + text };
+			return { ...runtime, liveActivity: [...items.slice(0, -1), merged] };
+		}
+		return {
+			...runtime,
+			liveActivity: [...items, { id: newId(), kind: "thinking", detail: text, status: "running" }],
+		};
+	});
+};
+
+/** Fecha o thinking em streaming (se houver) antes de registrar outra atividade. */
+const closeStreamingThinking = (squadId: string): void => {
+	patchRuntime(squadId, (runtime) => {
+		const items = runtime.liveActivity;
+		const last = items[items.length - 1];
+		if (last?.kind === "thinking" && last.status === "running") {
+			return { ...runtime, liveActivity: [...items.slice(0, -1), { ...last, status: "done" }] };
+		}
+		return runtime;
+	});
+};
+
 /** Atualiza um item de atividade pelo `id` (ex.: ferramenta rodando → concluída/erro). */
 const updateLiveActivity = (squadId: string, id: string, patch: Partial<LiveActivityItem>): void => {
 	patchRuntime(squadId, (runtime) => ({
@@ -1101,8 +1134,9 @@ const runOrchestratedAgentStep = (
 					}));
 				},
 				{
-					onThinking: (text) => pushLiveActivity(squadId, { id: newId(), kind: "thinking", detail: text }),
+					onThinking: (text) => streamThinking(squadId, text),
 					onActivity: (activity) => {
+						closeStreamingThinking(squadId);
 						if (activity.kind === "tool" && activity.status === "running") {
 							// Início de uma ferramenta — item novo, status "running" (fecha no tool_result pelo id).
 							const id = activity.id ?? newId();

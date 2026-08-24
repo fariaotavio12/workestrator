@@ -160,7 +160,12 @@ const LiveAgentCard = ({
 				<div className="flex flex-col gap-1">
 					{activity.map((item) =>
 						item.kind === "thinking" ? (
-							<ThinkingBlock key={item.id} title="Pensando">
+							<ThinkingBlock
+								key={item.id}
+								title="Pensando"
+								active={item.status === "running"}
+								defaultOpen={item.status === "running"}
+							>
 								{item.detail ?? ""}
 							</ThinkingBlock>
 						) : (
