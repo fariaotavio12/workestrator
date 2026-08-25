@@ -14,6 +14,7 @@ export const idleRuntime = (): Runtime => ({
 	events: [],
 	pendingSeatId: null,
 	pendingCheckpointKind: null,
+	pendingContextSteps: null,
 	streamingText: null,
 	pendingQuestion: null,
 	pendingQaHistory: [],

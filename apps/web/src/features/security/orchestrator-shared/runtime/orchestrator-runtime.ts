@@ -53,7 +53,13 @@ import {
 } from "./model-client";
 import { isApiOnlySquad } from "./squad-readiness";
 import { notifyOs } from "./os-notify";
-import { parseApprovalItems, summarizeApprovalItems } from "./approval-items";
+import {
+	MAX_APPROVAL_ITEMS,
+	parseApprovalItems,
+	stripRejectedApprovalItems,
+	summarizeApprovalItems,
+	type RejectedItemsFilter,
+} from "./approval-items";
 import { startApprovalWatch, stopApprovalWatch } from "./approval-watcher";
 import { parseCoordinatorDecision, UNPARSEABLE_DECISION_REASON } from "./orchestrator-decision";
 import { cancelAdvance, runAbortable } from "./runner-controllers";
@@ -194,6 +200,45 @@ const patchRun = (squadId: string, patch: (run: RunRecord) => RunRecord): void =
 	const existing = activeRuns.get(squadId);
 	if (!existing) return;
 	activeRuns.set(squadId, patch(existing));
+};
+
+/**
+ * Conteúdo já filtrado dos itens reprovados num checkpoint por item (design D16: "aprovado → segue com o
+ * subconjunto aprovado"), por execução. Chave: `stepId` do passo cuja lista foi decidida, ou
+ * `BRIEFING_CONTEXT_KEY` quando os itens vieram do briefing (checkpoint "before" antes do primeiro passo).
+ *
+ * Override de **contexto**, nunca reescrita do artefato: `activeRuns`/`RunRecord` é a trilha de auditoria
+ * persistida e as `RunRejection` da spec 002 apontam pro conteúdo original. Vive só em memória porque é
+ * sempre recalculado antes de ser consumido — `continueRun` re-liquida o checkpoint por `settleCheckpoint`,
+ * que refaz o filtro antes de a continuação rodar.
+ */
+const BRIEFING_CONTEXT_KEY = "";
+const contextOverrides = new Map<string, Map<string, string>>();
+
+const setContextOverride = (executionId: string, key: string, content: string): void => {
+	const existing = contextOverrides.get(executionId) ?? new Map<string, string>();
+	existing.set(key, content);
+	contextOverrides.set(executionId, existing);
+};
+
+/**
+ * A visão do run que alimenta prompts — idêntica ao `RunRecord` quando não há nada filtrado. `briefing` só
+ * vem preenchido quando o próprio briefing foi filtrado; caso contrário quem chama mantém o seu.
+ */
+const contextView = (
+	executionId: string,
+	run: RunRecord | undefined,
+): { steps: RunRecord["steps"]; briefing?: string } => {
+	const steps = run?.steps ?? [];
+	const overrides = contextOverrides.get(executionId);
+	if (!overrides?.size) return { steps };
+	return {
+		briefing: overrides.get(BRIEFING_CONTEXT_KEY),
+		steps: steps.map((step) => {
+			const override = overrides.get(step.stepId);
+			return override && step.artifact ? { ...step, artifact: { ...step.artifact, content: override } } : step;
+		}),
+	};
 };
 
 /**
@@ -388,6 +433,11 @@ const appendEvent = (squadId: string, event: Omit<RunEvent, "id" | "createdAt">)
 	}));
 };
 
+/** Sai do estado de checkpoint — os três campos pendentes caem juntos, nunca um sem o outro. */
+const clearPendingCheckpoint = (squadId: string): void => {
+	patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null, pendingContextSteps: null }));
+};
+
 const setPerAgentStatus = (squadId: string, seatId: string, status: AgentStatus): void => {
 	patchRuntime(squadId, (runtime) => ({
 		...runtime,
@@ -492,6 +542,7 @@ const setCoordinatorThinking = (squadId: string, thinking: boolean): void => {
 const finishRun = (squadId: string, status: "done" | "aborted"): void => {
 	const pendingApprovalId = getRuntime(squadId).pendingApprovalId;
 	if (pendingApprovalId) stopApprovalWatch(pendingApprovalId);
+	contextOverrides.delete(squadId);
 	persistFinishedRun(squadId, status);
 	patchRuntime(squadId, (runtime) => ({
 		...runtime,
@@ -808,6 +859,8 @@ const enterCheckpoint = (
 	 * necessária", repeti-lo no corpo da notificação seria redundante. */
 	notifyBody: string,
 	summary: string,
+	/** Só no kind "before": os passos que o coordenador escolheu para o agent, preservados pela pausa. */
+	contextSteps?: number[],
 ): void => {
 	// Lista JSON no artefato do passo anterior ⇒ revisão item a item (design D15). Prosa ⇒ `[]`, e o
 	// checkpoint segue booleano como sempre — é o que mantém squads existentes intactos.
@@ -819,6 +872,7 @@ const enterCheckpoint = (
 		status: "checkpoint",
 		pendingSeatId: seatId,
 		pendingCheckpointKind: kind,
+		pendingContextSteps: contextSteps?.length ? contextSteps : null,
 		coordinatorThinking: false,
 	}));
 	appendEvent(squadId, { kind: "checkpoint", seatId, agentId: agent.id, title });
@@ -830,6 +884,7 @@ const enterCheckpoint = (
 		pendingCheckpointKind: kind,
 		pendingQuestion: null,
 		pendingApprovalId: null,
+		pendingContextSteps: contextSteps?.length ? contextSteps : null,
 	});
 	queueMicrotask(drainRunQueue);
 
@@ -863,12 +918,52 @@ const enterCheckpoint = (
 				pendingCheckpointKind: kind,
 				pendingQuestion: null,
 				pendingApprovalId: approval.id,
+				pendingContextSteps: contextSteps?.length ? contextSteps : null,
 			});
 			startApprovalWatch(approval.id, (settled) => settleCheckpoint(squadId, settled));
 		} catch {
 			appendLog(squadId, "Não foi possível registrar o pedido de aprovação externamente — decida pelo app.");
 		}
 	})();
+};
+
+/**
+ * Remove do **contexto** do próximo passo os itens reprovados num checkpoint por item — a metade da D16
+ * ("segue com o subconjunto aprovado") que faltava. Sem isso o agent seguinte recebia o artefato íntegro do
+ * passo anterior e reprocessava exatamente o que acabou de ser reprovado: a decisão por item existia no
+ * banco, no log e na auditoria, mas nunca chegava ao prompt.
+ *
+ * A lista decidida é sempre a que `enterCheckpoint` usou como `summary` — o artefato do último passo, ou o
+ * briefing quando o checkpoint "before" abre antes do primeiro passo. `null` quando não deu para filtrar
+ * com segurança (ver `stripRejectedApprovalItems`); nesse caso quem chama avisa em vez de seguir calado.
+ */
+const applyRejectedItemsFilter = (executionId: string, approval: ApprovalRequest): RejectedItemsFilter | null => {
+	if (approval.items.length === 0) return null;
+	const run = activeRun(executionId);
+	const view = contextView(executionId, run);
+	const lastStep = view.steps.at(-1);
+	const source = lastStep?.artifact?.content ?? view.briefing ?? run?.input;
+	const filtered = stripRejectedApprovalItems(source, approval.items);
+	if (!filtered) return null;
+	setContextOverride(executionId, lastStep?.artifact ? lastStep.stepId : BRIEFING_CONTEXT_KEY, filtered.content);
+	return filtered;
+};
+
+/** Uma linha só: o que foi aprovado, o que foi reprovado e o que aconteceu com o que foi reprovado. */
+const describeApprovedCheckpoint = (
+	approvedLine: string,
+	rejectedCount: number,
+	filtered: RejectedItemsFilter | null,
+): string => {
+	if (rejectedCount === 0) return `${approvedLine}.`;
+	if (!filtered) {
+		return `${approvedLine} — ${rejectedCount} item(ns) reprovado(s), mas a lista original não pôde ser filtrada: o próximo passo recebe o artefato íntegro.`;
+	}
+	const unreviewed =
+		filtered.unreviewed > 0
+			? ` ${filtered.unreviewed} item(ns) acima do limite de ${MAX_APPROVAL_ITEMS} seguiram sem revisão.`
+			: "";
+	return `${approvedLine} — ${rejectedCount} item(ns) reprovado(s), fora do contexto do próximo passo.${unreviewed}`;
 };
 
 /**
@@ -885,6 +980,7 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 	const squad = getSquadConfig(squadId);
 	const seatId = runtime.pendingSeatId;
 	const checkpointKind = runtime.pendingCheckpointKind;
+	const pendingContextSteps = runtime.pendingContextSteps ?? [];
 	const seat = seatId ? squad?.seats.find((item) => item.id === seatId) : undefined;
 	const agent = seat?.agentId ? squad?.agents.find((item) => item.id === seat.agentId) : undefined;
 	const byApprover = approval.decidedByRole === "approver";
@@ -909,17 +1005,19 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 	// gravasse — aprovar o lote não apaga o que foi reprovado dentro dele.
 	recordApprovalRejections(squadId, approval, seatId, agent?.id, checkpointKind);
 	const rejectedCount = approval.items.filter((item) => item.status === "rejected").length;
-	appendLog(
-		squadId,
-		rejectedCount > 0
-			? `Checkpoint aprovado${byApprover ? " por um aprovador" : ""} — ${rejectedCount} item(ns) reprovado(s).`
-			: `Checkpoint aprovado${byApprover ? " por um aprovador" : ""}.`,
-	);
+	const filtered = rejectedCount > 0 ? applyRejectedItemsFilter(squadId, approval) : null;
+	const approvedLine = `Checkpoint aprovado${byApprover ? " por um aprovador" : ""}`;
+	appendLog(squadId, describeApprovedCheckpoint(approvedLine, rejectedCount, filtered));
+	if (rejectedCount > 0 && !filtered) {
+		notify.warning(
+			"Os itens reprovados não puderam ser removidos do contexto — o próximo passo recebe a lista inteira.",
+		);
+	}
 	patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
 
 	if (checkpointKind === "after") {
 		runOrQueueContinuation(squadId, () => {
-			patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+			clearPendingCheckpoint(squadId);
 			const hasInstagramPublisher = agent?.scripts.some((script) => script.connectorProvider === "instagram");
 			if (seat && agent && hasInstagramPublisher) {
 				approvedPublishExecutionIds.add(squadId);
@@ -948,8 +1046,8 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 
 	const run = activeRun(squadId);
 	runOrQueueContinuation(squadId, () => {
-		patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
-		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
+		clearPendingCheckpoint(squadId);
+		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "", [], pendingContextSteps);
 	});
 };
 
@@ -1063,8 +1161,11 @@ const runOrchestratedAgentStep = (
 
 		const run = activeRun(squadId);
 		// Contexto do agente: os passos que o coordenador citou em `context_steps` (conteúdo completo, montado
-		// aqui pelo runtime — não pelo LLM), com fallback pro passo anterior quando ele não citar nada.
-		const steps = run?.steps ?? [];
+		// aqui pelo runtime — não pelo LLM), com fallback pro passo anterior quando ele não citar nada. Passa
+		// pela visão filtrada: item reprovado num checkpoint por item não volta pro prompt (D16).
+		const view = contextView(squadId, run);
+		const steps = view.steps;
+		const effectiveBriefing = view.briefing ?? briefing;
 		const selectedContext = (contextSteps ?? [])
 			.map((n) => {
 				const content = steps[n - 1]?.artifact?.content;
@@ -1080,7 +1181,7 @@ const runOrchestratedAgentStep = (
 		const availableScripts = scripts.filter((s) => isNetworkScript(s) || agent.canExecute);
 
 		try {
-			const retrieval = await retrieveAgentContext(agent, previousOutput ?? briefing);
+			const retrieval = await retrieveAgentContext(agent, previousOutput ?? effectiveBriefing);
 			const result = await callAgentStep(
 				{
 					executionId: squadId,
@@ -1092,7 +1193,7 @@ const runOrchestratedAgentStep = (
 								: ""
 					}`,
 					prompt: buildAgentPrompt(agent.name, agent.role, {
-						briefing,
+						briefing: effectiveBriefing,
 						previousOutput,
 						qaHistory,
 						scripts: availableScripts.length > 0 ? availableScripts : undefined,
@@ -1310,8 +1411,12 @@ const advanceOrchestrated = (squadId: string): void => {
 
 		const run = activeRun(squadId);
 		if (!run) return;
-		const briefing = run.input;
-		const prompt = buildCoordinatorPrompt(squad, run, briefing);
+		// Coordenador também lê a visão filtrada: deixar o item reprovado no histórico dele faria o
+		// roteamento (e o `context_steps`) ser decidido em cima de trabalho que o usuário acabou de recusar.
+		const view = contextView(squadId, run);
+		const contextRun = { ...run, steps: view.steps };
+		const briefing = view.briefing ?? run.input;
+		const prompt = buildCoordinatorPrompt(squad, contextRun, briefing);
 
 		try {
 			const result = await callAgentStep(
@@ -1416,7 +1521,8 @@ const advanceOrchestrated = (squadId: string): void => {
 					"before",
 					`Aprovação necessária antes de acionar ${nextAgent.name}`,
 					`Antes de acionar ${nextAgent.name}`,
-					run.steps.at(-1)?.artifact?.content ?? briefing,
+					contextRun.steps.at(-1)?.artifact?.content ?? briefing,
+					reviewOverride?.contextSteps ?? decision.contextSteps,
 				);
 				return;
 			}
@@ -1615,6 +1721,7 @@ const settleCheckpointLocally = (squadId: string, approved: boolean, rejection?:
 	const runtime = getRuntime(squadId);
 	const seatId = runtime.pendingSeatId;
 	const checkpointKind = runtime.pendingCheckpointKind;
+	const pendingContextSteps = runtime.pendingContextSteps ?? [];
 	const seat = seatId ? squad?.seats.find((item) => item.id === seatId) : undefined;
 	const agent = seat?.agentId ? squad?.agents.find((item) => item.id === seat.agentId) : undefined;
 
@@ -1639,7 +1746,7 @@ const settleCheckpointLocally = (squadId: string, approved: boolean, rejection?:
 	if (checkpointKind === "after") {
 		appendLog(squadId, "Checkpoint aprovado.");
 		runOrQueueContinuation(squadId, () => {
-			patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
+			clearPendingCheckpoint(squadId);
 			const hasInstagramPublisher = agent?.scripts.some((script) => script.connectorProvider === "instagram");
 			if (seat && agent && hasInstagramPublisher) {
 				approvedPublishExecutionIds.add(squadId);
@@ -1669,8 +1776,8 @@ const settleCheckpointLocally = (squadId: string, approved: boolean, rejection?:
 	appendLog(squadId, "Checkpoint aprovado.");
 	const run = activeRun(squadId);
 	runOrQueueContinuation(squadId, () => {
-		patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null }));
-		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "");
+		clearPendingCheckpoint(squadId);
+		runOrchestratedAgentStep(squadId, seat.id, agent, run?.input ?? "", [], pendingContextSteps);
 	});
 };
 
@@ -1850,6 +1957,7 @@ export const continueRun = (squadId: string, run: RunRecord): void => {
 		pendingQuestion: snapshot?.pendingQuestion ?? null,
 		pendingQaHistory: [],
 		pendingApprovalId: snapshot?.pendingApprovalId ?? null,
+		pendingContextSteps: snapshot?.pendingContextSteps ?? null,
 	});
 
 	openRunDialog(executionId);

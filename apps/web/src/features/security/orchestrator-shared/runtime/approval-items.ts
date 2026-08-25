@@ -1,4 +1,4 @@
-import type { ApprovalItemDraft } from "../types";
+import type { ApprovalItemDraft, ApprovalItemStatus } from "../types";
 
 /**
  * Extração dos itens decidíveis de um checkpoint (.specs/001-aprovacoes-externas-teams, design D15) a partir
@@ -30,21 +30,35 @@ const stripFence = (raw: string): string => {
 	return (fenced?.[1] ?? trimmed).trim();
 };
 
+/** Array localizado no texto cru, com o intervalo que ele ocupa — `start`/`end` são índices em `raw`. */
+type LocatedArray = { values: unknown[]; start: number; end: number };
+
 /**
  * Tenta o parse direto e, falhando, recorta do primeiro `[` ao último `]` — cobre o caso de o agente
  * escrever uma frase antes ou depois do array, que é o desvio mais comum quando o prompt pede só JSON.
+ *
+ * Devolve também o intervalo ocupado no texto original, para `stripRejectedApprovalItems` poder reescrever
+ * só o array e preservar a prosa/fence em volta. Ponto único de parse: filtrar por um caminho diferente do
+ * que extraiu os itens abriria a porta pro filtro discordar da lista que o usuário decidiu.
  */
-const extractArray = (text: string): unknown => {
+const locateArray = (raw: string): LocatedArray | undefined => {
+	const stripped = stripFence(raw);
+	let whole: unknown;
 	try {
-		return JSON.parse(text);
+		whole = JSON.parse(stripped);
+		const offset = raw.indexOf(stripped);
+		return Array.isArray(whole) && offset !== -1
+			? { values: whole, start: offset, end: offset + stripped.length }
+			: undefined;
 	} catch {
 		// Segue para o recorte por delimitador.
 	}
-	const start = text.indexOf("[");
-	const end = text.lastIndexOf("]");
+	const start = raw.indexOf("[");
+	const end = raw.lastIndexOf("]");
 	if (start === -1 || end <= start) return undefined;
 	try {
-		return JSON.parse(text.slice(start, end + 1));
+		const parsed = JSON.parse(raw.slice(start, end + 1));
+		return Array.isArray(parsed) ? { values: parsed, start, end: end + 1 } : undefined;
 	} catch {
 		return undefined;
 	}
@@ -78,8 +92,8 @@ const truncate = (text: string): string =>
  */
 export const parseApprovalItems = (raw: string | null | undefined): ApprovalItemDraft[] => {
 	if (!raw?.trim()) return [];
-	const parsed = extractArray(stripFence(raw));
-	if (!Array.isArray(parsed) || parsed.length === 0) return [];
+	const parsed = locateArray(raw)?.values;
+	if (!parsed || parsed.length === 0) return [];
 
 	const objects = parsed.filter(isPlainObject);
 	// Lista mista (alguns objetos, outros não) é sinal de que o parse pegou a coisa errada — melhor cair no
@@ -95,6 +109,57 @@ export const parseApprovalItems = (raw: string | null | undefined): ApprovalItem
 			data,
 		};
 	});
+};
+
+/**
+ * Resultado do filtro de itens reprovados. `unreviewed` conta o rabo da lista que nunca chegou ao pedido
+ * (acima de `MAX_APPROVAL_ITEMS`) e por isso segue no contexto sem ninguém ter decidido sobre ele — quem
+ * chama registra isso no log, porque cortar em silêncio leria como "revisei tudo".
+ */
+export type RejectedItemsFilter = {
+	content: string;
+	removed: number;
+	unreviewed: number;
+};
+
+/**
+ * Materializa a segunda metade da D16 (.specs/001-aprovacoes-externas-teams): "aprovado → segue com o
+ * subconjunto aprovado". Devolve o artefato do passo anterior reescrito **sem** os itens reprovados, para
+ * virar o contexto do próximo agent. Sem isso a reprovação por item ficava só no log e no `RunRejection`
+ * (auditoria/treinamento da spec 002) e o agent reprocessava exatamente o que acabou de ser reprovado.
+ *
+ * Filtra por **exclusão** dos `rejected`, nunca por inclusão dos `approved`: `pending` é um estado válido
+ * de item, e incluir só o que passou apagaria em silêncio o que ninguém decidiu.
+ *
+ * `null` = não deu para filtrar com segurança (nada reprovado, artefato que não é mais a lista que gerou os
+ * itens, ou contagem que não alinha). Nunca chuta: devolver a lista errada é pior que devolver a íntegra.
+ */
+export const stripRejectedApprovalItems = (
+	raw: string | null | undefined,
+	items: readonly { status: ApprovalItemStatus }[],
+): RejectedItemsFilter | null => {
+	if (!raw?.trim() || items.length === 0) return null;
+	const rejected = new Set(items.flatMap((item, index) => (item.status === "rejected" ? [index] : [])));
+	if (rejected.size === 0) return null;
+
+	const located = locateArray(raw);
+	if (!located) return null;
+	const { values, start, end } = located;
+	// Mesmas guardas de `parseApprovalItems`: lista mista nunca gerou itens, então um artefato misto aqui não
+	// é a lista que o usuário decidiu.
+	if (values.length === 0 || !values.every(isPlainObject)) return null;
+	// Os itens saem de `slice(0, MAX_APPROVAL_ITEMS)` sobre este mesmo array e o backend preserva a ordem no
+	// read-modify-write do `decideItem`, então índice de item ⇒ índice no array. Um array menor que os itens,
+	// ou maior sem ser pelo teto, significa que este não é o artefato de origem — aí não há alinhamento.
+	if (values.length < items.length) return null;
+	if (values.length > items.length && items.length !== MAX_APPROVAL_ITEMS) return null;
+
+	const kept = values.filter((_, index) => !rejected.has(index));
+	return {
+		content: `${raw.slice(0, start)}${JSON.stringify(kept, null, 2)}${raw.slice(end)}`,
+		removed: rejected.size,
+		unreviewed: values.length - items.length,
+	};
 };
 
 /**

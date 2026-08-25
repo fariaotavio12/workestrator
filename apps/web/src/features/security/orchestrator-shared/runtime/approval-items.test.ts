@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { ApprovalItemDraft } from "../types";
-import { MAX_APPROVAL_ITEMS, parseApprovalItems, summarizeApprovalItems } from "./approval-items";
+import type { ApprovalItemDraft, ApprovalItemStatus } from "../types";
+import {
+	MAX_APPROVAL_ITEMS,
+	parseApprovalItems,
+	stripRejectedApprovalItems,
+	summarizeApprovalItems,
+} from "./approval-items";
 
 const processItem = (num: string, nome: string) => ({
 	NUM_PROCESS: num,
@@ -131,5 +136,107 @@ describe("summarizeApprovalItems", () => {
 		const items = [draft({ ref: undefined }), draft({ ref: undefined })];
 
 		expect(summarizeApprovalItems(items)).toBe("2 itens para revisar.");
+	});
+});
+
+const statuses = (...values: ApprovalItemStatus[]): { status: ApprovalItemStatus }[] =>
+	values.map((status) => ({ status }));
+
+describe("stripRejectedApprovalItems", () => {
+	it("removes the rejected item from a bare JSON array", () => {
+		const raw = JSON.stringify([processItem("2026-001", "Ana"), processItem("2026-002", "Bruno")]);
+
+		const filtered = stripRejectedApprovalItems(raw, statuses("approved", "rejected"));
+
+		expect(filtered?.removed).toBe(1);
+		expect(filtered?.unreviewed).toBe(0);
+		expect(parseApprovalItems(filtered?.content ?? "").map((item) => item.ref)).toEqual(["2026-001"]);
+	});
+
+	it("keeps pending items — filters by exclusion of rejected, never by inclusion of approved", () => {
+		const raw = JSON.stringify([
+			processItem("2026-001", "Ana"),
+			processItem("2026-002", "Bruno"),
+			processItem("2026-003", "Carla"),
+		]);
+
+		const filtered = stripRejectedApprovalItems(raw, statuses("approved", "rejected", "pending"));
+
+		expect(parseApprovalItems(filtered?.content ?? "").map((item) => item.ref)).toEqual(["2026-001", "2026-003"]);
+	});
+
+	it("preserves the prose around an embedded array", () => {
+		const raw = `Analisei a fila:\n${JSON.stringify([processItem("2026-001", "Ana"), processItem("2026-002", "Bruno")])}\nPodemos seguir?`;
+
+		const filtered = stripRejectedApprovalItems(raw, statuses("rejected", "approved"));
+
+		expect(filtered?.content.startsWith("Analisei a fila:")).toBe(true);
+		expect(filtered?.content.endsWith("Podemos seguir?")).toBe(true);
+		expect(parseApprovalItems(filtered?.content ?? "").map((item) => item.ref)).toEqual(["2026-002"]);
+	});
+
+	it("preserves the ```json fence around the array", () => {
+		const raw = [
+			"```json",
+			JSON.stringify([processItem("2026-001", "Ana"), processItem("2026-002", "Bruno")]),
+			"```",
+		].join("\n");
+
+		const filtered = stripRejectedApprovalItems(raw, statuses("rejected", "approved"));
+
+		expect(filtered?.content.startsWith("```json")).toBe(true);
+		expect(filtered?.content.trimEnd().endsWith("```")).toBe(true);
+		expect(parseApprovalItems(filtered?.content ?? "").map((item) => item.ref)).toEqual(["2026-002"]);
+	});
+
+	it("returns null when nothing was rejected — there is nothing to rewrite", () => {
+		const raw = JSON.stringify([processItem("2026-001", "Ana")]);
+
+		expect(stripRejectedApprovalItems(raw, statuses("approved"))).toBeNull();
+	});
+
+	it("returns null when the artifact is prose instead of a list", () => {
+		expect(stripRejectedApprovalItems("Movimentei todos os chamados.", statuses("rejected"))).toBeNull();
+	});
+
+	it("returns null when the array is shorter than the decided items — no safe alignment", () => {
+		const raw = JSON.stringify([processItem("2026-001", "Ana")]);
+
+		expect(stripRejectedApprovalItems(raw, statuses("rejected", "approved"))).toBeNull();
+	});
+
+	it("keeps the tail above MAX_APPROVAL_ITEMS and reports it as unreviewed", () => {
+		const values = Array.from({ length: MAX_APPROVAL_ITEMS + 3 }, (_, index) =>
+			processItem(`2026-${index}`, `Pessoa ${index}`),
+		);
+		const decided = Array.from({ length: MAX_APPROVAL_ITEMS }, (_, index) =>
+			index === 0 ? { status: "rejected" as ApprovalItemStatus } : { status: "approved" as ApprovalItemStatus },
+		);
+
+		const filtered = stripRejectedApprovalItems(JSON.stringify(values), decided);
+
+		expect(filtered?.removed).toBe(1);
+		expect(filtered?.unreviewed).toBe(3);
+		// Direto no JSON: `parseApprovalItems` corta em MAX_APPROVAL_ITEMS e não veria o rabo preservado.
+		const kept = JSON.parse(filtered?.content ?? "[]") as { NUM_PROCESS: string }[];
+		expect(kept).toHaveLength(MAX_APPROVAL_ITEMS + 2);
+		expect(kept[0]?.NUM_PROCESS).toBe("2026-1");
+		expect(kept.at(-1)?.NUM_PROCESS).toBe(`2026-${MAX_APPROVAL_ITEMS + 2}`);
+	});
+
+	it("returns null when the array is longer than the items without hitting the cap", () => {
+		const raw = JSON.stringify([
+			processItem("2026-001", "Ana"),
+			processItem("2026-002", "Bruno"),
+			processItem("2026-003", "Carla"),
+		]);
+
+		expect(stripRejectedApprovalItems(raw, statuses("rejected", "approved"))).toBeNull();
+	});
+
+	it("returns null for an array whose entries are not all objects", () => {
+		expect(
+			stripRejectedApprovalItems(JSON.stringify(["2026-001", "2026-002"]), statuses("rejected", "approved")),
+		).toBeNull();
 	});
 });

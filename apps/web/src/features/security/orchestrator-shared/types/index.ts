@@ -386,6 +386,13 @@ export type Runtime = {
 	 * do status "checkpoint".
 	 */
 	pendingCheckpointKind: "before" | "after" | null;
+	/**
+	 * Passos (1-based) que o coordenador escolheu como contexto do agent que está no checkpoint "before".
+	 * Guardado aqui porque a pausa acontece entre a decisão do coordenador e a chamada do agent: sem isso a
+	 * aprovação descartava a escolha e o agent caía no fallback "só o passo anterior" — ou seja, ter
+	 * checkpoint estreitava o contexto do agent em relação a não ter.
+	 */
+	pendingContextSteps?: number[] | null;
 	/** Texto sendo gerado agora (streaming), antes do passo fechar e virar uma linha do `log`. */
 	streamingText: string | null;
 	/** Presente só quando status === "awaiting_input". */
@@ -492,6 +499,8 @@ export type RuntimeSnapshot = {
 	pendingQuestion: PendingQuestion | null;
 	/** Id do `ApprovalRequest` pendente, se houver — permite retomar sem criar pedido duplicado. */
 	pendingApprovalId?: string | null;
+	/** Ver `Runtime.pendingContextSteps` — retomar sem isso perderia a escolha de contexto do coordenador. */
+	pendingContextSteps?: number[] | null;
 };
 
 /** Arquivo gerado/alterado por um run, capturado no snapshot do workspace ao final da execução. */

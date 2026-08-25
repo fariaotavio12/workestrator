@@ -212,6 +212,26 @@ chamados passaram. Ver [`design.md` § Itens decidíveis](design.md#itens-decid�
       watcher.
 - [x] Uma `RunRejection` por item reprovado, com `itemRef` — inclusive no caso misto (pedido aprovado com
       alguns itens reprovados), que o caminho antigo perderia.
+- [x] **Segunda metade da D16 — "segue com o subconjunto aprovado".** Faltava: `settleCheckpoint` gravava a
+      reprovação por item (auditoria) e rechamava o agent com o artefato **íntegro** do passo anterior, então
+      o item reprovado voltava pro prompt e era reprocessado. Nenhum canal levava a decisão por item até o
+      texto que o agent lê — não era ajustável por prompt. Implementado como **override de contexto** por
+      execução (`contextOverrides`/`contextView` em `orchestrator-runtime.ts`), nunca reescrita do artefato:
+      o `RunRecord` persistido é trilha de auditoria e as `RunRejection` da 002 apontam pro conteúdo
+      original. `stripRejectedApprovalItems` (`runtime/approval-items.ts`, puro e testado) reescreve só o
+      array, preservando prosa/fence em volta.
+  - [x] Filtra por **exclusão** dos `rejected`, nunca por inclusão dos `approved` — `pending` é estado
+        válido de item e incluir só o que passou apagaria em silêncio o que ninguém decidiu.
+  - [x] Vale nos **dois** kinds: `"before"` (o agent aprovado recebe a lista filtrada) e `"after"` (o
+        coordenador e o próximo agent também, senão o vazamento só andava um passo pra frente).
+  - [x] Truncamento em `MAX_APPROVAL_ITEMS`: o rabo acima de 200 nunca chegou ao pedido, então segue no
+        contexto e é **contado no log** como "sem revisão" — cortar calado leria como "revisei tudo".
+  - [x] Quando não dá pra filtrar com segurança (artefato que não é mais a lista de origem, contagem que não
+        alinha), o log diz que o próximo passo recebe a lista íntegra e a UI avisa — nunca segue calado.
+- [x] Checkpoint `"before"` preserva o `context_steps` escolhido pelo coordenador
+      (`Runtime.pendingContextSteps` + `RuntimeSnapshot`). Antes a pausa descartava a escolha e o agent caía
+      no fallback "só o passo anterior": **ter** checkpoint estreitava o contexto do agent em relação a não
+      ter.
 
 ### Compatibilidade
 
