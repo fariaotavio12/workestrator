@@ -95,6 +95,7 @@
     "rehype-highlight": "^7.0.2",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
+    "rrule": "^2.8.1",
     "save-as": "^0.1.8",
     "sharp": "^0.34.5",
     "sonner": "^2.0.7",

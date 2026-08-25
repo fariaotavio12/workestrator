@@ -236,10 +236,16 @@ export type OrchestratorConfig = {
 	useRunHistory?: boolean;
 };
 
+/**
+ * Cadência de um gatilho agendado. `custom` delega a cadência ao campo `rrule` (RRULE da RFC 5545,
+ * interpretada em hora local) — os outros três são atalhos de intervalo fixo.
+ */
+export type ScheduleEvery = "5m" | "1h" | "daily" | "custom";
+
 /** Gatilho de execução do squad. */
 export type Trigger =
 	| { type: "manual" }
-	| { type: "schedule"; every: "5m" | "1h" | "daily"; enabled: boolean }
+	| { type: "schedule"; every: ScheduleEvery; rrule?: string; enabled: boolean }
 	| { type: "onComplete"; squadId: string };
 
 /** Conexão de saída para avisar um checkpoint externamente (n8n → Teams, no v1). */

@@ -10,6 +10,7 @@ import { fetchSquads, squadsKeys } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
 import { loadRunConfig } from "./config-cache";
 import { isRunActive, startRun } from "./orchestrator-runtime";
+import { isRruleDue } from "./rrule";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -39,7 +40,14 @@ export const computeDueSquads = (
 			lastFiredAt.set(squad.id, now);
 			return false;
 		}
-		if (now - last < EVERY_TO_MS[squad.trigger.every]) return false;
+
+		if (squad.trigger.every === "custom") {
+			// RRULE sem regra salva (ou inválida) não dispara nada — melhor ficar parado do que cair
+			// num intervalo padrão que o usuário não pediu.
+			if (!squad.trigger.rrule || !isRruleDue(squad.trigger.rrule, last, now)) return false;
+		} else if (now - last < EVERY_TO_MS[squad.trigger.every]) {
+			return false;
+		}
 
 		return !isActive(squad.id);
 	});

@@ -84,6 +84,30 @@ describe("computeDueSquads", () => {
 		expect(result).toEqual([hourly]);
 	});
 
+	it("never fires a custom cadence with no RRULE saved", () => {
+		const lastFiredAt = new Map([["rr1", 0]]);
+		const s = squad({ id: "rr1", trigger: { type: "schedule", every: "custom", enabled: true } });
+		const result = computeDueSquads([s], 30 * 24 * 60 * 60 * 1000, lastFiredAt, notActive);
+		expect(result).toEqual([]);
+	});
+
+	it("never fires a custom cadence whose RRULE is invalid", () => {
+		const lastFiredAt = new Map([["rr2", 0]]);
+		const s = squad({ id: "rr2", trigger: { type: "schedule", every: "custom", rrule: "FREQ=BANANA", enabled: true } });
+		const result = computeDueSquads([s], 30 * 24 * 60 * 60 * 1000, lastFiredAt, notActive);
+		expect(result).toEqual([]);
+	});
+
+	it("fires a custom cadence once the RRULE occurrence is reached", () => {
+		const last = new Date(2026, 0, 1, 10, 0, 0, 0).getTime();
+		const s = squad({
+			id: "rr3",
+			trigger: { type: "schedule", every: "custom", rrule: "FREQ=MINUTELY;INTERVAL=15", enabled: true },
+		});
+		expect(computeDueSquads([s], last + 14 * 60 * 1000, new Map([["rr3", last]]), notActive)).toEqual([]);
+		expect(computeDueSquads([s], last + 15 * 60 * 1000, new Map([["rr3", last]]), notActive)).toEqual([s]);
+	});
+
 	it("skips a due squad when a run is already active for it", () => {
 		const lastFiredAt = new Map([["s6", 1000]]);
 		const s = squad({ id: "s6", trigger: { type: "schedule", every: "5m", enabled: true } });

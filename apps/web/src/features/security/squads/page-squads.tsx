@@ -18,6 +18,7 @@ import { ConfirmDialog, SquadFormDialog } from "@/components/orchestrator";
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
 import { useProvidersQuery } from "@/features/security/models/api";
 import { useOrchestratorRuntimeStore, useRunDialogStore } from "@/features/security/orchestrator-shared/model";
+import { scheduleShortLabel } from "@/features/security/orchestrator-shared/runtime/schedule-label";
 import type { Trigger } from "@/features/security/orchestrator-shared/types";
 import { useDeleteSquad, useDuplicateSquad, useSquadsQuery } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
@@ -27,11 +28,19 @@ import { Boxes, Clock, Copy, Link2, MoreVertical, Play, Plus, Search, Trash2 } f
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const ACTIVE_STATUSES = new Set(["queued", "running", "paused", "checkpoint", "awaiting_input", "awaiting_auth", "awaiting_approval"]);
+const ACTIVE_STATUSES = new Set([
+	"queued",
+	"running",
+	"paused",
+	"checkpoint",
+	"awaiting_input",
+	"awaiting_auth",
+	"awaiting_approval",
+]);
 
 const triggerLabel = (trigger: Trigger): string => {
 	if (trigger.type === "manual") return "Manual";
-	if (trigger.type === "schedule") return `${trigger.every}${trigger.enabled ? "" : " (off)"}`;
+	if (trigger.type === "schedule") return `${scheduleShortLabel(trigger)}${trigger.enabled ? "" : " (off)"}`;
 	return "Encadeado";
 };
 
@@ -54,7 +63,7 @@ const SquadCard = ({ squad, isLive, onOpen, onRun, onDuplicate, onDelete }: Squa
 			event.preventDefault();
 			onOpen(squad);
 		}}
-		className="bg-card hover:bg-secondary flex cursor-pointer flex-col gap-3 border rounded-lg p-4 transition-colors"
+		className="bg-card hover:bg-secondary flex cursor-pointer flex-col gap-3 rounded-lg border p-4 transition-colors"
 	>
 		<div className="flex items-start justify-between gap-2">
 			<div className="flex min-w-0 items-center gap-2">
@@ -149,7 +158,9 @@ export const PageSquads = () => {
 		const activeSquads: SquadSummary[] = [];
 		const idleSquads: SquadSummary[] = [];
 		for (const squad of filteredSquads) {
-			const active = (runIdsBySquad[squad.id] ?? []).some((runId) => ACTIVE_STATUSES.has(runtimes[runId]?.status ?? "idle"));
+			const active = (runIdsBySquad[squad.id] ?? []).some((runId) =>
+				ACTIVE_STATUSES.has(runtimes[runId]?.status ?? "idle"),
+			);
 			(active ? activeSquads : idleSquads).push(squad);
 		}
 		return { activeSquads, idleSquads };

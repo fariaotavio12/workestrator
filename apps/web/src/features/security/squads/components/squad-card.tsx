@@ -4,13 +4,12 @@ import { Card, CardContent } from "@/components/card";
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
 import { Typography } from "@/components/typography";
 import { Copy, Pause, Trash2, Users } from "lucide-react";
+import { scheduleLabel } from "@/features/security/orchestrator-shared/runtime/schedule-label";
 import type { Squad, Trigger } from "@/features/security/orchestrator-shared/types";
-
-const EVERY_LABEL: Record<"5m" | "1h" | "daily", string> = { "5m": "5 min", "1h": "1 hora", daily: "diário" };
 
 const triggerLabel = (t: Trigger): string => {
 	if (t.type === "manual") return "Manual";
-	if (t.type === "schedule") return `Agendado · a cada ${EVERY_LABEL[t.every]}`;
+	if (t.type === "schedule") return `Agendado · ${scheduleLabel(t)}`;
 	return "Encadeado";
 };
 

@@ -15,9 +15,11 @@ import {
 } from "@/components";
 import { IconPicker } from "@/components/orchestrator/icon-picker/icon-picker";
 import { renderSquadIcon } from "@/components/orchestrator/icon-picker/render-squad-icon";
+import { RruleField } from "@/components/orchestrator/squad-form-dialog/rrule-field";
 import { Boxes } from "lucide-react";
 import { useState } from "react";
-import type { Trigger } from "@/features/security/orchestrator-shared/types";
+import { parseRrule } from "@/features/security/orchestrator-shared/runtime/rrule";
+import type { ScheduleEvery, Trigger } from "@/features/security/orchestrator-shared/types";
 import { useUpdateSquad } from "@/features/security/squad-detail/api";
 import { useCreateSquad, useSquadsQuery } from "@/features/security/squads/api";
 import type { SquadSummary } from "@/features/security/squads/api";
@@ -51,9 +53,8 @@ const SquadFormDialogContent = ({ open, onOpenChange, squad, onSaved }: Props) =
 	const [description, setDescription] = useState(squad?.description ?? "");
 	const [icon, setIcon] = useState(squad?.icon ?? DEFAULT_ICON);
 	const [triggerType, setTriggerType] = useState<TriggerType>(initialTrigger.type);
-	const [every, setEvery] = useState<"5m" | "1h" | "daily">(
-		initialTrigger.type === "schedule" ? initialTrigger.every : "1h",
-	);
+	const [every, setEvery] = useState<ScheduleEvery>(initialTrigger.type === "schedule" ? initialTrigger.every : "1h");
+	const [rrule, setRrule] = useState(initialTrigger.type === "schedule" ? (initialTrigger.rrule ?? "") : "");
 	const [enabled, setEnabled] = useState(initialTrigger.type === "schedule" ? initialTrigger.enabled : false);
 	const [onCompleteSquadId, setOnCompleteSquadId] = useState(
 		initialTrigger.type === "onComplete" ? initialTrigger.squadId : "",
@@ -63,7 +64,10 @@ const SquadFormDialogContent = ({ open, onOpenChange, squad, onSaved }: Props) =
 	const otherSquads = squads.filter((s) => s.id !== squad?.id);
 
 	const buildTrigger = (): Trigger => {
-		if (triggerType === "schedule") return { type: "schedule", every, enabled };
+		if (triggerType === "schedule") {
+			if (every === "custom") return { type: "schedule", every, rrule: rrule.trim(), enabled };
+			return { type: "schedule", every, enabled };
+		}
 		if (triggerType === "onComplete") return { type: "onComplete", squadId: onCompleteSquadId };
 		return { type: "manual" };
 	};
@@ -76,6 +80,13 @@ const SquadFormDialogContent = ({ open, onOpenChange, squad, onSaved }: Props) =
 		if (triggerType === "onComplete" && !onCompleteSquadId) {
 			setError("Escolha o squad que dispara este.");
 			return;
+		}
+		if (triggerType === "schedule" && every === "custom") {
+			const parsed = parseRrule(rrule, Date.now());
+			if (!parsed.ok) {
+				setError(parsed.error);
+				return;
+			}
 		}
 		const draft = { name: name.trim(), description: description.trim(), icon, trigger: buildTrigger() };
 		if (squad) {
@@ -157,7 +168,7 @@ const SquadFormDialogContent = ({ open, onOpenChange, squad, onSaved }: Props) =
 			{triggerType === "schedule" && (
 				<>
 					<FieldWrapper label="A cada">
-						<Select value={every} onValueChange={(v) => setEvery(v as typeof every)}>
+						<Select value={every} onValueChange={(v) => setEvery(v as ScheduleEvery)}>
 							<SelectTrigger>
 								<SelectValue />
 							</SelectTrigger>
@@ -165,16 +176,21 @@ const SquadFormDialogContent = ({ open, onOpenChange, squad, onSaved }: Props) =
 								<SelectItem value="5m">5 minutos</SelectItem>
 								<SelectItem value="1h">1 hora</SelectItem>
 								<SelectItem value="daily">Diário</SelectItem>
+								<SelectItem value="custom">Personalizado (RRULE)</SelectItem>
 							</SelectContent>
 						</Select>
 					</FieldWrapper>
+
+					{every === "custom" && <RruleField value={rrule} onChange={setRrule} showError={Boolean(error)} />}
 
 					<Switch
 						id="schedule-enabled"
 						label={enabled ? "Agendamento ativo" : "Agendamento pausado"}
 						description={
 							enabled
-								? "O squad roda sozinho no intervalo definido acima."
+								? every === "custom"
+									? "O squad roda sozinho nas datas geradas pela regra acima."
+									: "O squad roda sozinho no intervalo definido acima."
 								: "Pausado: o agendamento continua salvo, mas não dispara sozinho até você reativar."
 						}
 						checked={enabled}

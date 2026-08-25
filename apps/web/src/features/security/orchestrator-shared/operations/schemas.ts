@@ -1,8 +1,22 @@
 import { z } from "zod";
+import { parseRrule } from "@/features/security/orchestrator-shared/runtime/rrule";
+
+const scheduleTriggerSchema = z
+	.object({
+		type: z.literal("schedule"),
+		every: z.enum(["5m", "1h", "daily", "custom"]),
+		rrule: z.string().optional(),
+		enabled: z.boolean(),
+	})
+	.superRefine((value, ctx) => {
+		if (value.every !== "custom") return;
+		const parsed = parseRrule(value.rrule ?? "", Date.now());
+		if (!parsed.ok) ctx.addIssue({ code: "custom", path: ["rrule"], message: parsed.error });
+	});
 
 const triggerSchema = z.union([
 	z.object({ type: z.literal("manual") }),
-	z.object({ type: z.literal("schedule"), every: z.enum(["5m", "1h", "daily"]), enabled: z.boolean() }),
+	scheduleTriggerSchema,
 	z.object({ type: z.literal("onComplete"), squadId: z.string().min(1) }),
 ]);
 
