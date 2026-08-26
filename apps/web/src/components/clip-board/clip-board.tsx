@@ -1,4 +1,5 @@
-﻿import { ClipboardCopy, ClipboardIcon } from "lucide-react";
+﻿import { copyToClipboard } from "@/app/utils/clipboard";
+import { Check, ClipboardCopy } from "lucide-react";
 import { useState } from "react";
 import { Button, type ButtonProps } from "@/components/button";
 import { notify } from "@/components/toast/notify";
@@ -7,32 +8,32 @@ type ClipBoardProps = {
 	texto: string;
 } & ButtonProps
 
-export const ClipBoard = ({ texto, onClick, variant = "outline", size = "icon", ...props }: ClipBoardProps) => {
+export const ClipBoard = ({ texto, onClick, variant = "outline", size = "icon", children, ...props }: ClipBoardProps) => {
 	const [copied, setCopied] = useState(false);
 
 	const handleClick: React.MouseEventHandler<HTMLButtonElement> = async (event) => {
-		// Respeita um onClick passado por props, se existir
 		if (onClick) {
 			onClick(event as any);
 		}
 
 		if (event.defaultPrevented) return;
 
-		try {
-			await navigator.clipboard.writeText(texto);
-			setCopied(true);
-			notify.success("Item copiado com sucesso");
+		const ok = await copyToClipboard(texto);
 
-			// Resetar o Ã­cone depois de um tempo
-			setTimeout(() => setCopied(false), 1500);
-		} catch {
-			notify.error("NÃ£o foi possÃ­vel copiar o texto");
+		if (!ok) {
+			notify.error("Não foi possível copiar o texto");
+			return;
 		}
+
+		setCopied(true);
+		notify.success("Item copiado com sucesso");
+		setTimeout(() => setCopied(false), 1500);
 	};
 
 	return (
 		<Button {...props} variant={variant} size={size} onClick={handleClick}>
-			{copied ? <ClipboardIcon size={14} /> : <ClipboardCopy size={14} />}
+			{copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
+			{children}
 		</Button>
 	);
 };

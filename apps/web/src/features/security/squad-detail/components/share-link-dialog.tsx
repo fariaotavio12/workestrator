@@ -1,4 +1,4 @@
-import { Rotas } from "@/app/routing/variables";
+﻿import { Rotas } from "@/app/routing/variables";
 import { Button, ClipBoard, Typography, notify } from "@/components";
 import { SmartOverlay } from "@/components/smart-dialog";
 import { useCreateSquadShare, useRevokeSquadShare } from "@/features/security/squad-share/api";
@@ -68,11 +68,13 @@ export const ShareLinkDialog = ({ open, onOpenChange, squadId, squadName }: Prop
 
 			{token && !createShare.isPending && (
 				<div className="flex flex-col gap-4">
-					<div className="flex items-center gap-2 rounded-lg border p-2">
-						<Typography variant="body-sm" className="min-w-0 flex-1 truncate font-mono">
+					<div className="flex flex-col gap-2 rounded-lg border p-3">
+						<Typography variant="body-sm" className="text-muted-foreground font-mono break-all select-all">
 							{shareUrl(token)}
 						</Typography>
-						<ClipBoard texto={shareUrl(token)} />
+						<ClipBoard texto={shareUrl(token)} size="sm" className="self-end">
+							Copiar link
+						</ClipBoard>
 					</div>
 					<div className="bg-muted/40 flex gap-2 rounded-lg border p-3">
 						<ShieldAlert className="text-muted-foreground mt-0.5 size-4 shrink-0" />
