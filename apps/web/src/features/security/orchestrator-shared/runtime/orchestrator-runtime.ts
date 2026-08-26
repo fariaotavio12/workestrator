@@ -8,6 +8,7 @@
 // memória). As funções aqui são módulo-level (não hooks) porque o runner roda destacado do componente
 // que iniciou o run.
 import { tanStackQueryClient } from "@/app/api/clients";
+import { getApiErrorMessage } from "@/app/utils/getApiErrorMessage";
 import { notify } from "@/components/toast/notify";
 import {
 	cancelApprovalApi,
@@ -41,7 +42,7 @@ import type {
 import { searchKnowledgeMulti } from "@/features/security/knowledge/api";
 import { AGENT_TURN_INSTRUCTIONS, parseAgentTurn } from "./agent-turn";
 import { loadRunConfig } from "./config-cache";
-import { buildRetrievalBlock } from "./knowledge-retrieval";
+import { buildRetrievalBlock, buildRetrievalQuery } from "./knowledge-retrieval";
 import {
 	AgentCallError,
 	callAgentStep,
@@ -629,16 +630,44 @@ const buildAgentPrompt = (
 };
 
 /**
- * Recupera contexto das bases de conhecimento anexadas ao agent (RAG). Best-effort: qualquer falha na
- * busca vira contexto vazio — nunca derruba o run. Query = saída do passo anterior ou o briefing.
+ * Recupera contexto das bases de conhecimento anexadas ao agent (RAG). Best-effort: nenhuma falha aqui
+ * derruba o run — mas nenhuma falha aqui é mais silenciosa. Antes, coleção apagada, provider de embeddings
+ * fora do ar e "não casou nada" produziam exatamente o mesmo resultado (bloco vazio) e ficavam
+ * indistinguíveis de um agente sem base configurada: o agente rodava sem o conhecimento dele e ninguém
+ * ficava sabendo. As ferramentas já tinham essa guarda (ver o bloco de `agent.scripts` em
+ * `runOrchestratedAgentStep`); a base de conhecimento não tinha.
  */
-const retrieveAgentContext = async (agent: Agent, query: string): Promise<string> => {
+const retrieveAgentContext = async (
+	squadId: string,
+	agent: Agent,
+	briefing: string | undefined,
+	previousOutput: string | undefined,
+): Promise<string> => {
 	const collectionIds = agent.knowledgeCollectionIds ?? [];
-	if (collectionIds.length === 0 || !query.trim()) return "";
+	if (collectionIds.length === 0) return "";
+
+	const query = buildRetrievalQuery(agent, briefing, previousOutput);
+	if (!query) {
+		appendLog(squadId, `${agent.name} tem base de conhecimento anexada, mas não havia texto para consultar.`);
+		return "";
+	}
+
 	try {
 		const chunks = await searchKnowledgeMulti(collectionIds, query);
+		if (chunks.length === 0) {
+			appendLog(
+				squadId,
+				`Nenhum trecho encontrado nas ${collectionIds.length} base(s) de conhecimento de ${agent.name} — o passo segue sem esse contexto.`,
+			);
+			return "";
+		}
 		return buildRetrievalBlock(chunks);
-	} catch {
+	} catch (error) {
+		appendLog(
+			squadId,
+			`Não foi possível consultar a base de conhecimento de ${agent.name} (${getApiErrorMessage(error, "erro na busca")}) — o passo segue sem esse contexto.`,
+		);
+		notify.warning(`${agent.name} rodou sem a base de conhecimento — a busca falhou.`);
 		return "";
 	}
 };
@@ -1156,7 +1185,10 @@ const runOrchestratedAgentStep = (
 		}
 		if (scripts.length < agent.scriptIds.length) {
 			const missing = agent.scriptIds.filter((id) => !scripts.some((script) => script.id === id));
-			appendLog(squadId, `Ferramentas não encontradas para ${agent.name} (removidas da biblioteca): ${missing.join(", ")}`);
+			appendLog(
+				squadId,
+				`Ferramentas não encontradas para ${agent.name} (removidas da biblioteca): ${missing.join(", ")}`,
+			);
 		}
 
 		const run = activeRun(squadId);
@@ -1181,7 +1213,7 @@ const runOrchestratedAgentStep = (
 		const availableScripts = scripts.filter((s) => isNetworkScript(s) || agent.canExecute);
 
 		try {
-			const retrieval = await retrieveAgentContext(agent, previousOutput ?? effectiveBriefing);
+			const retrieval = await retrieveAgentContext(squadId, agent, effectiveBriefing, previousOutput);
 			const result = await callAgentStep(
 				{
 					executionId: squadId,

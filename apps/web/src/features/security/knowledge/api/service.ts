@@ -10,8 +10,7 @@ export const fetchCollections = async (): Promise<KnowledgeCollection[]> => {
 	return data;
 };
 
-export const useCollectionsQuery = () =>
-	useQuery({ queryKey: knowledgeKeys.collections(), queryFn: fetchCollections });
+export const useCollectionsQuery = () => useQuery({ queryKey: knowledgeKeys.collections(), queryFn: fetchCollections });
 
 const useInvalidateCollections = () => {
 	const queryClient = useQueryClient();
@@ -99,6 +98,7 @@ export const useDeleteDocument = (collectionId: string) => {
 // --- Search (usado fora de componente React, pelo runtime do orquestrador) ---
 
 /** Busca top-K trechos relevantes nas coleções indicadas. Retorna [] em qualquer falha (RAG é best-effort). */
+/** `topK` é **por coleção** (o backend particiona por base), não o total devolvido. */
 export const searchKnowledgeMulti = async (
 	collectionIds: string[],
 	query: string,

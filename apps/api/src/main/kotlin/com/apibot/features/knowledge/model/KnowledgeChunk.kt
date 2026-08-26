@@ -18,10 +18,17 @@ data class KnowledgeChunk(
     val embedding: FloatArray,
 )
 
-/** Resultado de uma busca por similaridade — trecho + origem + score (0..1, quanto maior mais próximo). */
+/**
+ * Resultado de uma busca por similaridade — trecho + origem + score (0..1, quanto maior mais próximo).
+ *
+ * `collectionId` viaja junto porque quem monta o bloco de contexto precisa saber de **qual base** cada
+ * trecho veio: sem isso, uma base cujos trechos pontuam sempre mais alto ocupa todas as vagas e as
+ * outras somem do prompt sem deixar rastro.
+ */
 data class ChunkSearchResult(
     val chunkId: UUID,
     val documentId: UUID,
+    val collectionId: UUID,
     val filename: String,
     val content: String,
     val score: Double,
@@ -30,6 +37,7 @@ data class ChunkSearchResult(
 fun ChunkSearchResult.toResponse(): ChunkSearchResponse = ChunkSearchResponse(
     chunkId = this.chunkId,
     documentId = this.documentId,
+    collectionId = this.collectionId,
     filename = this.filename,
     content = this.content,
     score = this.score,

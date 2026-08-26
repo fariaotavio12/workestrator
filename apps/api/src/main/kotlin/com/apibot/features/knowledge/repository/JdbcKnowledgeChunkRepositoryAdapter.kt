@@ -40,35 +40,52 @@ class JdbcKnowledgeChunkRepositoryAdapter(
         jdbcTemplate.update("DELETE FROM knowledge_chunk WHERE document_id = ?", documentId)
     }
 
+    /**
+     * Top-K **por coleção**, não no conjunto. Com `LIMIT` global, uma base cujos trechos pontuam mais alto
+     * (o caso real: a base de lições do treinamento, gerada a partir do próprio run, é sempre a mais
+     * parecida com a consulta) leva todas as vagas e as outras bases anexadas ao agente somem do prompt.
+     * O `ROW_NUMBER` particionado garante que cada base disputa só contra si mesma; a ordenação por score
+     * no fim mantém o resultado global ordenado para quem consome.
+     */
     override fun search(
         collectionIds: List<UUID>,
         queryEmbedding: FloatArray,
-        topK: Int,
+        topKPerCollection: Int,
         minScore: Double,
     ): List<ChunkSearchResult> {
         if (collectionIds.isEmpty()) return emptyList()
         val sql = """
-            SELECT c.id AS chunk_id,
-                   c.document_id AS document_id,
-                   d.filename AS filename,
-                   c.content AS content,
-                   1 - (c.embedding <=> CAST(:queryVec AS vector)) AS score
-            FROM knowledge_chunk c
-            JOIN knowledge_document d ON d.id = c.document_id
-            WHERE c.collection_id IN (:collectionIds)
-            ORDER BY c.embedding <=> CAST(:queryVec AS vector)
-            LIMIT :limit
+            WITH ranked AS (
+                SELECT c.id AS chunk_id,
+                       c.document_id AS document_id,
+                       c.collection_id AS collection_id,
+                       d.filename AS filename,
+                       c.content AS content,
+                       1 - (c.embedding <=> CAST(:queryVec AS vector)) AS score,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY c.collection_id
+                           ORDER BY c.embedding <=> CAST(:queryVec AS vector)
+                       ) AS rank_in_collection
+                FROM knowledge_chunk c
+                JOIN knowledge_document d ON d.id = c.document_id
+                WHERE c.collection_id IN (:collectionIds)
+            )
+            SELECT chunk_id, document_id, collection_id, filename, content, score
+            FROM ranked
+            WHERE rank_in_collection <= :perCollection
+            ORDER BY score DESC
         """.trimIndent()
 
         val params = MapSqlParameterSource()
             .addValue("queryVec", toVectorLiteral(queryEmbedding))
             .addValue("collectionIds", collectionIds)
-            .addValue("limit", topK.coerceIn(1, 50))
+            .addValue("perCollection", topKPerCollection.coerceIn(1, 50))
 
         return namedJdbc.query(sql, params) { rs, _ ->
             ChunkSearchResult(
                 chunkId = rs.getObject("chunk_id", UUID::class.java),
                 documentId = rs.getObject("document_id", UUID::class.java),
+                collectionId = rs.getObject("collection_id", UUID::class.java),
                 filename = rs.getString("filename"),
                 content = rs.getString("content"),
                 score = rs.getDouble("score"),

@@ -81,7 +81,7 @@ data class MultiSearchRequest(
     @Schema(description = "Query text")
     @field:NotBlank(message = "Query is required")
     val query: String,
-    @Schema(description = "Max number of chunks to return", example = "5")
+    @Schema(description = "Max chunks to return **per collection**, so one base cannot crowd out the others", example = "5")
     @field:Positive(message = "topK must be positive")
     val topK: Int = 5,
     @Schema(description = "Minimum similarity score (0..1) to keep a chunk", example = "0.2")
@@ -92,6 +92,8 @@ data class MultiSearchRequest(
 data class ChunkSearchResponse(
     @Schema(description = "Chunk ID") val chunkId: UUID,
     @Schema(description = "Source document ID") val documentId: UUID,
+    @Schema(description = "Source collection ID — lets the caller keep every attached base represented")
+    val collectionId: UUID,
     @Schema(description = "Source filename") val filename: String,
     @Schema(description = "Chunk text") val content: String,
     @Schema(description = "Similarity score (0..1, higher is closer)") val score: Double,

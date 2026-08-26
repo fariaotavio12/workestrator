@@ -113,14 +113,26 @@ class KnowledgeService(
         return chunkRepository.search(listOf(collectionId), queryEmbedding, request.topK, request.minScore)
     }
 
-    /** Busca por similaridade em várias coleções (caso de um agente com várias bases anexadas). */
+    /**
+     * Busca por similaridade em várias coleções (caso de um agente com várias bases anexadas).
+     *
+     * Ignora id que não existe mais ou não é do usuário, em vez de derrubar a busca inteira: quem chama é
+     * o runtime de um run, e uma base apagada depois de anexada ao agente fazia o agente perder **todas**
+     * as bases, inclusive as válidas. Devolve lista vazia quando nenhuma sobra — cabe a quem chama sinalizar
+     * a diferença entre "o agente tem base e nada casou" e "as bases sumiram".
+     */
     fun searchMulti(userId: UUID, request: MultiSearchRequest): List<ChunkSearchResult> {
-        request.collectionIds.forEach { requireOwnedCollection(userId, it) }
+        val readable = request.collectionIds.filter { isReadableCollection(userId, it) }
+        if (readable.isEmpty()) return emptyList()
         val queryEmbedding = embeddingService.embedQuery(request.query)
-        return chunkRepository.search(request.collectionIds, queryEmbedding, request.topK, request.minScore)
+        return chunkRepository.search(readable, queryEmbedding, request.topK, request.minScore)
     }
 
     // --- Helpers ---
+
+    /** Versão não-lançante de `requireOwnedCollection`, para a busca multi-coleção tolerar id órfão. */
+    private fun isReadableCollection(userId: UUID, id: UUID): Boolean =
+        collectionRepository.findById(id)?.userId == userId
 
     /** Garante que a coleção existe e pertence ao usuário; lança 404/403 caso contrário. */
     fun requireOwnedCollection(userId: UUID, id: UUID): KnowledgeCollection {

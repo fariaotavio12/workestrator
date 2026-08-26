@@ -32,6 +32,8 @@ export type CollectionPayload = {
 export type ChunkSearchResult = {
 	chunkId: string;
 	documentId: string;
+	/** De qual base o trecho veio — usado para manter toda base anexada representada no prompt. */
+	collectionId: string;
 	filename: string;
 	content: string;
 	score: number;
