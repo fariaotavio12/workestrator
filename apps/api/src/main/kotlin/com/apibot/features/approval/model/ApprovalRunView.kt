@@ -6,6 +6,8 @@ import com.apibot.features.approval.dto.ApprovalRunResponse
 import com.apibot.features.approval.dto.ApprovalRunSquadResponse
 import com.apibot.features.run.model.Run
 import com.apibot.features.squad.model.Squad
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.util.UUID
 
 /**
@@ -28,10 +30,10 @@ fun ApprovalRunView.toResponse(): ApprovalRunResponse = ApprovalRunResponse(
     status = this.run.status,
     startedAt = this.run.startedAt,
     endedAt = this.run.endedAt,
-    steps = this.run.steps,
-    qaLog = this.run.qaLog,
+    steps = this.run.steps.orEmptyArray(),
+    qaLog = this.run.qaLog.orEmptyArray(),
     runtimeSnapshot = this.run.runtimeSnapshot,
-    files = this.run.files,
+    files = this.run.files.orEmptyArray(),
     squad = this.squad?.let { ApprovalRunSquadResponse(id = it.id, name = it.name, icon = it.icon) },
     agents = this.agents.map {
         ApprovalRunAgentResponse(
@@ -43,3 +45,12 @@ fun ApprovalRunView.toResponse(): ApprovalRunResponse = ApprovalRunResponse(
         )
     },
 )
+
+/**
+ * Os campos `jsonb` do run são declarados não-nulos, mas o Hibernate preenche o campo por reflexão e uma
+ * linha antiga com `NULL` na coluna (ou um `null` JSON gravado) chega aqui como nulo mesmo assim, sem o
+ * Kotlin reclamar. Quem consome esta vista renderiza `steps`/`qaLog`/`files` como lista direto — devolver
+ * `null` derruba a tela de decisão inteira, e o aprovador perde até o que ele conseguia fazer antes.
+ */
+private fun JsonNode?.orEmptyArray(): JsonNode =
+    if (this == null || this.isNull) jacksonObjectMapper().createArrayNode() else this

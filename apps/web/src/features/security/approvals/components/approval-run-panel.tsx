@@ -45,7 +45,12 @@ export const ApprovalRunPanel = ({ approvalId }: Props) => {
 		);
 	}
 
-	const agentById = new Map(run.agents.map((agent) => [agent.id, agent]));
+	// Normalizado num ponto só: as colunas `jsonb` do run chegam como `null` em linhas antigas, e um
+	// `.length` direto derrubava a tela de decisão inteira — o aprovador ficava sem nem o botão de decidir.
+	const steps = run.steps ?? [];
+	const qaLog = run.qaLog ?? [];
+	const files = run.files ?? [];
+	const agentById = new Map((run.agents ?? []).map((agent) => [agent.id, agent]));
 	const isRunning = run.status === "running";
 
 	return (
@@ -79,10 +84,10 @@ export const ApprovalRunPanel = ({ approvalId }: Props) => {
 				</Badge>
 			</header>
 
-			{run.qaLog.length > 0 && (
+			{qaLog.length > 0 && (
 				<div className="flex flex-col gap-2">
 					<Typography variant="ui-header">Perguntas durante a execução</Typography>
-					{run.qaLog.map((qa, index) => (
+					{qaLog.map((qa, index) => (
 						<div key={`${qa.seatId}-${index}`} className="rounded-lg border p-3">
 							<Typography variant="body-sm">{qa.question}</Typography>
 							<Typography variant="body-sm" className="text-muted-foreground mt-1">
@@ -93,15 +98,15 @@ export const ApprovalRunPanel = ({ approvalId }: Props) => {
 				</div>
 			)}
 
-			{run.files.length > 0 && (
+			{files.length > 0 && (
 				<div className="flex flex-col gap-2">
 					<div className="flex items-center gap-2">
 						<Typography variant="ui-header">Arquivos gerados</Typography>
-						<Badge variant="secondary">{run.files.length}</Badge>
+						<Badge variant="secondary">{files.length}</Badge>
 					</div>
 					{/* Só os metadados: o conteúdo vive no workspace do dono, que o aprovador não alcança. */}
 					<div className="flex flex-col gap-1">
-						{run.files.map((file) => (
+						{files.map((file) => (
 							<div key={file.path} className="flex items-center gap-2 px-2 py-1.5">
 								{file.isImage ? (
 									<ImageIcon className="text-muted-foreground size-4 shrink-0" />
@@ -120,7 +125,7 @@ export const ApprovalRunPanel = ({ approvalId }: Props) => {
 				</div>
 			)}
 
-			{run.steps.length === 0 ? (
+			{steps.length === 0 ? (
 				<EmptyState
 					icon={ScrollText}
 					title="Nada registrado ainda"
@@ -132,7 +137,7 @@ export const ApprovalRunPanel = ({ approvalId }: Props) => {
 				/>
 			) : (
 				<div className="flex flex-col gap-4">
-					{run.steps.map((step) => {
+					{steps.map((step) => {
 						const agent = step.agentId ? agentById.get(step.agentId) : undefined;
 						return (
 							<AgentTurn

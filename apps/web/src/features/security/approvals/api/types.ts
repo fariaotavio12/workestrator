@@ -39,12 +39,16 @@ export type ApprovalRunView = {
 	status: RunRecord["status"];
 	startedAt: string;
 	endedAt: string | null;
-	steps: RunRecord["steps"];
-	qaLog: RunRecord["qaLog"];
+	/**
+	 * Anuláveis de propósito: as colunas `jsonb` do run chegam como `null` em linhas antigas, e a tela de
+	 * decisão não pode quebrar por causa disso — o aprovador perderia até o que já conseguia fazer.
+	 */
+	steps: RunRecord["steps"] | null;
+	qaLog: RunRecord["qaLog"] | null;
 	runtimeSnapshot?: RuntimeSnapshot | null;
-	files: RunFile[];
+	files: RunFile[] | null;
 	/** Ausente quando o dono apagou o squad depois — o run e a decisão sobrevivem a isso. */
 	squad?: { id: string; name: string; icon: string } | null;
 	/** Só o que rotula um turno: sem prompt, modelo ou ferramentas. */
-	agents: { id: string; name: string; role: string; character: CharacterName; accentColor: string }[];
+	agents: { id: string; name: string; role: string; character: CharacterName; accentColor: string }[] | null;
 };
