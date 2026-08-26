@@ -14,6 +14,7 @@ import { AlertOctagon, Check, Lock, ShieldOff, X } from "lucide-react";
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ApprovalItemsPanel } from "./components/approval-items-panel";
+import { ApprovalRunPanel } from "./components/approval-run-panel";
 
 const CHECKPOINT_KIND_LABEL: Record<ApprovalRequest["checkpointKind"], string> = {
 	before: "antes de agir",
@@ -31,6 +32,10 @@ const STATUS_MESSAGE: Record<Exclude<ApprovalRequest["status"], "pending">, stri
  * tanto o dono do squad quanto um aprovador delegado — o mesmo link, a mesma tela, a autorização é
  * resolvida pelo backend (`ApprovalResponse.canDecide`/`canCancel`). Não busca squad/agente por id: quem
  * decide pode não ter acesso ao squad, então todo o contexto legível já vem embutido em `title`/`summary`.
+ *
+ * A execução aparece abaixo (`ApprovalRunPanel`), lida por `GET /approvals/:id/run` — autorizada pelo
+ * pedido, não pelo squad. Ela fica montada **em qualquer status**: quem aprovou continua acompanhando o
+ * que o squad fez com aquilo, que é justamente o que a tela não entregava quando só mostrava "Aprovado".
  */
 export const PageApprovalDecide = () => {
 	const { approvalId = "" } = useParams();
@@ -183,6 +188,8 @@ export const PageApprovalDecide = () => {
 					)}
 				</div>
 			)}
+
+			<ApprovalRunPanel approvalId={approvalId} />
 		</div>
 	);
 };

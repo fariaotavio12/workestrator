@@ -21,6 +21,10 @@ import com.apibot.features.approval.repository.ApprovalRequestRepository
 import com.apibot.features.approval.repository.NotificationChannelRepository
 import com.apibot.features.approval.service.integration.ApprovalNotificationDispatcher
 import com.apibot.features.approval.service.integration.WebhookNotifier
+import com.apibot.features.run.model.Run
+import com.apibot.features.run.repository.RunRepository
+import com.apibot.features.squad.model.Squad
+import com.apibot.features.squad.repository.SquadRepository
 import com.apibot.features.secret.crypto.SecretCipher
 import com.apibot.features.secret.crypto.SecretCryptoProperties
 import com.apibot.features.secret.model.Secret
@@ -106,6 +110,38 @@ private class ApprovalFakeUserRepository : UserRepository {
     }
 }
 
+private class ApprovalFakeRunRepository : RunRepository {
+    val store = mutableMapOf<UUID, Run>()
+    override fun save(run: Run): Run {
+        store[run.id] = run
+        return run
+    }
+    override fun findById(id: UUID): Run? = store[id]
+    override fun findAllBySquadId(squadId: UUID): List<Run> = store.values.filter { it.squadId == squadId }
+    override fun findAllByUserId(userId: UUID, params: PageRequestParams): PageResult<Run> =
+        error("not used by ApprovalService")
+    override fun deleteAllBySquadId(squadId: UUID) {
+        store.values.filter { it.squadId == squadId }.forEach { store.remove(it.id) }
+    }
+}
+
+private class ApprovalFakeSquadRepository : SquadRepository {
+    val store = mutableMapOf<UUID, Squad>()
+    override fun save(squad: Squad): Squad {
+        store[squad.id] = squad
+        return squad
+    }
+    override fun findById(id: UUID): Squad? = store[id]
+    override fun findAllByUserId(userId: UUID): List<Squad> = store.values.filter { it.userId == userId }
+    override fun update(squad: Squad): Squad {
+        store[squad.id] = squad
+        return squad
+    }
+    override fun deleteById(id: UUID) {
+        store.remove(id)
+    }
+}
+
 private class FakeSecretRepository : SecretRepository {
     override fun save(secret: Secret): Secret = secret
     override fun findById(id: UUID): Secret? = null
@@ -122,6 +158,8 @@ class ApprovalServiceTest {
     private val approvalRepository = FakeApprovalRequestRepository()
     private val agentRepository = ApprovalFakeAgentRepository()
     private val userRepository = ApprovalFakeUserRepository()
+    private val runRepository = ApprovalFakeRunRepository()
+    private val squadRepository = ApprovalFakeSquadRepository()
     private val properties = ApprovalProperties()
 
     private fun buildService(props: ApprovalProperties = properties): ApprovalService {
@@ -132,6 +170,8 @@ class ApprovalServiceTest {
             approvalRepository,
             agentRepository,
             FakeNotificationChannelRepository(),
+            runRepository,
+            squadRepository,
             dispatcher,
             userRepository,
             props,
@@ -167,6 +207,13 @@ class ApprovalServiceTest {
         )
         agentRepository.save(agent)
         return agent
+    }
+
+    private fun seedRun(squadOwner: UUID = userId, runSquadId: UUID = squadId): Run {
+        squadRepository.save(Squad(id = squadId, userId = squadOwner, name = "Cobrança", icon = "bot"))
+        return runRepository.save(
+            Run(id = runId, squadId = runSquadId, userId = squadOwner, input = "Cobrar inadimplentes"),
+        )
     }
 
     @Test
@@ -461,5 +508,61 @@ class ApprovalServiceTest {
         assertEquals(ApprovalItemStatus.APPROVED, outcome.request.items[0].status)
         assertEquals(approverId, outcome.request.items[0].decidedByUserId)
         assertEquals(ApprovalDecidedByRole.APPROVER, outcome.request.items[0].decidedByRole)
+    }
+
+    @Test
+    fun `getRun lets an assigned approver read the run, before and after deciding`() {
+        val service = buildService()
+        val agent = agentWithApprover()
+        seedRun()
+        val approval = service.create(userId, createRequest(agentId = agent.id))
+
+        val whilePending = service.getRun(approverId, approval.id)
+        assertEquals(runId, whilePending.run.id)
+        assertEquals("Cobrança", whilePending.squad?.name)
+        assertEquals(listOf(agent.id), whilePending.agents.map { it.id })
+
+        service.decide(approverId, approval.id, approved = true, feedback = null)
+
+        // O ponto da feature: decidir não encerra o acesso — o aprovador continua acompanhando o run.
+        assertEquals(runId, service.getRun(approverId, approval.id).run.id)
+    }
+
+    @Test
+    fun `getRun keeps the owner in and everyone else out`() {
+        val service = buildService()
+        val agent = agentWithApprover(ownerCanDecide = false)
+        seedRun()
+        val approval = service.create(userId, createRequest(agentId = agent.id))
+
+        // Dono sem poder de decisão continua vendo — `canView`, não `canDecide` (D12).
+        assertEquals(runId, service.getRun(userId, approval.id).run.id)
+
+        assertThrows(ApprovalAccessDeniedException::class.java) {
+            service.getRun(UUID.randomUUID(), approval.id)
+        }
+    }
+
+    @Test
+    fun `getRun refuses a request whose run belongs to another squad`() {
+        val service = buildService()
+        val agent = agentWithApprover()
+        seedRun(runSquadId = UUID.randomUUID())
+        val approval = service.create(userId, createRequest(agentId = agent.id))
+
+        assertThrows(ApprovalAccessDeniedException::class.java) {
+            service.getRun(approverId, approval.id)
+        }
+    }
+
+    @Test
+    fun `listByRun returns to an approver the requests they can see, and no others`() {
+        val service = buildService()
+        val agent = agentWithApprover()
+        val mine = service.create(userId, createRequest(agentId = agent.id))
+        val notMine = service.create(userId, createRequest())
+
+        assertEquals(listOf(mine.id), service.listByRun(approverId, runId).map { it.id })
+        assertEquals(setOf(mine.id, notMine.id), service.listByRun(userId, runId).map { it.id }.toSet())
     }
 }

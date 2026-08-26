@@ -13,10 +13,14 @@ import com.apibot.features.approval.model.ApprovalDecidedByRole
 import com.apibot.features.approval.model.ApprovalItem
 import com.apibot.features.approval.model.ApprovalItemStatus
 import com.apibot.features.approval.model.ApprovalRequest
+import com.apibot.features.approval.model.ApprovalRunView
 import com.apibot.features.approval.model.ApprovalStatus
 import com.apibot.features.approval.repository.ApprovalRequestRepository
 import com.apibot.features.approval.repository.NotificationChannelRepository
 import com.apibot.features.approval.service.integration.ApprovalNotificationDispatcher
+import com.apibot.features.run.domain.exception.RunNotFoundException
+import com.apibot.features.run.repository.RunRepository
+import com.apibot.features.squad.repository.SquadRepository
 import com.apibot.features.user.repository.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -42,6 +46,11 @@ class ApprovalService(
     // reimplementar nenhuma regra de negócio do agente.
     private val agentRepository: AgentRepository,
     private val notificationChannelRepository: NotificationChannelRepository,
+    // Mesma leitura direta de repositório de outra feature já usada acima para o agente: `getRun` só lê
+    // run/squad/agentes para montar a vista somente-leitura — nenhuma regra de negócio de run ou squad é
+    // reimplementada aqui, e nenhuma delas serviria, porque ambas partem de "o requester é o dono".
+    private val runRepository: RunRepository,
+    private val squadRepository: SquadRepository,
     private val notificationDispatcher: ApprovalNotificationDispatcher,
     private val userRepository: UserRepository,
     private val properties: ApprovalProperties,
@@ -109,12 +118,43 @@ class ApprovalService(
         return approval
     }
 
+    /**
+     * Trilha de aprovações de um run. Filtra por `canView`, não por dono: um aprovador delegado vê os
+     * pedidos em que ele está no snapshot — inclusive os que ele mesmo decidiu — e nenhum outro. Filtrar
+     * por `ownerUserId` devolvia lista vazia justamente para quem tinha acabado de decidir.
+     */
     fun listByRun(userId: UUID, runId: UUID): List<ApprovalRequest> =
-        repository.findAllByRunId(runId).filter { it.ownerUserId == userId }
+        repository.findAllByRunId(runId).filter { it.canView(userId) }
 
     /** RF13 — aprovações onde o usuário está no snapshot, independente do dono. */
     fun assignedToMe(userId: UUID, status: ApprovalStatus?): List<ApprovalRequest> =
         repository.findAllAssignedTo(userId, status)
+
+    /**
+     * A execução por trás do pedido, somente leitura, autorizada pelo **pedido** — nunca pelo squad.
+     *
+     * Quem decide um checkpoint decide sobre um resumo de texto; para julgar bem, e para acompanhar o que
+     * aconteceu depois de ter aprovado, precisa enxergar o run. Mas dar isso alargando `RunService` faria
+     * o aprovador virar dono de tudo do squad. Então o caminho é este: uma rota pendurada no pedido, com
+     * `canView` (o mesmo portão de `get`) como única regra, devolvendo um recorte do run — sem conexões,
+     * sem reprovações, sem prompts de agente (ver `ApprovalRunResponse`).
+     *
+     * O par `runId`/`squadId` vem do pedido, nunca do cliente: não há parâmetro por onde pedir o run de
+     * outra pessoa.
+     */
+    fun getRun(userId: UUID, id: UUID): ApprovalRunView {
+        val approval = findOrThrow(id)
+        if (!approval.canView(userId)) throw ApprovalAccessDeniedException()
+
+        val run = runRepository.findById(approval.runId) ?: throw RunNotFoundException()
+        // O run tem que ser mesmo o do pedido. Um pedido apontando para run de outro squad só aconteceria
+        // por dado corrompido, e aí a falha tem que ser fechada, não aberta.
+        if (run.squadId != approval.squadId) throw ApprovalAccessDeniedException()
+
+        val squad = squadRepository.findById(approval.squadId)
+        val agents = if (squad == null) emptyList() else agentRepository.findAllBySquadId(approval.squadId)
+        return ApprovalRunView(approvalId = approval.id, run = run, squad = squad, agents = agents)
+    }
 
     fun decide(userId: UUID, id: UUID, approved: Boolean, feedback: String?): DecideOutcome {
         val approval = findOrThrow(id)

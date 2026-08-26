@@ -4,6 +4,7 @@ import com.apibot.features.approval.model.ApprovalDecidedByRole
 import com.apibot.features.approval.model.ApprovalItemStatus
 import com.apibot.features.approval.model.ApprovalStatus
 import com.apibot.features.approval.model.CheckpointKind
+import com.apibot.features.run.model.RunStatus
 import com.apibot.shared.extensions.emptyJsonObject
 import com.fasterxml.jackson.databind.JsonNode
 import io.swagger.v3.oas.annotations.media.Schema
@@ -104,4 +105,47 @@ data class ApprovalItemResponse(
     @Schema(description = "Who decided this item, if decided") val decidedByUserId: UUID?,
     @Schema(description = "Whether the decider was the owner or a pool approver") val decidedByRole: ApprovalDecidedByRole?,
     @Schema(description = "When this item was decided, if decided") val decidedAt: Instant?,
+)
+
+/**
+ * Vista da execução liberada a quem participa de um pedido de aprovação (design D5-bis). Não é o
+ * `RunResponse`: é um recorte deliberado do run, com só o que dá para ler um transcript.
+ *
+ * Fora daqui, de propósito: `authBindingsSnapshot` (quais conexões o dono escolheu), `rejections`
+ * (insumo de treinamento do dono — ver .specs/002) e `resumedFromRunId` (linhagem de runs que o
+ * aprovador não pode abrir de qualquer forma). Nada aqui torna o squad alcançável — continua não
+ * existindo endpoint que aceite `squadId` de quem não é dono.
+ */
+@Schema(description = "Read-only view of the run behind an approval request")
+data class ApprovalRunResponse(
+    @Schema(description = "Run ID") val id: UUID,
+    @Schema(description = "Approval request this view was authorized by") val approvalId: UUID,
+    @Schema(description = "Input given to the orchestrator") val input: String,
+    @Schema(description = "Run status") val status: RunStatus,
+    @Schema(description = "When the run started") val startedAt: Instant,
+    @Schema(description = "When the run ended, if it has") val endedAt: Instant?,
+    @Schema(description = "Steps executed and their artifacts") val steps: JsonNode,
+    @Schema(description = "Questions asked and answers given during the run") val qaLog: JsonNode,
+    @Schema(description = "Snapshot of pending checkpoint/question state — tells where the run is right now")
+    val runtimeSnapshot: JsonNode?,
+    @Schema(description = "Files generated/changed during the run — metadata only, no content") val files: JsonNode,
+    @Schema(description = "The squad, reduced to what labels a transcript") val squad: ApprovalRunSquadResponse?,
+    @Schema(description = "The cast of the run, reduced to what labels a turn") val agents: List<ApprovalRunAgentResponse>,
+)
+
+@Schema(description = "Squad identity shown alongside an approval's run — never its prompts or settings")
+data class ApprovalRunSquadResponse(
+    @Schema(description = "Squad ID") val id: UUID,
+    @Schema(description = "Squad name") val name: String,
+    @Schema(description = "Squad icon") val icon: String,
+)
+
+/** Só o que rotula um turno do transcript — sem prompt, modelo, ferramentas ou política de aprovação. */
+@Schema(description = "Agent identity shown alongside an approval's run")
+data class ApprovalRunAgentResponse(
+    @Schema(description = "Agent ID") val id: UUID,
+    @Schema(description = "Agent name") val name: String,
+    @Schema(description = "Agent role") val role: String,
+    @Schema(description = "Avatar character") val character: String,
+    @Schema(description = "Avatar accent color") val accentColor: String,
 )

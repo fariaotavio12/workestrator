@@ -2,6 +2,10 @@ import type {
 	ApprovalCheckpointKind,
 	ApprovalItemDraft,
 	ApprovalStatus,
+	CharacterName,
+	RunFile,
+	RunRecord,
+	RuntimeSnapshot,
 } from "@/features/security/orchestrator-shared/types";
 
 export type CreateApprovalPayload = {
@@ -22,3 +26,25 @@ export type DecideApprovalPayload = {
 };
 
 export type { ApprovalStatus };
+
+/**
+ * A execução por trás de uma aprovação, como o backend a libera para quem participa dela
+ * (`GET /approvals/:id/run`). Não é um `RunRecord`: vem sem as conexões usadas, sem as reprovações e
+ * sem nada que dê acesso ao squad — só o suficiente para ler o transcript e ver onde o run está.
+ */
+export type ApprovalRunView = {
+	id: string;
+	approvalId: string;
+	input: string;
+	status: RunRecord["status"];
+	startedAt: string;
+	endedAt: string | null;
+	steps: RunRecord["steps"];
+	qaLog: RunRecord["qaLog"];
+	runtimeSnapshot?: RuntimeSnapshot | null;
+	files: RunFile[];
+	/** Ausente quando o dono apagou o squad depois — o run e a decisão sobrevivem a isso. */
+	squad?: { id: string; name: string; icon: string } | null;
+	/** Só o que rotula um turno: sem prompt, modelo ou ferramentas. */
+	agents: { id: string; name: string; role: string; character: CharacterName; accentColor: string }[];
+};

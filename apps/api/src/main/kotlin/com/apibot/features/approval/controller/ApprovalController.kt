@@ -1,6 +1,7 @@
 package com.apibot.features.approval.controller
 
 import com.apibot.features.approval.dto.ApprovalResponse
+import com.apibot.features.approval.dto.ApprovalRunResponse
 import com.apibot.features.approval.dto.CreateApprovalRequest
 import com.apibot.features.approval.dto.DecideApprovalRequest
 import com.apibot.features.approval.model.ApprovalStatus
@@ -46,6 +47,13 @@ class ApprovalController(
     fun get(@GetUserId userId: String, @PathVariable id: UUID): ResponseEntity<ApprovalResponse> {
         val requesterId = UUID.fromString(userId)
         return ResponseEntity.ok(service.get(requesterId, id).toResponse(requesterId))
+    }
+
+    @GetMapping("/{id}/run")
+    @Operation(summary = "Get the run behind an approval — read-only, for the owner or an assigned approver")
+    fun getRun(@GetUserId userId: String, @PathVariable id: UUID): ResponseEntity<ApprovalRunResponse> {
+        val requesterId = UUID.fromString(userId)
+        return ResponseEntity.ok(service.getRun(requesterId, id).toResponse())
     }
 
     @GetMapping

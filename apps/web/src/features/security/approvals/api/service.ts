@@ -2,7 +2,7 @@ import { api } from "@/app/api/clients";
 import type { ApprovalRequest, ApprovalStatus } from "@/features/security/orchestrator-shared/types";
 import { useQuery } from "@tanstack/react-query";
 import { approvalsKeys } from "./keys";
-import type { CreateApprovalPayload, DecideApprovalPayload } from "./types";
+import type { ApprovalRunView, CreateApprovalPayload, DecideApprovalPayload } from "./types";
 
 // Funções exportadas fora de hook (além dos hooks abaixo) — o runtime do orquestrador cria/consulta/decide
 // aprovações fora de um componente React, mesmo padrão de `executions/api/service.ts`.
@@ -61,6 +61,15 @@ export const listApprovalsByRunApi = async (runId: string): Promise<ApprovalRequ
 	return data;
 };
 
+/**
+ * A execução por trás do pedido — autorizada pelo próprio pedido, não pelo squad. É o que deixa o
+ * aprovador acompanhar o run que ele aprovou em vez de decidir às cegas sobre um resumo.
+ */
+export const getApprovalRunApi = async (id: string): Promise<ApprovalRunView> => {
+	const { data } = await api.get<ApprovalRunView>(`/approvals/${id}/run`);
+	return data;
+};
+
 export const listAssignedToMeApi = async (status?: ApprovalStatus): Promise<ApprovalRequest[]> => {
 	const { data } = await api.get<ApprovalRequest[]>("/approvals/assigned-to-me", {
 		params: status ? { status } : undefined,
@@ -73,6 +82,19 @@ export const useApprovalQuery = (id: string | undefined) =>
 		queryKey: approvalsKeys.detail(id ?? ""),
 		queryFn: () => getApprovalApi(id as string),
 		enabled: Boolean(id),
+	});
+
+/** Enquanto o run está de pé, repete no mesmo ritmo do `approval-watcher` do dono — 10s. */
+const RUN_POLL_INTERVAL_MS = 10_000;
+
+export const useApprovalRunQuery = (approvalId: string | undefined) =>
+	useQuery({
+		queryKey: approvalsKeys.run(approvalId ?? ""),
+		queryFn: () => getApprovalRunApi(approvalId as string),
+		enabled: Boolean(approvalId),
+		refetchInterval: (query) => (query.state.data?.status === "running" ? RUN_POLL_INTERVAL_MS : false),
+		// Um run só existe depois que o dono persiste o primeiro PUT; um 404 aqui é corrida, não erro do link.
+		retry: 1,
 	});
 
 export const useApprovalsByRunQuery = (runId: string | undefined) =>
