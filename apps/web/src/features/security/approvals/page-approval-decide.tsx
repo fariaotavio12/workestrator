@@ -86,7 +86,7 @@ export const PageApprovalDecide = () => {
 
 	if (isError || !approval) {
 		return (
-			<div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-10">
+			<div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-10">
 				<ErrorState
 					title="Não foi possível abrir esta aprovação"
 					message={getApiErrorMessage(
@@ -100,7 +100,7 @@ export const PageApprovalDecide = () => {
 	}
 
 	return (
-		<div className="mx-auto flex max-w-lg flex-col gap-6 px-4 py-10">
+		<div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10">
 			<PageHeader eyebrow="Aprovação de checkpoint" title={approval.title} />
 
 			{approval.status !== "pending" ? (

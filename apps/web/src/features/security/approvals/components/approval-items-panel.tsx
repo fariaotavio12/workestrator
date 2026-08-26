@@ -89,14 +89,16 @@ export const ApprovalItemsPanel = ({ approval, onDecided, focusedItemId }: Props
 							<Badge variant={approvalItemStatusVariant[item.status]}>{approvalItemStatusLabel[item.status]}</Badge>
 						</div>
 
-						<dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
-							{Object.entries(item.data).map(([key, value]) => (
-								<div key={key} className="contents">
-									<dt className="text-muted-foreground text-sm break-words">{key}</dt>
-									<dd className="text-sm break-words">{formatValue(value)}</dd>
-								</div>
-							))}
-						</dl>
+						<div className="overflow-x-auto">
+							<dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
+								{Object.entries(item.data).map(([key, value]) => (
+									<div key={key} className="contents">
+										<dt className="text-muted-foreground text-sm break-words">{key}</dt>
+										<dd className="text-sm break-words">{formatValue(value)}</dd>
+									</div>
+								))}
+							</dl>
+						</div>
 
 						{item.status === "rejected" && item.feedback && (
 							<Typography variant="body-sm" className="text-muted-foreground">
