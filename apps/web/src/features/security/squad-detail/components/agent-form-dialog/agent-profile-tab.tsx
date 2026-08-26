@@ -1,4 +1,4 @@
-import { cn } from "@/app/utils/cn";
+﻿import { cn } from "@/app/utils/cn";
 import { FieldWrapper, Input, ModelCombobox, MultiCombobox, Switch, Typography } from "@/components";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select";
 import { ACCENT_COLORS } from "@/features/security/orchestrator-shared/data/constants";
@@ -8,7 +8,7 @@ import type {
 	NotificationChannel,
 	SquadApprover,
 } from "@/features/security/orchestrator-shared/types";
-import { Palette, ShieldCheck, UserRound } from "lucide-react";
+import { Palette, ShieldCheck, TriangleAlert, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import type { FieldErrors, UseFormRegister, UseFormSetValue } from "react-hook-form";
 import { CharacterPicker } from "../character-picker";
@@ -183,6 +183,16 @@ export const AgentProfileTab = ({
 								disabled={approvers.length === 0}
 							/>
 						</div>
+						{notifyEnabled && approverUserIds.length === 0 && (
+							<div className="bg-warning/10 flex gap-2 p-3">
+								<TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
+								<Typography variant="caption" className="text-muted-foreground">
+									{approvers.length === 0
+										? "O aviso externo vai sair, mas nenhum aprovador foi convidado para o squad — quem receber a mensagem não vai conseguir abrir o pedido. Convide no botão de aprovadores do squad e atribua aqui."
+										: "O aviso externo vai sair, mas ninguém está atribuído aqui — quem receber a mensagem não vai conseguir abrir o pedido. Estar no pool do squad não basta: o aprovador precisa ser marcado neste agent."}
+								</Typography>
+							</div>
+						)}
 						<SwitchRow
 							label="Eu também posso decidir"
 							description={
