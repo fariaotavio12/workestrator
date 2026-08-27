@@ -30,42 +30,64 @@ const stripFence = (raw: string): string => {
 	return (fenced?.[1] ?? trimmed).trim();
 };
 
-/** Array localizado no texto cru, com o intervalo que ele ocupa — `start`/`end` são índices em `raw`. */
-type LocatedArray = { values: unknown[]; start: number; end: number };
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
 
-/**
- * Tenta o parse direto e, falhando, recorta do primeiro `[` ao último `]` — cobre o caso de o agente
- * escrever uma frase antes ou depois do array, que é o desvio mais comum quando o prompt pede só JSON.
- *
- * Devolve também o intervalo ocupado no texto original, para `stripRejectedApprovalItems` poder reescrever
- * só o array e preservar a prosa/fence em volta. Ponto único de parse: filtrar por um caminho diferente do
- * que extraiu os itens abriria a porta pro filtro discordar da lista que o usuário decidiu.
- */
-const locateArray = (raw: string): LocatedArray | undefined => {
-	const stripped = stripFence(raw);
-	let whole: unknown;
-	try {
-		whole = JSON.parse(stripped);
-		const offset = raw.indexOf(stripped);
-		return Array.isArray(whole) && offset !== -1
-			? { values: whole, start: offset, end: offset + stripped.length }
-			: undefined;
-	} catch {
-		// Segue para o recorte por delimitador.
-	}
-	const start = raw.indexOf("[");
-	const end = raw.lastIndexOf("]");
+/** Lista localizada no texto cru, com o intervalo que ela ocupa — `start`/`end` são índices em `raw`. */
+type LocatedItems = { values: unknown[]; start: number; end: number };
+
+const sliceParse = (raw: string, open: string, close: string): LocatedItems | undefined => {
+	const start = raw.indexOf(open);
+	const end = raw.lastIndexOf(close);
 	if (start === -1 || end <= start) return undefined;
 	try {
-		const parsed = JSON.parse(raw.slice(start, end + 1));
-		return Array.isArray(parsed) ? { values: parsed, start, end: end + 1 } : undefined;
+		return { values: [JSON.parse(raw.slice(start, end + 1))], start, end: end + 1 };
 	} catch {
 		return undefined;
 	}
 };
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * Tenta o parse direto e, falhando, recorta do primeiro delimitador ao último — cobre o caso de o agente
+ * escrever uma frase antes ou depois do JSON, que é o desvio mais comum quando o prompt pede só JSON.
+ *
+ * **Um objeto solto vale como lista de um** (`{…}` ⇒ `[{…}]`). Modelo que recebeu "devolva a lista de
+ * chamados" e encontrou exatamente um responde com o objeto cru muito mais vezes do que com um array de um
+ * elemento; exigir o array fazia o lote de um item cair no checkpoint booleano, com o JSON inteiro empurrado
+ * pro `summary` e truncado em 500 chars. O array é tentado **antes**, para `{"chamados": [ … ]}` render a
+ * lista de dentro em vez de um item único cujo `data` é o invólucro.
+ *
+ * Devolve também o intervalo ocupado no texto original, para `stripRejectedApprovalItems` poder reescrever
+ * só a lista e preservar a prosa/fence em volta. Ponto único de parse: filtrar por um caminho diferente do
+ * que extraiu os itens abriria a porta pro filtro discordar da lista que o usuário decidiu.
+ */
+const locateItems = (raw: string): LocatedItems | undefined => {
+	const stripped = stripFence(raw);
+	const offset = raw.indexOf(stripped);
+	let whole: unknown;
+	try {
+		whole = JSON.parse(stripped);
+	} catch {
+		// Segue para o recorte por delimitador.
+	}
+	if (offset !== -1 && Array.isArray(whole)) {
+		return { values: whole, start: offset, end: offset + stripped.length };
+	}
+
+	const sliced = sliceParse(raw, "[", "]");
+	if (sliced && Array.isArray(sliced.values[0])) {
+		return { values: sliced.values[0] as unknown[], start: sliced.start, end: sliced.end };
+	}
+
+	if (offset !== -1 && isPlainObject(whole) && Object.keys(whole).length > 0) {
+		return { values: [whole], start: offset, end: offset + stripped.length };
+	}
+
+	const object = sliceParse(raw, "{", "}");
+	return object && isPlainObject(object.values[0]) && Object.keys(object.values[0]).length > 0
+		? object
+		: undefined;
+};
 
 /** Só string/number viram `ref`/`label` — objeto ou array aninhado renderizaria "[object Object]" na tela. */
 const readableValue = (value: unknown): string | undefined => {
@@ -88,11 +110,12 @@ const truncate = (text: string): string =>
 
 /**
  * `raw` é o conteúdo do artefato do passo anterior. Devolve `[]` sempre que não houver uma lista de objetos
- * — inclusive para array de strings/números, que não tem campo nenhum para um humano decidir em cima.
+ * — inclusive para array de strings/números, que não tem campo nenhum para um humano decidir em cima. Um
+ * objeto JSON solto conta como lista de um (ver `locateItems`).
  */
 export const parseApprovalItems = (raw: string | null | undefined): ApprovalItemDraft[] => {
 	if (!raw?.trim()) return [];
-	const parsed = locateArray(raw)?.values;
+	const parsed = locateItems(raw)?.values;
 	if (!parsed || parsed.length === 0) return [];
 
 	const objects = parsed.filter(isPlainObject);
@@ -142,7 +165,7 @@ export const stripRejectedApprovalItems = (
 	const rejected = new Set(items.flatMap((item, index) => (item.status === "rejected" ? [index] : [])));
 	if (rejected.size === 0) return null;
 
-	const located = locateArray(raw);
+	const located = locateItems(raw);
 	if (!located) return null;
 	const { values, start, end } = located;
 	// Mesmas guardas de `parseApprovalItems`: lista mista nunca gerou itens, então um artefato misto aqui não

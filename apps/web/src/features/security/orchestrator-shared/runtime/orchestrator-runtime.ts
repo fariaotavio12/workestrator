@@ -434,16 +434,30 @@ const appendEvent = (squadId: string, event: Omit<RunEvent, "id" | "createdAt">)
 	}));
 };
 
-/** Sai do estado de checkpoint — os três campos pendentes caem juntos, nunca um sem o outro. */
-const clearPendingCheckpoint = (squadId: string): void => {
-	patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null, pendingContextSteps: null }));
-};
-
 const setPerAgentStatus = (squadId: string, seatId: string, status: AgentStatus): void => {
 	patchRuntime(squadId, (runtime) => ({
 		...runtime,
 		perAgentStatus: { ...runtime.perAgentStatus, [seatId]: status },
 	}));
+};
+
+/**
+ * Devolve a cadeira pausada ao estado que ela tinha antes do checkpoint. `"after"` já produziu o artefato
+ * (`"done"`); `"before"` nunca rodou (`"idle"`, e a aprovação põe `"working"` em seguida via
+ * `runOrchestratedAgentStep`). Precisa rodar em **todas** as saídas — inclusive nas que abortam o run: o
+ * balão do escritório é derivado de `perAgentStatus`, não de `runtime.status`, então uma cadeira deixada em
+ * `"checkpoint"` continua pedindo aprovação na cena depois da decisão.
+ */
+const clearCheckpointSeatStatus = (squadId: string): void => {
+	const { pendingSeatId, pendingCheckpointKind } = getRuntime(squadId);
+	if (!pendingSeatId) return;
+	setPerAgentStatus(squadId, pendingSeatId, pendingCheckpointKind === "after" ? "done" : "idle");
+};
+
+/** Sai do estado de checkpoint — os três campos pendentes caem juntos, nunca um sem o outro. */
+const clearPendingCheckpoint = (squadId: string): void => {
+	clearCheckpointSeatStatus(squadId);
+	patchRuntime(squadId, (r) => ({ ...r, pendingSeatId: null, pendingCheckpointKind: null, pendingContextSteps: null }));
 };
 
 const setStreamingText = (squadId: string, text: string | null): void => {
@@ -903,6 +917,11 @@ const enterCheckpoint = (
 		pendingCheckpointKind: kind,
 		pendingContextSteps: contextSteps?.length ? contextSteps : null,
 		coordinatorThinking: false,
+		// A cena do escritório monta o balão a partir do status **da cadeira** (`useOfficeChoreography`),
+		// não de `runtime.status`. Sem esta linha o único lugar que escrevia `"checkpoint"` aqui era a falha
+		// de autenticação, e a pausa para aprovar não aparecia na cena: `"before"` deixava a cadeira em
+		// `"idle"` e `"after"` em `"done"`.
+		perAgentStatus: { ...r.perAgentStatus, [seatId]: "checkpoint" as AgentStatus },
 	}));
 	appendEvent(squadId, { kind: "checkpoint", seatId, agentId: agent.id, title });
 	// Só via SO (sem toast in-app): o banner de checkpoint no `RunDialog` já cobre quem está olhando.
@@ -1017,6 +1036,7 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 	if (approval.status === "rejected") {
 		recordApprovalRejections(squadId, approval, seatId, agent?.id, checkpointKind);
 		appendLog(squadId, `Checkpoint rejeitado${byApprover ? " por um aprovador" : ""}.`);
+		clearCheckpointSeatStatus(squadId);
 		patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
 		finishRun(squadId, "aborted");
 		return;
@@ -1024,6 +1044,7 @@ const settleCheckpoint = (squadId: string, approval: ApprovalRequest): void => {
 
 	if (approval.status === "canceled") {
 		appendLog(squadId, "Checkpoint cancelado.");
+		clearCheckpointSeatStatus(squadId);
 		patchRuntime(squadId, (r) => ({ ...r, pendingApprovalId: null }));
 		finishRun(squadId, "aborted");
 		return;
@@ -1771,6 +1792,7 @@ const settleCheckpointLocally = (squadId: string, approved: boolean, rejection?:
 			});
 		}
 		appendLog(squadId, "Checkpoint rejeitado.");
+		clearCheckpointSeatStatus(squadId);
 		finishRun(squadId, "aborted");
 		return;
 	}

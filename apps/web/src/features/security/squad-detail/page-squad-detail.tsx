@@ -125,6 +125,10 @@ export const PageSquadDetail = () => {
 	const occupied = squad.seats.filter((s) => s.agentId).length;
 	const seatFull = squad.seats.length >= MAX_SEATS;
 	const isRunning = ["running", "checkpoint", "awaiting_input"].includes(squad.runtime.status);
+	// O runtime é keyed por **execução** (`startRun` sempre gera um id novo), nunca pelo id do squad —
+	// mesma chave que o `RunDialog` usa. Passar `squad.id` faz o runtime resolver pro idle e a decisão
+	// sair silenciosamente pelo `return` de guarda.
+	const runKey = squad.runtime.runId ?? squad.id;
 
 	const openSeat = (seatId: string) => {
 		if (isRunning) {
@@ -255,8 +259,8 @@ export const PageSquadDetail = () => {
 					}}
 					onCoordinatorClick={() => setOrchestratorOpen(true)}
 					onSeatClick={openSeat}
-					onAnswerQuestion={(answer) => answerPrompt(squad.id, answer)}
-					onApproveCheckpoint={() => resolveCheckpoint(squad.id, true)}
+					onAnswerQuestion={(answer) => answerPrompt(runKey, answer)}
+					onApproveCheckpoint={() => resolveCheckpoint(runKey, true)}
 					// Reprovar exige justificativa (treinamento de agente) — sem espaço pra isso na bolha
 					// compacta do escritório, então abre o painel completo em vez de rejeitar em silêncio.
 					onRejectCheckpoint={() => openRunDialog(squad.id, squad.runtime.runId ?? null)}

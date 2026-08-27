@@ -48,6 +48,44 @@ describe("parseApprovalItems", () => {
 		expect(items[0]?.ref).toBe("2026-003");
 	});
 
+	// O lote de um chamado chegava como objeto cru e caía no checkpoint booleano: sem itens na tela de
+	// decisao, e o Code node do n8n quebrava no ramo de `items: []`.
+	it("parses a lone JSON object as a one-item list", () => {
+		const raw = ["```json", JSON.stringify(processItem("231944", "Bruno Pereira")), "```"].join("\n");
+
+		const items = parseApprovalItems(raw);
+
+		expect(items).toHaveLength(1);
+		expect(items[0]?.ref).toBe("231944");
+		expect(items[0]?.data).toEqual(processItem("231944", "Bruno Pereira"));
+	});
+
+	it("parses a bare lone JSON object", () => {
+		expect(parseApprovalItems(JSON.stringify(processItem("2026-001", "Ana Souza"))).map((i) => i.ref)).toEqual([
+			"2026-001",
+		]);
+	});
+
+	it("extracts a lone JSON object embedded in surrounding prose", () => {
+		const raw = `Só sobrou este:
+${JSON.stringify(processItem("2026-009", "Dora Melo"))}
+Posso seguir?`;
+
+		expect(parseApprovalItems(raw).map((item) => item.ref)).toEqual(["2026-009"]);
+	});
+
+	// Sem a ordem "array antes de objeto solto", o invólucro viraria UM item cujo `data` é o objeto inteiro.
+	it("prefers the inner array over the wrapper object", () => {
+		const raw = JSON.stringify({ chamados: [processItem("2026-001", "Ana"), processItem("2026-002", "Bruno")] });
+
+		expect(parseApprovalItems(raw).map((item) => item.ref)).toEqual(["2026-001", "2026-002"]);
+	});
+
+	it("returns an empty list for an empty JSON object", () => {
+		expect(parseApprovalItems("{}")).toEqual([]);
+		expect(parseApprovalItems("```json\n{}\n```")).toEqual([]);
+	});
+
 	it("returns an empty list for prose with no array at all", () => {
 		expect(parseApprovalItems("Não encontrei nada pendente na fila de hoje.")).toEqual([]);
 	});
@@ -193,6 +231,17 @@ describe("stripRejectedApprovalItems", () => {
 		const raw = JSON.stringify([processItem("2026-001", "Ana")]);
 
 		expect(stripRejectedApprovalItems(raw, statuses("approved"))).toBeNull();
+	});
+
+	it("empties a lone-object artifact when its only item was rejected", () => {
+		const raw = ["```json", JSON.stringify(processItem("231944", "Bruno Pereira")), "```"].join("\n");
+
+		const filtered = stripRejectedApprovalItems(raw, statuses("rejected"));
+
+		expect(filtered?.removed).toBe(1);
+		expect(filtered?.unreviewed).toBe(0);
+		expect(filtered?.content.startsWith("```json")).toBe(true);
+		expect(parseApprovalItems(filtered?.content ?? "")).toEqual([]);
 	});
 
 	it("returns null when the artifact is prose instead of a list", () => {

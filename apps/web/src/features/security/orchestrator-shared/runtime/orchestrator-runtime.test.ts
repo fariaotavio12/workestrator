@@ -545,6 +545,121 @@ describe("orchestrator-runtime — checkpoint com aprovação externa (n8n/aprov
 		});
 	});
 
+	it("marca a cadeira pausada como checkpoint — é disso que a cena do escritório monta o balão", async () => {
+		const squadId = "squad-checkpoint-seat";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-seat", squadId, seatId: "s1", agentId: "a1" }),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("checkpoint");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).perAgentStatus.s1).toBe("checkpoint");
+	});
+
+	// Só o kind "after" torna a restauração observável: no "before" a cadeira nunca rodou e
+	// `runOrchestratedAgentStep` sobrescreve com "working" logo depois da aprovação.
+	it("devolve a cadeira para done ao aprovar um checkpoint after — senão o balão fica na cena", async () => {
+		const squadId = "squad-checkpoint-seat-approve";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpointAfter: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		// O coordenador só aciona a cadeira uma vez: sem o "done" na segunda rodada o run reabriria um
+		// checkpoint novo e a asserção pegaria a pausa seguinte em vez da restauração.
+		let coordinatorCalls = 0;
+		vi.mocked(callAgentStep).mockImplementation(async ({ systemPrompt }) => {
+			if (systemPrompt !== "COORDINATOR_PROMPT_MARKER") return { output: "ok", usedFallbackModel: false };
+			coordinatorCalls += 1;
+			return {
+				output: JSON.stringify(coordinatorCalls === 1 ? { next: "s1" } : { next: "done" }),
+				usedFallbackModel: false,
+			};
+		});
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-seat-ok", squadId, seatId: "s1", agentId: "a1", checkpointKind: "after" }),
+		);
+		vi.mocked(decideApprovalApi).mockResolvedValue(
+			approvalRequest({
+				id: "appr-seat-ok",
+				squadId,
+				seatId: "s1",
+				agentId: "a1",
+				checkpointKind: "after",
+				status: "approved",
+				decidedByRole: "owner",
+			}),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-seat-ok");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).perAgentStatus.s1).toBe("checkpoint");
+		const runId = useOrchestratorRuntimeStore.getState().getRuntime(squadId).runId as string;
+
+		resolveCheckpoint(runId, true);
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("completed");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).perAgentStatus.s1).toBe("done");
+	});
+
+	it("tira a cadeira de checkpoint ao reprovar, mesmo com o run abortado", async () => {
+		const squadId = "squad-checkpoint-seat-reject";
+		seedCache(
+			squadId,
+			squadDetail(squadId, {
+				agents: [agent({ id: "a1", name: "Beto", requiresCheckpoint: true })],
+				seats: [seat("s1", "a1")],
+			}),
+		);
+		mockCoordinatorAndAgentReplies(JSON.stringify({ next: "s1" }));
+		vi.mocked(createApprovalApi).mockResolvedValue(
+			approvalRequest({ id: "appr-seat-no", squadId, seatId: "s1", agentId: "a1" }),
+		);
+		vi.mocked(decideApprovalApi).mockResolvedValue(
+			approvalRequest({
+				id: "appr-seat-no",
+				squadId,
+				seatId: "s1",
+				agentId: "a1",
+				status: "rejected",
+				feedback: "não é isso",
+				decidedByRole: "owner",
+			}),
+		);
+
+		startRun(squadId, "briefing");
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).pendingApprovalId).toBe("appr-seat-no");
+		});
+		const runId = useOrchestratorRuntimeStore.getState().getRuntime(squadId).runId as string;
+
+		resolveCheckpoint(runId, false, { reason: "não é isso" });
+
+		await vi.waitFor(() => {
+			expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).status).toBe("aborted");
+		});
+		expect(useOrchestratorRuntimeStore.getState().getRuntime(squadId).perAgentStatus.s1).not.toBe("checkpoint");
+	});
+
 	it("stopRun cancela o pedido de aprovação pendente no backend", async () => {
 		const squadId = "squad-approval-stop";
 		seedCache(
